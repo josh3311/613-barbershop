@@ -1,20 +1,31 @@
+import React from 'react';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import { MD3DarkTheme, PaperProvider } from 'react-native-paper';
+import RootNavigator from './src/navigation/RootNavigator';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
 
-export default function App() {
+const theme = {
+  ...MD3DarkTheme,
+  colors: {
+    ...MD3DarkTheme.colors,
+    primary: '#D4AF37',
+    background: '#0A0A0A',
+    surface: '#1A1A1A',
+    onSurface: '#FFFFFF',
+    onBackground: '#FFFFFF',
+  },
+};
+
+export default function App(): React.JSX.Element {
   return (
-    <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
+    <ErrorBoundary>
+      <SafeAreaProvider>
+        <PaperProvider theme={theme}>
+          <StatusBar style="light" />
+          <RootNavigator />
+        </PaperProvider>
+      </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});

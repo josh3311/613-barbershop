@@ -1,0 +1,24 @@
+---
+description: >-
+  At the start of every session in barbershop-613, read ARCHITECT_PLAN.md,
+  START-HERE.md, and PROJECT_STATUS.md before planning or coding. Stay aligned
+  with architecture, sprint, backlog, and security/store docs.
+alwaysApply: true
+---
+
+# 613 Barbershop — session alignment (always)
+
+1. **Read first (in order):**
+   - `ARCHITECT_PLAN.md` — navigation, Firestore collections, types, and conventions. **Read this every session** so data models and navigation stay aligned with the agreed architecture.
+   - `START-HERE.md` — index of what to read and why (handoff, checklist).
+   - `PROJECT_STATUS.md` — completed work, **ACTIVE SPRINT**, **BACKLOG**, UI requirements, key files. **Primary source for what to build next.**
+
+2. **Also read when relevant:**
+   - `PROJECT-HANDOFF-FOR-KIMI.md` — security & App Store setup already done (env, rules, EAS, assets, ErrorBoundary). Do not reintroduce hardcoded keys or duplicate that work without reason.
+   - `REVIEWER_CHECKLIST.md` — before release or when changing Firebase, `app.json`, or auth/data rules.
+
+3. **Honor the docs:** Treat **COMPLETED** in `PROJECT_STATUS.md` as done unless the user explicitly asks to change it. Implement **ACTIVE SPRINT** first; use **BACKLOG** for later. Follow **UI REQUIREMENTS** unless the user overrides.
+
+4. **Keep docs honest:** After a meaningful slice of work, suggest updating **Last Updated**, sprint/backlog checklists, and completed items in `PROJECT_STATUS.md`. If navigation, Firestore fields, or shared types changed, update **`ARCHITECT_PLAN.md`** so the next session stays accurate.
+
+5. **If docs conflict with code or chat:** Flag the mismatch; prefer the user’s **current chat** instruction, then offer a doc fix.
