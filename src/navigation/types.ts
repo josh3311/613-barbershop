@@ -78,12 +78,25 @@ export type DashboardStackParamList = {
   BookingDetail: { bookingId: string };
 };
 
+// ─── Admin (shop owner) ───────────────────────────────────────────────────────
+
+export type AdminStackParamList = {
+  AdminDashboardMain: undefined;
+  BarberTodaySchedule: { barberId: string; barberName: string };
+};
+
+export type AdminTabParamList = {
+  Dashboard: undefined;
+  AdminProfile: undefined;
+};
+
 // ─── Root Navigator ───────────────────────────────────────────────────────────
 
 export type RootStackParamList = {
   Auth: NavigatorScreenParams<AuthStackParamList>;
   ClientApp: NavigatorScreenParams<ClientTabParamList>;
   BarberApp: NavigatorScreenParams<BarberTabParamList>;
+  AdminApp: NavigatorScreenParams<AdminTabParamList>;
 };
 
 // ─── React Navigation module augmentation ─────────────────────────────────────

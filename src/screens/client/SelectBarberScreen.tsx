@@ -13,6 +13,9 @@ import { ActivityIndicator } from 'react-native-paper';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { BookStackParamList } from '@/navigation/types';
 import { Ionicons } from '@expo/vector-icons';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '@/config/firebase';
+import { COLLECTIONS } from '@/constants/collections';
 import { BarberService } from '@/services/barber.service';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -43,25 +46,6 @@ const GOLD = '#D4AF37';
 const BG   = '#0A0A0A';
 const CARD = '#161616';
 
-// ─── Stars ────────────────────────────────────────────────────────────────────
-
-function Stars({ rating }: { rating: number }): React.JSX.Element {
-  return (
-    <View style={st.starsRow}>
-      {[1, 2, 3, 4, 5].map((n) => (
-        <Ionicons
-          key={n}
-          name={rating >= n ? 'star' : rating >= n - 0.5 ? 'star-half' : 'star-outline'}
-          size={13}
-          color={GOLD}
-          style={{ marginRight: 1 }}
-        />
-      ))}
-      <Text style={st.ratingNum}>{rating.toFixed(1)}</Text>
-    </View>
-  );
-}
-
 // ─── Main screen ─────────────────────────────────────────────────────────────
 
 export default function SelectBarberScreen({ route, navigation }: Props): React.JSX.Element {
@@ -71,35 +55,61 @@ export default function SelectBarberScreen({ route, navigation }: Props): React.
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const btnScale = useRef(new Animated.Value(1)).current;
 
-  // ── Load real barbers from the publicly-readable `barbers` collection ────────
+  // ── Load barbers from `barbers` collection; refresh rating/reviewCount per doc via getDoc ──
   useEffect(() => {
     let mounted = true;
-    BarberService.getAll().then((res) => {
-      if (!mounted) return;
-      if (res.success && res.data.length > 0) {
-        const mapped: BarberOption[] = res.data
-          .filter(b => b.isAvailable)
-          .map((b) => ({
-            id:         b.id,          // Firebase UID — used as barberId in booking
-            name:       b.displayName,
-            title:      b.specialties.length > 0 ? b.specialties[0] : 'Barber',
-            experience: '',
-            specialty:  b.specialties.join(' · ') || 'All Styles',
-            rating:     b.rating > 0 ? b.rating : 5.0,
-            reviews:    b.reviewCount,
-            initials:   b.displayName.substring(0, 2).toUpperCase(),
-            photoURL:   b.photoURL ?? null,
-          }));
-        // Show real barbers if any, otherwise fall back to placeholders
+    void (async () => {
+      try {
+        const res = await BarberService.getAll();
+        if (!mounted) return;
+        if (!res.success || res.data.length === 0) {
+          setBarbers(FALLBACK_BARBERS);
+          setLoadingBar(false);
+          return;
+        }
+
+        const available = res.data.filter((b) => b.isAvailable);
+        const mapped: BarberOption[] = await Promise.all(
+          available.map(async (b) => {
+            let rating = 0;
+            let reviews = 0;
+            try {
+              const snap = await getDoc(doc(db, COLLECTIONS.BARBERS, b.id));
+              if (snap.exists()) {
+                const d = snap.data();
+                rating = typeof d.rating === 'number' ? d.rating : 0;
+                reviews = typeof d.reviewCount === 'number' ? d.reviewCount : 0;
+              }
+            } catch {
+              rating = typeof b.rating === 'number' ? b.rating : 0;
+              reviews = typeof b.reviewCount === 'number' ? b.reviewCount : 0;
+            }
+
+            return {
+              id: b.id,
+              name: b.displayName,
+              title: b.specialties.length > 0 ? b.specialties[0] : 'Barber',
+              experience: '',
+              specialty: b.specialties.join(' · ') || 'All Styles',
+              rating,
+              reviews,
+              initials: b.displayName.substring(0, 2).toUpperCase(),
+              photoURL: b.photoURL ?? null,
+            };
+          }),
+        );
+
+        if (!mounted) return;
         setBarbers(mapped.length > 0 ? mapped : FALLBACK_BARBERS);
-      } else {
-        setBarbers(FALLBACK_BARBERS);
+      } catch {
+        if (mounted) setBarbers(FALLBACK_BARBERS);
+      } finally {
+        if (mounted) setLoadingBar(false);
       }
-      setLoadingBar(false);
-    }).catch(() => {
-      if (mounted) { setBarbers(FALLBACK_BARBERS); setLoadingBar(false); }
-    });
-    return () => { mounted = false; };
+    })();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -166,6 +176,10 @@ export default function SelectBarberScreen({ route, navigation }: Props): React.
         >
           {barbers.map((barber) => {
             const isSelected = selectedId === barber.id;
+            const hasReviews =
+              barber.reviews > 0 &&
+              typeof barber.rating === 'number' &&
+              barber.rating > 0;
             return (
               <TouchableOpacity
                 key={barber.id}
@@ -204,7 +218,7 @@ export default function SelectBarberScreen({ route, navigation }: Props): React.
                         <Text style={[st.barberName, isSelected && { color: GOLD }]}>
                           {barber.name}
                         </Text>
-                        {barber.rating === 5.0 && barber.reviews > 0 && (
+                        {barber.rating >= 4.9 && barber.reviews > 0 && (
                           <View style={st.badge}>
                             <Text style={st.badgeText}>TOP</Text>
                           </View>
@@ -213,7 +227,11 @@ export default function SelectBarberScreen({ route, navigation }: Props): React.
 
                       <Text style={st.barberTitle}>{barber.title}</Text>
 
-                      {barber.reviews > 0 && <Stars rating={barber.rating} />}
+                      <Text style={st.ratingLine}>
+                        {hasReviews
+                          ? `${barber.rating.toFixed(1)} ★ (${barber.reviews} reviews)`
+                          : 'New barber'}
+                      </Text>
 
                       <View style={st.tagRow}>
                         <View style={st.tag}>
@@ -334,8 +352,12 @@ const st = StyleSheet.create({
   badge: { backgroundColor: GOLD, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 },
   badgeText: { fontSize: 9, fontWeight: '900', color: BG, letterSpacing: 0.5 },
 
-  starsRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  ratingNum: { fontSize: 12, color: GOLD, fontWeight: '700', marginLeft: 4 },
+  ratingLine: {
+    fontSize: 13,
+    color: GOLD,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
 
   tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 4 },
   tag: {

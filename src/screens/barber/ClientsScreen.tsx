@@ -11,6 +11,7 @@ import { BarberTabParamList } from '@/navigation/types';
 import { useAuth } from '@/hooks/useAuth';
 import { BookingService } from '@/services/booking.service';
 import { Booking } from '@/types/booking.types';
+import { safeToDate } from '@/utils/date.utils';
 
 type Props = BottomTabScreenProps<BarberTabParamList, 'Clients'>;
 
@@ -66,7 +67,7 @@ function deriveClients(bookings: Booking[]): ClientSummary[] {
     if (b.status === 'cancelled' || b.status === 'no_show') continue;
 
     const existing = map.get(b.clientId);
-    const visitDate = b.scheduledAt.toDate();
+    const visitDate = safeToDate(b.scheduledAt);
     const svcName = SERVICE_NAMES[b.serviceId] ?? b.serviceId;
 
     if (!existing) {

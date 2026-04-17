@@ -8,6 +8,7 @@ export const COLLECTIONS = {
   SERVICES: 'services',
   BOOKINGS: 'bookings',
   HAIRCUT_HISTORY: 'haircutHistory',
+  RATINGS: 'ratings',
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];

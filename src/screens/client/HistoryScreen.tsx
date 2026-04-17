@@ -12,7 +12,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ClientTabParamList, HistoryStackParamList } from '@/navigation/types';
 import { useAuth } from '@/hooks/useAuth';
 import { BookingService } from '@/services/booking.service';
+import { Timestamp } from 'firebase/firestore';
 import { Booking, BookingStatus } from '@/types/booking.types';
+import { safeFormatTime, safeToDate } from '@/utils/date.utils';
+import RatingModal from '@/components/RatingModal';
+import { RatingService } from '@/services/rating.service';
 
 type Props = CompositeScreenProps<
   NativeStackScreenProps<HistoryStackParamList, 'HistoryList'>,
@@ -64,12 +68,10 @@ const STATUS_META: Record<string, { label: string; color: string; bg: string; ic
 const DAYS   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-function formatBookingDate(ts: { toDate: () => Date } | null): string {
-  if (!ts) return '—';
-  const d = ts.toDate();
-  return `${DAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()} · ${
-    d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
-  }`;
+function formatBookingDate(ts: Timestamp | null | undefined): string {
+  if (ts == null) return '—';
+  const d = safeToDate(ts);
+  return `${DAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()} · ${safeFormatTime(ts)}`;
 }
 
 /** Statuses the client can still cancel */
@@ -181,6 +183,33 @@ const s = StyleSheet.create({
   },
   msgBtnText: { flex: 1, fontSize: 13, fontWeight: '700', color: C.white },
 
+  rateSection: {
+    borderTopWidth: 1,
+    borderTopColor: C.goldBorder,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: C.bg,
+  },
+  rateLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+  },
+  rateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1A1A1A',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: C.goldBorder,
+    paddingVertical: 11,
+    gap: 8,
+  },
+  rateBtnText: { fontSize: 13, fontWeight: '800', color: C.gold },
+  ratedLabel: { fontSize: 13, fontWeight: '700', color: C.sub, textAlign: 'center' },
+
   cancelWrap: {
     borderTopWidth: 1, borderTopColor: C.redBdr,
     backgroundColor: C.redBg,
@@ -244,17 +273,21 @@ function BookingCard({
   item,
   onCancelled,
   onMessage,
+  ratedState,
+  onRatePress,
 }: {
   item: Booking;
   onCancelled: (msg: string, isError?: boolean) => void;
   onMessage: () => void;
+  ratedState?: 'loading' | 'rated' | 'unrated';
+  onRatePress?: () => void;
 }): React.JSX.Element {
   const [cancelState, setCancelState] = useState<CancelState>('idle');
 
   const meta        = STATUS_META[item.status] ?? STATUS_META.pending;
   const svcName     = SERVICE_NAMES[item.serviceId] ?? item.serviceId;
   const svcIcon     = SERVICE_ICONS[item.serviceId] ?? 'cut-outline';
-  const dateLabel   = formatBookingDate(item.scheduledAt as any);
+  const dateLabel   = formatBookingDate(item.scheduledAt);
   const shortCode   = item.id.substring(0, 6).toUpperCase();
   const barberLabel = item.barberName ?? 'Your Barber';
   const canCancel   = CANCELLABLE.includes(item.status);
@@ -360,6 +393,31 @@ function BookingCard({
         <Ionicons name="chevron-forward" size={16} color={C.sub} style={{ marginLeft: 'auto' }} />
       </TouchableOpacity>
 
+      {item.status === 'completed' && ratedState != null && (
+        <View style={s.rateSection}>
+          {ratedState === 'loading' && (
+            <View style={s.rateLoading}>
+              <ActivityIndicator size="small" color={C.gold} />
+            </View>
+          )}
+          {ratedState === 'rated' && (
+            <Text style={s.ratedLabel}>★ Rated</Text>
+          )}
+          {ratedState === 'unrated' && onRatePress != null && (
+            <TouchableOpacity
+              style={s.rateBtn}
+              onPress={onRatePress}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Rate this cut"
+            >
+              <Ionicons name="star-outline" size={18} color={C.gold} />
+              <Text style={s.rateBtnText}>Rate this cut</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
       {/* ── Cancel section (only for pending / confirmed) ── */}
       {canCancel && (
         <View style={s.cancelWrap}>
@@ -436,6 +494,12 @@ export default function HistoryScreen({ navigation }: Props): React.JSX.Element 
   const [error,      setError]      = useState<string | null>(null);
   const [snack,      setSnack]      = useState<{ msg: string; error: boolean } | null>(null);
 
+  /** `true` = already rated; `false` = not rated; missing key = still checking */
+  const [ratedByBooking, setRatedByBooking] = useState<Record<string, boolean>>({});
+  const [ratingCheckDone, setRatingCheckDone] = useState(false);
+
+  const [ratingBooking, setRatingBooking] = useState<Booking | null>(null);
+
   // Real-time listener — status updates (pending → confirmed) appear instantly
   useEffect(() => {
     if (!firebaseUser) return;
@@ -454,6 +518,54 @@ export default function HistoryScreen({ navigation }: Props): React.JSX.Element 
     );
     return unsubscribe;
   }, [firebaseUser]);
+
+  useEffect(() => {
+    if (!firebaseUser) return;
+    const completed = bookings.filter((b) => b.status === 'completed');
+    if (completed.length === 0) {
+      setRatedByBooking({});
+      setRatingCheckDone(true);
+      return;
+    }
+
+    let cancelled = false;
+    setRatingCheckDone(false);
+
+    void (async () => {
+      try {
+        const entries = await Promise.all(
+          completed.map(
+            async (b) => [b.id, await RatingService.hasRated(b.id)] as const,
+          ),
+        );
+        if (cancelled) return;
+        setRatedByBooking(Object.fromEntries(entries));
+      } catch {
+        if (!cancelled) {
+          setRatedByBooking(
+            Object.fromEntries(completed.map((b) => [b.id, false] as const)),
+          );
+          setSnack({
+            msg: 'Could not check rating status. Pull to refresh.',
+            error: true,
+          });
+        }
+      } finally {
+        if (!cancelled) setRatingCheckDone(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bookings, firebaseUser]);
+
+  function ratedStateFor(bookingId: string, isCompleted: boolean): 'loading' | 'rated' | 'unrated' | null {
+    if (!isCompleted) return null;
+    if (!ratingCheckDone) return 'loading';
+    if (!(bookingId in ratedByBooking)) return 'unrated';
+    return ratedByBooking[bookingId] ? 'rated' : 'unrated';
+  }
 
   // ── Empty state ──────────────────────────────────────────────────────────────
   function EmptyState(): React.JSX.Element {
@@ -531,6 +643,8 @@ export default function HistoryScreen({ navigation }: Props): React.JSX.Element 
                 bookingId: item.id,
               });
             }}
+            ratedState={ratedStateFor(item.id, item.status === 'completed') ?? undefined}
+            onRatePress={() => setRatingBooking(item)}
           />
         )}
         contentContainerStyle={[
@@ -554,6 +668,36 @@ export default function HistoryScreen({ navigation }: Props): React.JSX.Element 
       />
 
       {/* ── Success / error snackbar (Portal + plain text — reliable on web) ── */}
+      {firebaseUser != null && ratingBooking != null && (
+        <RatingModal
+          visible
+          barberName={ratingBooking.barberName ?? 'Your barber'}
+          serviceName={SERVICE_NAMES[ratingBooking.serviceId] ?? ratingBooking.serviceId}
+          dateLabel={formatBookingDate(ratingBooking.scheduledAt)}
+          onClose={() => setRatingBooking(null)}
+          onSubmit={async (rating, comment) => {
+            try {
+              await RatingService.submitRating({
+                bookingId: ratingBooking.id,
+                clientId: firebaseUser.uid,
+                barberId: ratingBooking.barberId,
+                rating,
+                comment,
+              });
+              setRatedByBooking((prev) => ({ ...prev, [ratingBooking.id]: true }));
+              setRatingBooking(null);
+              setSnack({ msg: 'Thanks for your feedback.', error: false });
+            } catch {
+              setSnack({
+                msg: 'Could not save your rating. Please try again.',
+                error: true,
+              });
+              throw new Error('submitRating failed');
+            }
+          }}
+        />
+      )}
+
       <Portal>
         <Snackbar
           visible={snack !== null}

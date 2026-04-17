@@ -35,6 +35,7 @@ import { BarberService } from '@/services/barber.service';
 import { BookingService } from '@/services/booking.service';
 import { BookingStatus } from '@/types/booking.types';
 import { useAuth } from '@/hooks/useAuth';
+import { safeToDate } from '@/utils/date.utils';
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
 
@@ -498,7 +499,7 @@ const wm = StyleSheet.create({
 
 function bookingToRich(bk: import('@/types/booking.types').Booking, fallbackBarberName: string): RichBooking {
   const svc = SERVICE_MAP[bk.serviceId] ?? { name: bk.serviceId, iconName: 'cut-outline' as keyof typeof Ionicons.glyphMap };
-  const ms  = bk.scheduledAt.toMillis();
+  const ms  = safeToDate(bk.scheduledAt).getTime();
   const d   = new Date(ms);
   const h   = d.getHours();
   const m   = d.getMinutes();
@@ -547,10 +548,10 @@ export default function BarberDashboardScreen(): React.JSX.Element {
         // Filter to today only
         const start = new Date(TODAY); start.setHours(0, 0, 0, 0);
         const end   = new Date(TODAY); end.setHours(23, 59, 59, 999);
-        const today = rawBookings.filter(
-          (b) => b.scheduledAt.toMillis() >= start.getTime() &&
-                 b.scheduledAt.toMillis() <= end.getTime(),
-        );
+        const today = rawBookings.filter((b) => {
+          const ms = safeToDate(b.scheduledAt).getTime();
+          return ms >= start.getTime() && ms <= end.getTime();
+        });
         setBookings(today.map((b) => bookingToRich(b, myName)));
         setLoading(false);
       },

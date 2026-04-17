@@ -3,6 +3,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  onSnapshot,
   setDoc,
   updateDoc,
   serverTimestamp,
@@ -45,6 +46,15 @@ export const BarberService = {
     } catch (e) {
       return { success: false, error: String(e) };
     }
+  },
+
+  /**
+   * Real-time listener for the entire `barbers` collection (admin / dashboards).
+   */
+  subscribeAll(callback: (barbers: Barber[]) => void): () => void {
+    return onSnapshot(barbersCol(), (snap) => {
+      callback(snap.docs.map((d) => d.data()));
+    });
   },
 
   async getAvailable(): Promise<FirestoreResult<Barber[]>> {

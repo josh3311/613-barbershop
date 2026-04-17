@@ -12,6 +12,7 @@ import { ClientTabParamList } from '@/navigation/types';
 import { useAuth } from '@/hooks/useAuth';
 import { BookingService } from '@/services/booking.service';
 import { Booking } from '@/types/booking.types';
+import { safeToDate } from '@/utils/date.utils';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -43,8 +44,11 @@ const SERVICE_NAMES: Record<string, string> = {
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-function toMs(t: Timestamp | unknown): number {
-  return t instanceof Timestamp ? t.toMillis() : Number(t);
+function toMs(t: Timestamp | null | undefined | unknown): number {
+  if (t instanceof Timestamp || t === null || t === undefined) {
+    return safeToDate(t as Timestamp | null | undefined).getTime();
+  }
+  return Number(t);
 }
 
 /** Next visit: in-chair first, else earliest future confirmed appointment */
@@ -59,8 +63,8 @@ function pickNextUpcoming(bookings: Booking[]): Booking | null {
   return upcoming[0] ?? null;
 }
 
-function formatSlot(ts: Timestamp): string {
-  const d = ts.toDate();
+function formatSlot(ts: Timestamp | null | undefined): string {
+  const d = safeToDate(ts);
   return `${DAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()} · ${d.toLocaleTimeString('en-US', {
     hour: 'numeric',
     minute: '2-digit',

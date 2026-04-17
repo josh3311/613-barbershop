@@ -30,11 +30,25 @@ export const ChatService = {
     clientId: string,
     barberId: string,
   ): Promise<FirestoreResult<string>> {
+    const conversationId = makeConversationId(clientId, barberId);
+    const ref = convRef(conversationId);
     try {
-      const conversationId = makeConversationId(clientId, barberId);
-      const ref = convRef(conversationId);
-      const snap = await getDoc(ref);
-      if (!snap.exists()) {
+      let docExists = false;
+      try {
+        const snap = await getDoc(ref);
+        docExists = snap.exists();
+      } catch (e: unknown) {
+        const code =
+          typeof e === 'object' && e !== null && 'code' in e
+            ? String((e as { code?: string }).code)
+            : '';
+        if (code !== 'permission-denied') {
+          return { success: false, error: String(e) };
+        }
+        // Missing doc can surface as permission-denied under older rules; treat as absent and create.
+        docExists = false;
+      }
+      if (!docExists) {
         await setDoc(ref, {
           participantIds: [clientId, barberId].sort(),
           clientId,

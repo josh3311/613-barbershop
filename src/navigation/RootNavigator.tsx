@@ -7,6 +7,7 @@ import { RootStackParamList } from './types';
 import AuthNavigator   from './AuthNavigator';
 import ClientNavigator from './ClientNavigator';
 import BarberNavigator from './BarberNavigator';
+import AdminNavigator  from './AdminNavigator';
 import { PushTokenEffect } from '@/components/PushTokenEffect';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -33,9 +34,6 @@ export default function RootNavigator(): React.JSX.Element {
     );
   }
 
-  const isBarberOrAdmin =
-    appUser?.role === 'barber' || appUser?.role === 'admin';
-
   return (
     <NavigationContainer>
       <>
@@ -43,7 +41,9 @@ export default function RootNavigator(): React.JSX.Element {
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           {!isAuthenticated ? (
             <Stack.Screen name="Auth"      component={AuthNavigator} />
-          ) : isBarberOrAdmin ? (
+          ) : appUser?.role === 'admin' ? (
+            <Stack.Screen name="AdminApp" component={AdminNavigator} />
+          ) : appUser?.role === 'barber' ? (
             <Stack.Screen name="BarberApp" component={BarberNavigator} />
           ) : (
             <Stack.Screen name="ClientApp" component={ClientNavigator} />

@@ -18,6 +18,7 @@ import { ChatService } from '@/services/chat.service';
 import { useAuth } from '@/hooks/useAuth';
 import { ChatMessage } from '@/types/chat.types';
 import { ChatRouteParams } from '@/navigation/types';
+import { safeFormatTime } from '@/utils/date.utils';
 
 const C = {
   bg:       '#0A0A0A',
@@ -93,11 +94,6 @@ export default function ChatScreen({ route, navigation }: RootChatProps): React.
     }
   }
 
-  function formatTime(ts: { toDate: () => Date }): string {
-    const d = ts.toDate();
-    return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-  }
-
   if (loading) {
     return (
       <View style={[styles.center, { paddingTop: insets.top }]}>
@@ -152,15 +148,19 @@ export default function ChatScreen({ route, navigation }: RootChatProps): React.
         contentContainerStyle={[styles.listContent, { paddingBottom: 12 }]}
         onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
         renderItem={({ item }) => {
-          const mine = item.senderId === uid;
-          return (
-            <View style={[styles.row, mine ? styles.rowMe : styles.rowThem]}>
-              <View style={[styles.bubble, mine ? styles.bubbleMe : styles.bubbleThem]}>
-                <Text style={styles.bubbleText}>{item.text}</Text>
-                <Text style={styles.timeText}>{formatTime(item.createdAt)}</Text>
+          try {
+            const mine = item.senderId === uid;
+            return (
+              <View style={[styles.row, mine ? styles.rowMe : styles.rowThem]}>
+                <View style={[styles.bubble, mine ? styles.bubbleMe : styles.bubbleThem]}>
+                  <Text style={styles.bubbleText}>{item.text}</Text>
+                  <Text style={styles.timeText}>{safeFormatTime(item.createdAt)}</Text>
+                </View>
               </View>
-            </View>
-          );
+            );
+          } catch {
+            return null;
+          }
         }}
         ListEmptyComponent={
           <Text style={styles.empty}>No messages yet. Say hello.</Text>

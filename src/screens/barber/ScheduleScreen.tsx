@@ -13,6 +13,7 @@ import { BarberTabParamList, ScheduleStackParamList } from '@/navigation/types';
 import { useAuth } from '@/hooks/useAuth';
 import { BookingService } from '@/services/booking.service';
 import { Booking, BookingStatus } from '@/types/booking.types';
+import { safeToDate } from '@/utils/date.utils';
 
 type Props = CompositeScreenProps<
   NativeStackScreenProps<ScheduleStackParamList, 'ScheduleList'>,
@@ -106,7 +107,7 @@ function BookingCard({
 }): React.JSX.Element {
   const [busy,    setBusy]    = useState(false);
   const cfg        = STATUS_CFG[booking.status] ?? STATUS_CFG.pending;
-  const time       = formatTime(booking.scheduledAt.toDate());
+  const time       = formatTime(safeToDate(booking.scheduledAt));
   const svcName    = SERVICE_NAMES[booking.serviceId] ?? booking.serviceId;
   const clientName = booking.clientName ?? booking.clientId.substring(0, 8);
 
@@ -288,8 +289,8 @@ export default function ScheduleScreen({ navigation }: Props): React.JSX.Element
 
   const selDay = week[selIdx];
   const dayBookings = allBookings
-    .filter(b => isSameDay(b.scheduledAt.toDate(), selDay))
-    .sort((a, b) => a.scheduledAt.toMillis() - b.scheduledAt.toMillis());
+    .filter(b => isSameDay(safeToDate(b.scheduledAt), selDay))
+    .sort((a, b) => safeToDate(a.scheduledAt).getTime() - safeToDate(b.scheduledAt).getTime());
 
   const confirmed = dayBookings.filter(b => ['confirmed','in_progress','completed'].includes(b.status)).length;
   const pending   = dayBookings.filter(b => b.status === 'pending').length;
@@ -331,7 +332,7 @@ export default function ScheduleScreen({ navigation }: Props): React.JSX.Element
         {week.map((d, i) => {
           const sel     = i === selIdx;
           const isToday = i === 0;
-          const cnt     = allBookings.filter(b => isSameDay(b.scheduledAt.toDate(), d)).length;
+          const cnt     = allBookings.filter(b => isSameDay(safeToDate(b.scheduledAt), d)).length;
           return (
             <TouchableOpacity
               key={i}

@@ -7,3 +7,5 @@ export * from './haircutHistory.service';
 export * from './storage.service';
 export * from './push.service';
 export * from './chat.service';
+export * from './rating.service';
+export * from './admin.service';

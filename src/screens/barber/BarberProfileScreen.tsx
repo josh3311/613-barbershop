@@ -16,6 +16,9 @@ import * as ImagePicker from 'expo-image-picker';
 import { Text, Snackbar } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '@/config/firebase';
+import { COLLECTIONS } from '@/constants/collections';
 import { AuthService } from '@/services/auth.service';
 import { BarberService } from '@/services/barber.service';
 import { StorageService } from '@/services/storage.service';
@@ -244,6 +247,22 @@ export default function BarberProfileScreen(): React.JSX.Element {
         workingHours,
       };
 
+      try {
+        await setDoc(
+          doc(db, COLLECTIONS.BARBERS, uid),
+          {
+            userId: uid,
+            displayName: barberPayload.displayName,
+            bio: barberPayload.bio,
+            isAvailable: barberPayload.isAvailable,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true },
+        );
+      } catch (e) {
+        console.warn('[BarberProfileScreen] setDoc merge to barbers failed:', e);
+      }
+
       const barberRes = await BarberService.saveProfile(uid, barberPayload);
       if (!barberRes.success) {
         setSnack({ msg: barberRes.error, err: true });
@@ -360,6 +379,21 @@ export default function BarberProfileScreen(): React.JSX.Element {
             <View style={s.section}>
               <Text style={s.sectionLabel}>SHOP PROFILE</Text>
               <View style={s.card}>
+                {barber != null &&
+                typeof barber.reviewCount === 'number' &&
+                barber.reviewCount > 0 &&
+                typeof barber.rating === 'number' &&
+                barber.rating > 0 ? (
+                  <Text style={s.ratingReadonly} accessibilityRole="text">
+                    Your rating: {barber.rating.toFixed(1)} ★ ({barber.reviewCount}{' '}
+                    {barber.reviewCount === 1 ? 'review' : 'reviews'})
+                  </Text>
+                ) : (
+                  <Text style={s.ratingEmpty} accessibilityRole="text">
+                    No ratings yet
+                  </Text>
+                )}
+                <View style={s.divider} />
                 <Text style={s.fieldLabel}>Display name</Text>
                 <TextInput
                   style={s.input}
@@ -641,6 +675,18 @@ const s = StyleSheet.create({
   },
   divider: { height: 1, backgroundColor: C.divider, marginVertical: 12 },
 
+  ratingReadonly: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: C.gold,
+    marginBottom: 6,
+  },
+  ratingEmpty: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: C.sub,
+    marginBottom: 6,
+  },
   fieldLabel: { fontSize: 10, color: C.sub, fontWeight: '700', letterSpacing: 0.5, marginBottom: 6 },
   input: {
     fontSize: 15,

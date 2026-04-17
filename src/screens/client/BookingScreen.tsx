@@ -18,6 +18,7 @@ import { BarberService } from '@/services/barber.service';
 import { BookingService } from '@/services/booking.service';
 import { Barber } from '@/types/barber.types';
 import { Booking } from '@/types/booking.types';
+import { safeToDate } from '@/utils/date.utils';
 import { buildHalfHourSlots, buildWorkingDates, dayKeyFromDate } from '@/utils/workingHours.utils';
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
@@ -166,8 +167,8 @@ export default function BookingScreen({ route, navigation }: Props): React.JSX.E
       // Build a set of "HH:MM" keys that are taken
       const taken = new Set<string>();
       result.data.forEach((b: Booking) => {
-        const d = b.scheduledAt?.toDate?.();
-        if (!d) return;
+        if (b.scheduledAt == null) return;
+        const d = safeToDate(b.scheduledAt);
         const h = String(d.getHours()).padStart(2, '0');
         const m = d.getMinutes() === 0 ? '00' : '30';
         taken.add(`${h}:${m}`);

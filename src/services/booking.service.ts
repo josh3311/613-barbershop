@@ -20,9 +20,14 @@ import {
 } from '@/types/booking.types';
 import { FirestoreResult } from '@/types/common.types';
 import { bookingConverter } from './firestore.converters';
+import { safeToDate } from '@/utils/date.utils';
 
-const toMs = (t: Timestamp | unknown): number =>
-  t instanceof Timestamp ? t.toMillis() : Number(t);
+const toMs = (t: Timestamp | null | undefined | unknown): number => {
+  if (t instanceof Timestamp || t === null || t === undefined) {
+    return safeToDate(t as Timestamp | null | undefined).getTime();
+  }
+  return Number(t);
+};
 
 const bookingsCol = () =>
   collection(db, 'bookings').withConverter(bookingConverter);
@@ -55,8 +60,8 @@ export const BookingService = {
       const docs = snap.docs
         .map((d) => d.data())
         .sort((a, b) => {
-          const at = a.scheduledAt instanceof Timestamp ? a.scheduledAt.toMillis() : Number(a.scheduledAt);
-          const bt = b.scheduledAt instanceof Timestamp ? b.scheduledAt.toMillis() : Number(b.scheduledAt);
+          const at = toMs(a.scheduledAt);
+          const bt = toMs(b.scheduledAt);
           return bt - at;
         });
       return { success: true, data: docs };

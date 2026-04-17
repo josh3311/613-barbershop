@@ -9,17 +9,21 @@ import { Text } from 'react-native-paper';
 
 interface Props {
   children: React.ReactNode;
+  /** Called after Try Again clears the error and remounts children (e.g. bump parent state). */
+  resetError?: () => void;
 }
 
 interface State {
   hasError: boolean;
   error: string | null;
+  /** Incremented on retry so children remount with fresh state. */
+  resetKey: number;
 }
 
 export class ErrorBoundary extends React.Component<Props, State> {
-  state: State = { hasError: false, error: null };
+  state: State = { hasError: false, error: null, resetKey: 0 };
 
-  static getDerivedStateFromError(error: Error): State {
+  static getDerivedStateFromError(error: Error): Partial<State> {
     return { hasError: true, error: error.message };
   }
 
@@ -32,12 +36,21 @@ export class ErrorBoundary extends React.Component<Props, State> {
   }
 
   handleRetry = (): void => {
-    this.setState({ hasError: false, error: null });
+    this.setState((prev) => ({
+      hasError: false,
+      error: null,
+      resetKey: prev.resetKey + 1,
+    }));
+    this.props.resetError?.();
   };
 
   render(): React.ReactNode {
     if (!this.state.hasError) {
-      return this.props.children;
+      return (
+        <React.Fragment key={this.state.resetKey}>
+          {this.props.children}
+        </React.Fragment>
+      );
     }
 
     return (

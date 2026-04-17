@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { MD3DarkTheme, PaperProvider } from 'react-native-paper';
@@ -21,12 +21,14 @@ const theme = {
 };
 
 export default function App(): React.JSX.Element {
+  const [navKey, setNavKey] = useState(0);
+
   return (
-    <ErrorBoundary>
+    <ErrorBoundary resetError={() => setNavKey((k) => k + 1)}>
       <SafeAreaProvider>
         <PaperProvider theme={theme}>
           <StatusBar style="light" />
-          <RootNavigator />
+          <RootNavigator key={navKey} />
         </PaperProvider>
       </SafeAreaProvider>
     </ErrorBoundary>
