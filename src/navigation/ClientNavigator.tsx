@@ -7,7 +7,7 @@ import { AuthService } from '@/services/auth.service';
 
 import HomeScreen    from '@/screens/client/HomeScreen';
 import BookNavigator from '@/navigation/BookNavigator';
-import HistoryScreen from '@/screens/client/HistoryScreen';
+import HistoryNavigator from '@/navigation/HistoryNavigator';
 import ProfileScreen from '@/screens/client/ProfileScreen';
 
 const Tab = createBottomTabNavigator<ClientTabParamList>();
@@ -97,9 +97,10 @@ export default function ClientNavigator(): React.JSX.Element {
       />
       <Tab.Screen
         name="History"
-        component={HistoryScreen}
+        component={HistoryNavigator}
         options={{
           title: 'History',
+          headerShown: false,
           tabBarIcon: ({ focused, color }) => (
             <Ionicons name={focused ? 'time' : 'time-outline'} size={24} color={color} />
           ),

@@ -213,8 +213,7 @@ function ServiceCard({ service, selected, onPress }: CardProps): React.JSX.Eleme
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
-export default function ServicesScreen({ route, navigation }: Props): React.JSX.Element {
-  const { barberId } = route.params;
+export default function ServicesScreen({ navigation }: Props): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const [selected, setSelected] = useState<Service | null>(null);
 
@@ -226,7 +225,7 @@ export default function ServicesScreen({ route, navigation }: Props): React.JSX.
 
   function handleContinue(): void {
     if (!selected) return;
-    navigation.navigate('SelectDateTime', { barberId, serviceId: selected.id });
+    navigation.navigate('SelectBarber', { serviceId: selected.id });
   }
 
   function btnPressIn(): void {

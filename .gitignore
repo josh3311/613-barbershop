@@ -42,6 +42,9 @@ GoogleService-Info.plist
 # typescript
 *.tsbuildinfo
 
+# Firebase Functions build output
+functions/lib/
+
 # generated native folders
 /ios
 /android

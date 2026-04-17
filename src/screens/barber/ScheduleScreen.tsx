@@ -5,14 +5,19 @@ import {
 } from 'react-native';
 import { ActivityIndicator } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
+import { CompositeScreenProps } from '@react-navigation/native';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BarberTabParamList } from '@/navigation/types';
+import { BarberTabParamList, ScheduleStackParamList } from '@/navigation/types';
 import { useAuth } from '@/hooks/useAuth';
 import { BookingService } from '@/services/booking.service';
 import { Booking, BookingStatus } from '@/types/booking.types';
 
-type Props = BottomTabScreenProps<BarberTabParamList, 'Schedule'>;
+type Props = CompositeScreenProps<
+  NativeStackScreenProps<ScheduleStackParamList, 'ScheduleList'>,
+  BottomTabScreenProps<BarberTabParamList>
+>;
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
 
@@ -92,7 +97,13 @@ function formatTime(date: Date): string {
 
 // ─── Booking card subcomponent ────────────────────────────────────────────────
 
-function BookingCard({ booking }: { booking: Booking }): React.JSX.Element {
+function BookingCard({
+  booking,
+  onMessage,
+}: {
+  booking: Booking;
+  onMessage: () => void;
+}): React.JSX.Element {
   const [busy,    setBusy]    = useState(false);
   const cfg        = STATUS_CFG[booking.status] ?? STATUS_CFG.pending;
   const time       = formatTime(booking.scheduledAt.toDate());
@@ -180,6 +191,18 @@ function BookingCard({ booking }: { booking: Booking }): React.JSX.Element {
           <Text style={[s.cardMetaText, { color: C.gold, fontWeight: '700' }]}>${booking.price}</Text>
         </View>
 
+        <TouchableOpacity
+          style={s.msgRow}
+          onPress={onMessage}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel={`Message ${clientName}`}
+        >
+          <Ionicons name="chatbubble-ellipses-outline" size={15} color={C.gold} style={{ marginRight: 8 }} />
+          <Text style={s.msgRowText}>Message {clientName}</Text>
+          <Ionicons name="chevron-forward" size={16} color={C.sub} style={{ marginLeft: 'auto' }} />
+        </TouchableOpacity>
+
         {/* ── Action buttons ── */}
         {busy ? (
           <View style={s.busyRow}>
@@ -241,7 +264,7 @@ function BookingCard({ booking }: { booking: Booking }): React.JSX.Element {
 
 // ─── Main screen ─────────────────────────────────────────────────────────────
 
-export default function ScheduleScreen(_: Props): React.JSX.Element {
+export default function ScheduleScreen({ navigation }: Props): React.JSX.Element {
   const insets    = useSafeAreaInsets();
   const { appUser, firebaseUser } = useAuth();
   const firstName = (appUser?.displayName ?? 'Barber').split(' ')[0];
@@ -371,7 +394,21 @@ export default function ScheduleScreen(_: Props): React.JSX.Element {
           contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 100 }]}
           showsVerticalScrollIndicator={false}
         >
-          {dayBookings.map(b => <BookingCard key={b.id} booking={b} />)}
+          {dayBookings.map((b) => (
+            <BookingCard
+              key={b.id}
+              booking={b}
+              onMessage={() =>
+                navigation.navigate('Chat', {
+                  clientId: b.clientId,
+                  clientName: b.clientName ?? 'Client',
+                  barberId: b.barberId,
+                  barberName: appUser?.displayName ?? 'Barber',
+                  bookingId: b.id,
+                })
+              }
+            />
+          ))}
         </ScrollView>
       )}
     </View>
@@ -463,9 +500,22 @@ const s = StyleSheet.create({
   statusText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.3 },
 
   cardClient:   { fontSize: 16, fontWeight: '800', color: C.white, marginBottom: 5 },
-  cardMeta:     { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 3, marginBottom: 14 },
+  cardMeta:     { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 3, marginBottom: 10 },
   cardMetaText: { fontSize: 12, color: C.sub },
   cardDot:      { fontSize: 12, color: C.muted, marginHorizontal: 2 },
+
+  msgRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    backgroundColor: '#141414',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: C.goldBorder,
+  },
+  msgRowText: { fontSize: 13, fontWeight: '700', color: C.white, flex: 1 },
 
   // Action buttons
   actionRow: { flexDirection: 'row', gap: 10 },

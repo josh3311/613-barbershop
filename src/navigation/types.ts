@@ -28,17 +28,35 @@ export type HomeStackParamList = {
 };
 
 export type BookStackParamList = {
-  SelectService: { barberId: string };
-  SelectDateTime: { barberId: string; serviceId: string };
-  SelectBarber:   { serviceId: string; scheduledAt: number };
+  /** Step 1 — pick a service (no barber yet). */
+  SelectService: undefined;
+  /** Step 2 — pick barber (photo + name). */
+  SelectBarber: { serviceId: string };
+  /** Step 3 — date/time filtered by that barber's working hours. */
+  SelectDateTime: { barberId: string; serviceId: string; barberName: string };
   BookingConfirm: { barberId: string; barberName: string; serviceId: string; scheduledAt: number };
   BookingSuccess: { bookingId: string };
+};
+
+/** Params for `ChatScreen` — same shape in client History stack and barber Schedule stack */
+export type ChatRouteParams = {
+  clientId: string;
+  clientName: string;
+  barberId: string;
+  barberName: string;
+  bookingId?: string;
 };
 
 export type HistoryStackParamList = {
   HistoryList: undefined;
   HistoryDetail: { historyId: string };
   SubmitReview: { historyId: string; barberId: string };
+  Chat: ChatRouteParams;
+};
+
+export type ScheduleStackParamList = {
+  ScheduleList: undefined;
+  Chat: ChatRouteParams;
 };
 
 export type ProfileStackParamList = {

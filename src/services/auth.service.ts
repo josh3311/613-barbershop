@@ -57,4 +57,22 @@ export const AuthService = {
   getCurrentUser(): FirebaseUser | null {
     return auth.currentUser;
   },
+
+  /** Updates Firebase Auth profile (display name + photo URL shown in Auth). */
+  async updateAuthProfile(updates: {
+    displayName?: string;
+    photoURL?: string | null;
+  }): Promise<FirestoreResult<void>> {
+    const user = auth.currentUser;
+    if (!user) return { success: false, error: 'Not signed in' };
+    try {
+      const profile: { displayName?: string | null; photoURL?: string | null } = {};
+      if (updates.displayName !== undefined) profile.displayName = updates.displayName;
+      if (updates.photoURL !== undefined) profile.photoURL = updates.photoURL;
+      await updateProfile(user, profile);
+      return { success: true, data: undefined };
+    } catch (e) {
+      return { success: false, error: String(e) };
+    }
+  },
 } as const;

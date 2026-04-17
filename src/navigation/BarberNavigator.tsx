@@ -5,7 +5,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { BarberTabParamList } from './types';
 
 import DashboardScreen    from '@/screens/barber/DashboardScreen';
-import ScheduleScreen     from '@/screens/barber/ScheduleScreen';
+import ScheduleNavigator  from '@/navigation/ScheduleNavigator';
 import ClientsScreen      from '@/screens/barber/ClientsScreen';
 import BarberProfileScreen from '@/screens/barber/BarberProfileScreen';
 
@@ -42,7 +42,7 @@ export default function BarberNavigator(): React.JSX.Element {
       />
       <Tab.Screen
         name="Schedule"
-        component={ScheduleScreen}
+        component={ScheduleNavigator}
         options={{
           tabBarLabel: 'Schedule',
           tabBarIcon: ({ focused, color }) => (

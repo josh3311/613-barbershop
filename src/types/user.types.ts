@@ -11,7 +11,7 @@ export interface User extends WithId {
   phone: string;
   photoURL: string | null;
   role: UserRole;
-  /** FCM token for push notifications */
+  /** Push token: Expo `ExponentPushToken[…]` string (stored in this field) or FCM if you migrate */
   fcmToken: string | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;

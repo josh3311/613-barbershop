@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Animated,
   Platform,
+  Image,
 } from 'react-native';
 import { ActivityIndicator } from 'react-native-paper';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -27,14 +28,15 @@ interface BarberOption {
   rating:      number;
   reviews:     number;
   initials:    string;
+  photoURL:    string | null;
 }
 
 // ─── Fallback barbers (shown while loading or if no Firestore barbers exist) ──
 
 const FALLBACK_BARBERS: BarberOption[] = [
-  { id: 'barber-james', name: 'James',       title: 'Senior Barber',   experience: '5 yrs exp',  specialty: 'Fades & Tapers',   rating: 4.9, reviews: 142, initials: 'JA' },
-  { id: 'barber-akim',  name: 'Akim',        title: 'Style Specialist', experience: '3 yrs exp', specialty: 'Beard Sculpting',  rating: 4.8, reviews: 98,  initials: 'AK' },
-  { id: 'barber-amir',  name: 'Amir Joseph', title: 'Master Barber',   experience: '10 yrs exp', specialty: 'All Styles',       rating: 5.0, reviews: 311, initials: 'AJ' },
+  { id: 'barber-james', name: 'James',       title: 'Senior Barber',   experience: '5 yrs exp',  specialty: 'Fades & Tapers',   rating: 4.9, reviews: 142, initials: 'JA', photoURL: null },
+  { id: 'barber-akim',  name: 'Akim',        title: 'Style Specialist', experience: '3 yrs exp', specialty: 'Beard Sculpting',  rating: 4.8, reviews: 98,  initials: 'AK', photoURL: null },
+  { id: 'barber-amir',  name: 'Amir Joseph', title: 'Master Barber',   experience: '10 yrs exp', specialty: 'All Styles',       rating: 5.0, reviews: 311, initials: 'AJ', photoURL: null },
 ];
 
 const GOLD = '#D4AF37';
@@ -63,7 +65,7 @@ function Stars({ rating }: { rating: number }): React.JSX.Element {
 // ─── Main screen ─────────────────────────────────────────────────────────────
 
 export default function SelectBarberScreen({ route, navigation }: Props): React.JSX.Element {
-  const { serviceId, scheduledAt } = route.params;
+  const { serviceId } = route.params;
   const [barbers,    setBarbers]    = useState<BarberOption[]>([]);
   const [loadingBar, setLoadingBar] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -86,6 +88,7 @@ export default function SelectBarberScreen({ route, navigation }: Props): React.
             rating:     b.rating > 0 ? b.rating : 5.0,
             reviews:    b.reviewCount,
             initials:   b.displayName.substring(0, 2).toUpperCase(),
+            photoURL:   b.photoURL ?? null,
           }));
         // Show real barbers if any, otherwise fall back to placeholders
         setBarbers(mapped.length > 0 ? mapped : FALLBACK_BARBERS);
@@ -107,29 +110,25 @@ export default function SelectBarberScreen({ route, navigation }: Props): React.
 
   function handleContinue(): void {
     if (!selectedId) return;
-    const selected = selectedId === 'barber-any'
-      ? { id: 'barber-any', name: 'Next Available' }
-      : (barbers.find(b => b.id === selectedId) ?? { id: selectedId, name: selectedId });
+    const selected = barbers.find(b => b.id === selectedId);
+    if (!selected) return;
 
     Animated.sequence([
       Animated.timing(btnScale, { toValue: 0.95, duration: 80, useNativeDriver: true }),
       Animated.timing(btnScale, { toValue: 1,    duration: 80, useNativeDriver: true }),
     ]).start(() => {
-      navigation.navigate('BookingConfirm', {
-        barberId:    selected.id,
-        barberName:  selected.name,
+      navigation.navigate('SelectDateTime', {
+        barberId: selected.id,
         serviceId,
-        scheduledAt,
+        barberName: selected.name,
       });
     });
   }
 
   const selectedBarber = barbers.find(b => b.id === selectedId);
-  const btnLabel = selectedId === 'barber-any'
-    ? 'Continue — Next Available'
-    : selectedBarber
-      ? `Confirm with ${selectedBarber.name}`
-      : 'Select a Barber to Continue';
+  const btnLabel = selectedBarber
+    ? `Continue with ${selectedBarber.name}`
+    : 'Select a Barber to Continue';
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -180,9 +179,18 @@ export default function SelectBarberScreen({ route, navigation }: Props): React.
                   <View style={st.cardInner}>
                     {/* Avatar */}
                     <View style={[st.avatar, { borderColor: isSelected ? GOLD : '#2A2A2A' }]}>
-                      <Text style={[st.avatarText, { color: isSelected ? GOLD : '#888' }]}>
-                        {barber.initials}
-                      </Text>
+                      {barber.photoURL ? (
+                        <Image
+                          source={{ uri: barber.photoURL }}
+                          style={st.avatarImg}
+                          resizeMode="cover"
+                          accessibilityIgnoresInvertColors
+                        />
+                      ) : (
+                        <Text style={[st.avatarText, { color: isSelected ? GOLD : '#888' }]}>
+                          {barber.initials}
+                        </Text>
+                      )}
                       {isSelected && (
                         <View style={st.avatarCheck}>
                           <Ionicons name="checkmark-circle" size={20} color={GOLD} />
@@ -233,30 +241,6 @@ export default function SelectBarberScreen({ route, navigation }: Props): React.
               </TouchableOpacity>
             );
           })}
-
-          {/* No preference option */}
-          <TouchableOpacity
-            activeOpacity={0.85}
-            onPress={() => handleSelect('barber-any')}
-            accessibilityRole="button"
-            accessibilityLabel="No preference - any available barber"
-          >
-            <View style={[st.anyCard, selectedId === 'barber-any' && st.cardSelected]}>
-              <Ionicons name="shuffle-outline" size={22} color={selectedId === 'barber-any' ? GOLD : '#555'} />
-              <View style={{ flex: 1, marginLeft: 14 }}>
-                <Text style={[st.anyTitle, selectedId === 'barber-any' && { color: GOLD }]}>
-                  No Preference
-                </Text>
-                <Text style={st.anySub}>Assign me the next available barber</Text>
-              </View>
-              <View style={[st.selectCircle, selectedId === 'barber-any' && st.selectCircleActive]}>
-                {selectedId === 'barber-any'
-                  ? <Ionicons name="checkmark" size={16} color={BG} />
-                  : <Ionicons name="chevron-forward" size={16} color="#555" />
-                }
-              </View>
-            </View>
-          </TouchableOpacity>
 
           <View style={{ height: 120 }} />
         </ScrollView>
@@ -336,7 +320,9 @@ const st = StyleSheet.create({
     width: 64, height: 64, borderRadius: 32,
     backgroundColor: '#1E1E1E', borderWidth: 2,
     alignItems: 'center', justifyContent: 'center', marginRight: 14,
+    overflow: 'hidden',
   },
+  avatarImg: { width: 64, height: 64, borderRadius: 30 },
   avatarText: { fontSize: 20, fontWeight: '800', letterSpacing: 1 },
   avatarCheck: { position: 'absolute', bottom: -2, right: -2, backgroundColor: BG, borderRadius: 12 },
 

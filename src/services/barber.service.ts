@@ -15,6 +15,7 @@ import {
   CreateBarberPayload,
   UpdateBarberPayload,
 } from '@/types/barber.types';
+import { WorkingHours } from '@/types/common.types';
 import { FirestoreResult } from '@/types/common.types';
 import { barberConverter } from './firestore.converters';
 
@@ -87,6 +88,51 @@ export const BarberService = {
         updatedAt: serverTimestamp(),
       });
       return { success: true, data: undefined };
+    } catch (e) {
+      return { success: false, error: String(e) };
+    }
+  },
+
+  /**
+   * Creates `barbers/{uid}` if missing, otherwise updates. Fixes Save when the doc
+   * was never created (e.g. legacy accounts, admin-only user docs).
+   */
+  async saveProfile(
+    uid: string,
+    data: {
+      displayName: string;
+      bio: string;
+      photoURL: string | null;
+      specialties: string[];
+      isAvailable: boolean;
+      workingHours: WorkingHours;
+    },
+  ): Promise<FirestoreResult<void>> {
+    try {
+      const ref = barberDoc(uid);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) {
+        const created = await this.create(uid, {
+          userId: uid,
+          displayName: data.displayName,
+          bio: data.bio,
+          specialties: data.specialties,
+          photoURL: data.photoURL,
+          isAvailable: data.isAvailable,
+          workingHours: data.workingHours,
+        });
+        return created.success
+          ? { success: true, data: undefined }
+          : { success: false, error: created.error };
+      }
+      return await this.update(uid, {
+        displayName: data.displayName,
+        bio: data.bio,
+        specialties: data.specialties,
+        photoURL: data.photoURL,
+        isAvailable: data.isAvailable,
+        workingHours: data.workingHours,
+      });
     } catch (e) {
       return { success: false, error: String(e) };
     }

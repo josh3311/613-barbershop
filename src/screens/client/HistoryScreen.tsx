@@ -5,14 +5,19 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ActivityIndicator, Snackbar, Portal } from 'react-native-paper';
+import { CompositeScreenProps } from '@react-navigation/native';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ClientTabParamList } from '@/navigation/types';
+import { ClientTabParamList, HistoryStackParamList } from '@/navigation/types';
 import { useAuth } from '@/hooks/useAuth';
 import { BookingService } from '@/services/booking.service';
 import { Booking, BookingStatus } from '@/types/booking.types';
 
-type Props = BottomTabScreenProps<ClientTabParamList, 'History'>;
+type Props = CompositeScreenProps<
+  NativeStackScreenProps<HistoryStackParamList, 'HistoryList'>,
+  BottomTabScreenProps<ClientTabParamList>
+>;
 
 const C = {
   bg:         '#0A0A0A',
@@ -165,6 +170,17 @@ const s = StyleSheet.create({
     backgroundColor: '#2A0A0A', borderColor: '#FF444440',
   },
 
+  msgBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: C.goldBorder,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: C.elevated,
+  },
+  msgBtnText: { flex: 1, fontSize: 13, fontWeight: '700', color: C.white },
+
   cancelWrap: {
     borderTopWidth: 1, borderTopColor: C.redBdr,
     backgroundColor: C.redBg,
@@ -227,9 +243,11 @@ const s = StyleSheet.create({
 function BookingCard({
   item,
   onCancelled,
+  onMessage,
 }: {
   item: Booking;
   onCancelled: (msg: string, isError?: boolean) => void;
+  onMessage: () => void;
 }): React.JSX.Element {
   const [cancelState, setCancelState] = useState<CancelState>('idle');
 
@@ -328,6 +346,19 @@ function BookingCard({
           </Text>
         </View>
       )}
+
+      {/* ── Message barber ── */}
+      <TouchableOpacity
+        style={s.msgBtn}
+        onPress={onMessage}
+        activeOpacity={0.85}
+        accessibilityRole="button"
+        accessibilityLabel={`Message ${barberLabel}`}
+      >
+        <Ionicons name="chatbubble-ellipses-outline" size={16} color={C.gold} style={{ marginRight: 8 }} />
+        <Text style={s.msgBtnText}>Message {barberLabel}</Text>
+        <Ionicons name="chevron-forward" size={16} color={C.sub} style={{ marginLeft: 'auto' }} />
+      </TouchableOpacity>
 
       {/* ── Cancel section (only for pending / confirmed) ── */}
       {canCancel && (
@@ -490,6 +521,16 @@ export default function HistoryScreen({ navigation }: Props): React.JSX.Element 
           <BookingCard
             item={item}
             onCancelled={(msg, isError) => setSnack({ msg, error: !!isError })}
+            onMessage={() => {
+              if (!firebaseUser) return;
+              navigation.navigate('Chat', {
+                clientId: firebaseUser.uid,
+                clientName: firebaseUser.displayName ?? 'Client',
+                barberId: item.barberId,
+                barberName: item.barberName ?? 'Barber',
+                bookingId: item.id,
+              });
+            }}
           />
         )}
         contentContainerStyle={[

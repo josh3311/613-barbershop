@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   StyleSheet,
@@ -14,8 +14,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BookStackParamList } from '@/navigation/types';
+import { BarberService } from '@/services/barber.service';
 import { BookingService } from '@/services/booking.service';
+import { Barber } from '@/types/barber.types';
 import { Booking } from '@/types/booking.types';
+import { buildHalfHourSlots, buildWorkingDates, dayKeyFromDate } from '@/utils/workingHours.utils';
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
 
@@ -59,53 +62,19 @@ const DEFAULT_SERVICE = {
   iconName: 'cut-outline' as keyof typeof Ionicons.glyphMap,
 };
 
-// ─── Time slot generation (9 AM – 7 PM, 30-min intervals) ────────────────────
+// ─── Time slots come from the barber's working hours (30-minute steps) ─────────
 
 interface TimeSlot {
-  key: string;      // "HH:MM" — used for comparison
-  label: string;    // "9:00 AM"
+  key: string;
+  label: string;
   hour: number;
   minute: number;
 }
-
-function buildSlots(): TimeSlot[] {
-  const slots: TimeSlot[] = [];
-  for (let h = 9; h < 19; h++) {
-    for (const m of [0, 30]) {
-      if (h === 18 && m === 30) continue; // stop at 6:30 PM (last slot = 7:00 PM end)
-      const period = h < 12 ? 'AM' : 'PM';
-      const displayH = h > 12 ? h - 12 : h === 0 ? 12 : h;
-      const displayM = m === 0 ? '00' : '30';
-      const padH = String(h).padStart(2, '0');
-      slots.push({
-        key:    `${padH}:${displayM === '00' ? '00' : '30'}`,
-        label:  `${displayH}:${displayM} ${period}`,
-        hour:   h,
-        minute: m,
-      });
-    }
-  }
-  return slots;
-}
-
-const ALL_SLOTS = buildSlots();
 
 // ─── Calendar day helpers ─────────────────────────────────────────────────────
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-
-function buildDays(count = 7): Date[] {
-  const days: Date[] = [];
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  for (let i = 0; i < count; i++) {
-    const d = new Date(today);
-    d.setDate(today.getDate() + i);
-    days.push(d);
-  }
-  return days;
-}
 
 function isSameDay(a: Date, b: Date): boolean {
   return (
@@ -126,20 +95,63 @@ type Props = NativeStackScreenProps<BookStackParamList, 'SelectDateTime'>;
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function BookingScreen({ route, navigation }: Props): React.JSX.Element {
-  const { barberId, serviceId } = route.params;
+  const { barberId, serviceId, barberName } = route.params;
   const insets = useSafeAreaInsets();
   const service = SERVICE_MAP[serviceId] ?? DEFAULT_SERVICE;
 
-  const DAYS = buildDays(7);
+  const todayStart = useMemo(() => {
+    const t = new Date();
+    t.setHours(0, 0, 0, 0);
+    return t;
+  }, []);
 
-  const [selectedDay, setSelectedDay]     = useState<Date>(DAYS[0]);
+  const [selectedDay, setSelectedDay]     = useState<Date>(todayStart);
   const [selectedSlot, setSelectedSlot]   = useState<TimeSlot | null>(null);
   const [bookedKeys, setBookedKeys]       = useState<Set<string>>(new Set());
   const [loadingSlots, setLoadingSlots]   = useState(false);
   const [loadError, setLoadError]         = useState<string | null>(null);
-  const [confirming, setConfirming]       = useState(false);
+  const [barberDoc, setBarberDoc]         = useState<Barber | null>(null);
+  const [barberLoading, setBarberLoading] = useState(true);
+  const [barberLoadError, setBarberLoadError] = useState<string | null>(null);
 
   const btnScale = useRef(new Animated.Value(1)).current;
+
+  const availableDays = useMemo(
+    () => buildWorkingDates(barberDoc?.workingHours, 21),
+    [barberDoc],
+  );
+
+  const daySlots: TimeSlot[] = useMemo(() => {
+    if (!barberDoc) return [];
+    const key = dayKeyFromDate(selectedDay);
+    const sch = barberDoc.workingHours[key];
+    if (!sch?.isWorking) return [];
+    return buildHalfHourSlots(sch.startTime, sch.endTime);
+  }, [barberDoc, selectedDay]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setBarberLoading(true);
+      setBarberLoadError(null);
+      const res = await BarberService.getById(barberId);
+      if (cancelled) return;
+      if (res.success && res.data) {
+        setBarberDoc(res.data);
+      } else {
+        setBarberDoc(null);
+        setBarberLoadError(res.success ? 'Barber not found.' : res.error);
+      }
+      setBarberLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [barberId]);
+
+  useEffect(() => {
+    if (availableDays.length === 0) return;
+    const ok = availableDays.some((d) => isSameDay(d, selectedDay));
+    if (!ok) setSelectedDay(availableDays[0]);
+  }, [availableDays, selectedDay]);
 
   // ── Fetch booked slots whenever selected day changes ───────────────────────
 
@@ -198,8 +210,9 @@ export default function BookingScreen({ route, navigation }: Props): React.JSX.E
     if (!selectedSlot) return;
     const dt = new Date(selectedDay);
     dt.setHours(selectedSlot.hour, selectedSlot.minute, 0, 0);
-    // Navigate to barber selection; barberId will be chosen there
-    navigation.navigate('SelectBarber', {
+    navigation.navigate('BookingConfirm', {
+      barberId,
+      barberName,
       serviceId,
       scheduledAt: dt.getTime(),
     });
@@ -210,7 +223,7 @@ export default function BookingScreen({ route, navigation }: Props): React.JSX.E
   function btnIn():  void { Animated.spring(btnScale, { toValue: 0.96, useNativeDriver: true, speed: 60, bounciness: 3 }).start(); }
   function btnOut(): void { Animated.spring(btnScale, { toValue: 1,    useNativeDriver: true, speed: 60, bounciness: 3 }).start(); }
 
-  const canConfirm = !!selectedSlot && !confirming;
+  const canConfirm = !!selectedSlot && daySlots.length > 0;
 
   // ── Format selected summary ────────────────────────────────────────────────
 
@@ -219,6 +232,29 @@ export default function BookingScreen({ route, navigation }: Props): React.JSX.E
     : null;
 
   // ── Render ─────────────────────────────────────────────────────────────────
+
+  if (barberLoading) {
+    return (
+      <View style={[styles.root, styles.centerMsg, { paddingTop: insets.top }]}>
+        <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+        <ActivityIndicator size="large" color={C.gold} />
+        <Text style={styles.loadBarberText}>Loading schedule…</Text>
+      </View>
+    );
+  }
+
+  if (barberLoadError || !barberDoc) {
+    return (
+      <View style={[styles.root, styles.centerMsg, { paddingTop: insets.top }]}>
+        <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+        <Ionicons name="alert-circle-outline" size={44} color={C.danger} />
+        <Text style={styles.errTitle}>{barberLoadError ?? 'Could not load barber.'}</Text>
+        <TouchableOpacity style={styles.retryBtn} onPress={() => navigation.goBack()} accessibilityRole="button">
+          <Text style={styles.retryBtnText}>Go back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
@@ -237,7 +273,8 @@ export default function BookingScreen({ route, navigation }: Props): React.JSX.E
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>Select Date & Time</Text>
-          <Text style={styles.headerSub}>613 BARBERSHOP</Text>
+          <Text style={styles.headerShop}>613 BARBERSHOP</Text>
+          <Text style={styles.headerSub}>with {barberName}</Text>
         </View>
         <View style={styles.backBtn} />
       </View>
@@ -270,8 +307,13 @@ export default function BookingScreen({ route, navigation }: Props): React.JSX.E
         {/* ── Calendar strip ── */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>SELECT DATE</Text>
+          {availableDays.length === 0 ? (
+            <Text style={styles.noDaysText}>
+              This barber has no working days set in the next few weeks. Ask them to update hours in their profile.
+            </Text>
+          ) : null}
           <FlatList
-            data={DAYS}
+            data={availableDays}
             keyExtractor={(d) => d.toISOString()}
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -329,9 +371,11 @@ export default function BookingScreen({ route, navigation }: Props): React.JSX.E
                 <View key={i} style={styles.slotSkeleton} />
               ))}
             </View>
+          ) : daySlots.length === 0 ? (
+            <Text style={styles.noDaysText}>No time slots for this day.</Text>
           ) : (
             <View style={styles.slotsGrid}>
-              {ALL_SLOTS.map((slot) => {
+              {daySlots.map((slot) => {
                 const disabled = isDisabled(slot);
                 const booked   = isBooked(slot);
                 const past     = isPast(slot);
@@ -400,12 +444,12 @@ export default function BookingScreen({ route, navigation }: Props): React.JSX.E
             activeOpacity={1}
             style={[styles.btn, !canConfirm && styles.btnDisabled]}
             accessibilityRole="button"
-            accessibilityLabel="Continue to barber selection"
-            accessibilityHint={canConfirm ? `Select a barber for ${service.name} at ${selectedSlot!.label}` : 'Select a time slot first'}
+            accessibilityLabel="Continue to confirm booking"
+            accessibilityHint={canConfirm ? `Confirm ${service.name} at ${selectedSlot!.label}` : 'Select a time slot first'}
             accessibilityState={{ disabled: !canConfirm }}
           >
             <Text style={[styles.btnText, !canConfirm && styles.btnTextDisabled]}>
-              Choose Your Barber →
+              Review & Confirm →
             </Text>
             {canConfirm && <View style={styles.btnDepth} />}
           </TouchableOpacity>
@@ -425,6 +469,13 @@ const styles = StyleSheet.create({
   root:   { flex: 1, backgroundColor: C.bg },
   scroll: { paddingTop: 4 },
 
+  centerMsg:      { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
+  loadBarberText:  { color: C.sub, fontSize: 14 },
+  errTitle:        { color: C.white, fontSize: 16, textAlign: 'center', fontWeight: '700' },
+  retryBtn:        { marginTop: 8, backgroundColor: C.gold, paddingHorizontal: 22, paddingVertical: 12, borderRadius: 12 },
+  retryBtnText:    { color: C.bg, fontWeight: '800', fontSize: 15 },
+  noDaysText:      { color: C.sub, fontSize: 13, lineHeight: 20, marginBottom: 10 },
+
   // Header
   header: {
     flexDirection: 'row',
@@ -435,7 +486,8 @@ const styles = StyleSheet.create({
   backBtn:     { width: 36, alignItems: 'center' },
   headerCenter:{ flex: 1, alignItems: 'center' },
   headerTitle: { fontSize: 18, fontWeight: '800', color: C.white, letterSpacing: 0.4 },
-  headerSub:   { fontSize: 10, color: C.gold, letterSpacing: 3, fontWeight: '700', marginTop: 2 },
+  headerShop:  { fontSize: 10, color: C.gold, letterSpacing: 2, fontWeight: '700', marginTop: 2 },
+  headerSub:   { fontSize: 12, color: C.sub, fontWeight: '600', marginTop: 4 },
   headerLine:  {
     height: 1, marginHorizontal: 20, backgroundColor: C.gold,
     opacity: 0.3, marginBottom: 2,
