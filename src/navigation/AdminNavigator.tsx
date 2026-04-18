@@ -65,7 +65,7 @@ export default function AdminNavigator(): React.JSX.Element {
             tabBarIcon: ({ focused, color }) => (
               <Ionicons
                 name={focused ? 'person-circle' : 'person-circle-outline'}
-                size={26}
+                size={24}
                 color={color}
               />
             ),

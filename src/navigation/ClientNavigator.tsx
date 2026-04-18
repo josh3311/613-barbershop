@@ -112,7 +112,7 @@ export default function ClientNavigator(): React.JSX.Element {
         options={{
           title: 'Profile',
           tabBarIcon: ({ focused, color }) => (
-            <Ionicons name={focused ? 'person-circle' : 'person-circle-outline'} size={26} color={color} />
+            <Ionicons name={focused ? 'person-circle' : 'person-circle-outline'} size={24} color={color} />
           ),
         }}
       />

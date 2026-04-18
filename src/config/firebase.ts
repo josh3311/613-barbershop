@@ -13,6 +13,13 @@ const firebaseConfig = {
   measurementId:     process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
+if (__DEV__ && !firebaseConfig.apiKey) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    '[Firebase] Missing EXPO_PUBLIC_* keys. Copy .env.example to .env, fill values, restart Metro (stop and run npm start again).',
+  );
+}
+
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);

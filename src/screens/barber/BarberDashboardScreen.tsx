@@ -27,6 +27,7 @@ import {
   Modal,
   Platform,
   Alert,
+  Text as RNText,
 } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
@@ -128,15 +129,29 @@ function StatCard({
         <Ionicons name={iconName} size={20} color={color ?? C.sub} />
         {sub ? <Text style={sc.sub}>{sub}</Text> : null}
       </View>
-      <Text style={[sc.value, color ? { color } : null]}>{value}</Text>
-      <Text style={sc.label}>{label}</Text>
+      <RNText
+        style={[sc.value, color ? { color } : null]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.72}
+      >
+        {value}
+      </RNText>
+      <RNText
+        style={sc.label}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.72}
+      >
+        {label}
+      </RNText>
     </View>
   );
 }
 
 const sc = StyleSheet.create({
   card: {
-    flex: 1, backgroundColor: C.card, borderRadius: 14,
+    flex: 1, minWidth: 0, backgroundColor: C.card, borderRadius: 14,
     borderWidth: 1, borderColor: C.goldBorder,
     padding: 14,
     shadowColor: C.gold, shadowOffset: { width: 0, height: 4 },
@@ -533,8 +548,6 @@ export default function BarberDashboardScreen(): React.JSX.Element {
   const [refreshing, setRefreshing] = useState(false);
   const [showModal,  setShowModal]  = useState(false);
 
-  const fabScale = useRef(new Animated.Value(1)).current;
-
   // ── Real-time listener (barber view) ───────────────────────────────────────
   useEffect(() => {
     if (!firebaseUser || isOwner) return;
@@ -659,10 +672,6 @@ export default function BarberDashboardScreen(): React.JSX.Element {
     ? todayBookings
     : todayBookings.filter(b => b.barberId === activeTab);
 
-  // ── FAB animation ──────────────────────────────────────────────────────────
-  function fabIn():  void { Animated.spring(fabScale, { toValue: 0.9, useNativeDriver: true, speed: 60, bounciness: 3 }).start(); }
-  function fabOut(): void { Animated.spring(fabScale, { toValue: 1,   useNativeDriver: true, speed: 60, bounciness: 3 }).start(); }
-
   // ─────────────────────────────────────────────────────────────────────────
   // ── RENDER ────────────────────────────────────────────────────────────────
   // ─────────────────────────────────────────────────────────────────────────
@@ -697,7 +706,7 @@ export default function BarberDashboardScreen(): React.JSX.Element {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 100 }]}
+        contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 28 }]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -853,24 +862,6 @@ export default function BarberDashboardScreen(): React.JSX.Element {
 
       </ScrollView>
 
-      {/* ── FAB: Add Booking ── */}
-      <Animated.View
-        style={[s.fab, { bottom: insets.bottom + 20, transform: [{ scale: fabScale }] }]}
-      >
-        <TouchableOpacity
-          onPress={() => setShowModal(true)}
-          onPressIn={fabIn}
-          onPressOut={fabOut}
-          activeOpacity={1}
-          style={s.fabBtn}
-          accessibilityRole="button"
-          accessibilityLabel="Add new booking"
-        >
-          <View style={s.fabGlow} />
-          <Ionicons name="add" size={32} color="#0A0A0A" />
-        </TouchableOpacity>
-      </Animated.View>
-
       <AddWalkInModal visible={showModal} onClose={() => setShowModal(false)} />
     </View>
   );
@@ -958,23 +949,4 @@ const s = StyleSheet.create({
   },
   nextUpDot:  { width: 8, height: 8, borderRadius: 4, backgroundColor: C.gold },
   nextUpText: { fontSize: 12, color: C.grey, flex: 1 },
-
-  // FAB
-  fab: {
-    position: 'absolute', right: 22,
-  },
-  fabBtn: {
-    width: 58, height: 58, borderRadius: 29,
-    backgroundColor: C.gold,
-    alignItems: 'center', justifyContent: 'center',
-    shadowColor: C.goldDark, shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.9, shadowRadius: 12, elevation: 14,
-    overflow: 'hidden',
-  },
-  fabGlow: {
-    position: 'absolute', top: -10, left: -10, right: -10, bottom: -10,
-    backgroundColor: C.gold, opacity: 0.2,
-    shadowColor: C.gold, shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8, shadowRadius: 20,
-  },
 });

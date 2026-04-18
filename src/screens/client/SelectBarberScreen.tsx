@@ -229,7 +229,7 @@ export default function SelectBarberScreen({ route, navigation }: Props): React.
 
                       <Text style={st.ratingLine}>
                         {hasReviews
-                          ? `${barber.rating.toFixed(1)} ★ (${barber.reviews} reviews)`
+                          ? `${barber.rating.toFixed(1)} ★ (${barber.reviews} ${barber.reviews === 1 ? 'review' : 'reviews'})`
                           : 'New barber'}
                       </Text>
 

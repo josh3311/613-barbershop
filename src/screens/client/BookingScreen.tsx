@@ -110,7 +110,6 @@ export default function BookingScreen({ route, navigation }: Props): React.JSX.E
   const [selectedSlot, setSelectedSlot]   = useState<TimeSlot | null>(null);
   const [bookedKeys, setBookedKeys]       = useState<Set<string>>(new Set());
   const [loadingSlots, setLoadingSlots]   = useState(false);
-  const [loadError, setLoadError]         = useState<string | null>(null);
   const [barberDoc, setBarberDoc]         = useState<Barber | null>(null);
   const [barberLoading, setBarberLoading] = useState(true);
   const [barberLoadError, setBarberLoadError] = useState<string | null>(null);
@@ -158,7 +157,6 @@ export default function BookingScreen({ route, navigation }: Props): React.JSX.E
 
   const fetchBookings = useCallback(async (day: Date): Promise<void> => {
     setLoadingSlots(true);
-    setLoadError(null);
     setSelectedSlot(null);
 
     const result = await BookingService.getByBarberAndDate(barberId, day);
@@ -175,9 +173,8 @@ export default function BookingScreen({ route, navigation }: Props): React.JSX.E
       });
       setBookedKeys(taken);
     } else {
-      // Firestore error — treat all slots as available, show notice
+      // Firestore error — treat all slots as open (no client-facing warning)
       setBookedKeys(new Set());
-      setLoadError('Could not check live availability. All slots shown as open.');
     }
 
     setLoadingSlots(false);
@@ -345,13 +342,6 @@ export default function BookingScreen({ route, navigation }: Props): React.JSX.E
             }}
           />
         </View>
-
-        {/* ── Load error notice ── */}
-        {loadError ? (
-          <View style={styles.noticeBanner} accessibilityRole="alert">
-            <Text style={styles.noticeText}>ℹ {loadError}</Text>
-          </View>
-        ) : null}
 
         {/* ── Time slots ── */}
         <View style={styles.section}>
@@ -574,19 +564,6 @@ const styles = StyleSheet.create({
     width: 5, height: 5, borderRadius: 3,
     backgroundColor: C.gold, marginTop: 2,
   },
-
-  // Notice banner
-  noticeBanner: {
-    marginHorizontal: 20,
-    marginTop: 12,
-    backgroundColor: C.goldGlow,
-    borderWidth: 1,
-    borderColor: C.goldBorder,
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-  },
-  noticeText: { fontSize: 12, color: C.gold, fontWeight: '500', lineHeight: 16 },
 
   // Slot grid
   slotsGrid: {

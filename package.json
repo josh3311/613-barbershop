@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "index.ts",
   "scripts": {
-    "start": "expo start",
+    "start": "expo start --lan",
     "start:lan": "expo start --lan",
     "start:tunnel": "expo start --tunnel",
     "start:clear": "expo start --clear",

@@ -644,7 +644,7 @@ const s = StyleSheet.create({
   avatarCardAccent: { height: 4, width: '100%', backgroundColor: C.steel, marginBottom: 20 },
   avatarOuter: {
     width: 86, height: 86, borderRadius: 43,
-    backgroundColor: C.elevated, borderWidth: 2, borderColor: C.steelBorder,
+    backgroundColor: C.elevated, borderWidth: 2, borderColor: '#D4AF37',
     alignItems: 'center', justifyContent: 'center', marginBottom: 12,
   },
   avatarInner: {
