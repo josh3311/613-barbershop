@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -6,14 +6,27 @@ import {
   ScrollView,
   StatusBar,
   Dimensions,
+  Modal,
+  Pressable,
 } from 'react-native';
 import { Text } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
-import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
+import type { NavigationProp } from '@react-navigation/native';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ClientTabParamList } from '@/navigation/types';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import type {
+  ClientTabParamList,
+  ProfileStackParamList,
+  StyleStackParamList,
+} from '@/navigation/types';
 import { AuthService } from '@/services/auth.service';
 import { useAuth } from '@/hooks/useAuth';
+import { db } from '@/config/firebase';
+import { COLLECTIONS } from '@/constants/collections';
+import type { ProfileAnalysisResult } from '@/services/ai.service';
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
 
@@ -38,7 +51,62 @@ const C = {
 
 const { width: SW } = Dimensions.get('window');
 
-type Props = BottomTabScreenProps<ClientTabParamList, 'Profile'>;
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : String(n);
+}
+
+function daysInMonth(month1to12: number): number {
+  const m = month1to12;
+  if (m === 2) return 29;
+  if ([4, 6, 9, 11].includes(m)) return 30;
+  return 31;
+}
+
+function formatBirthdayDisplay(mmdd: string | null): string {
+  if (!mmdd || !/^\d{2}-\d{2}$/.test(mmdd)) return 'Tap to add';
+  const [mm, dd] = mmdd.split('-').map((x) => parseInt(x, 10));
+  if (!mm || !dd) return 'Tap to add';
+  return `${MONTH_NAMES[mm - 1]?.slice(0, 3) ?? ''} ${dd}`;
+}
+
+function parseMMDD(mmdd: string | null): { month: number; day: number } {
+  if (!mmdd || !/^\d{2}-\d{2}$/.test(mmdd)) return { month: 1, day: 1 };
+  const [mm, dd] = mmdd.split('-').map((x) => parseInt(x, 10));
+  const month = Math.min(12, Math.max(1, mm || 1));
+  const maxD = daysInMonth(month);
+  const day = Math.min(maxD, Math.max(1, dd || 1));
+  return { month, day };
+}
+
+type Props = NativeStackScreenProps<ProfileStackParamList, 'ProfileHome'>;
+
+function navigateToStyleFromProfile(
+  nav: NavigationProp<ProfileStackParamList>,
+  screen: 'StyleOnboarding',
+): void;
+function navigateToStyleFromProfile(
+  nav: NavigationProp<ProfileStackParamList>,
+  screen: 'StyleResults',
+  params: StyleStackParamList['StyleResults'],
+): void;
+function navigateToStyleFromProfile(
+  nav: NavigationProp<ProfileStackParamList>,
+  screen: keyof StyleStackParamList,
+  params?: StyleStackParamList['StyleResults'],
+): void {
+  const tab = nav.getParent<NavigationProp<ClientTabParamList>>();
+  if (!tab) return;
+  if (screen === 'StyleOnboarding') {
+    tab.navigate('Style', { screen: 'StyleOnboarding' });
+  } else {
+    tab.navigate('Style', { screen: 'StyleResults', params: params! });
+  }
+}
 
 function getInitials(name: string | null | undefined): string {
   if (!name) return '?';
@@ -71,6 +139,100 @@ export default function ProfileScreen({ navigation }: Props): React.JSX.Element 
   const insets = useSafeAreaInsets();
   const { firebaseUser } = useAuth();
   const [loggingOut, setLoggingOut] = useState(false);
+  const [hasStyleProfile, setHasStyleProfile] = useState(false);
+  const [checkingStyle, setCheckingStyle] = useState(true);
+  const [birthdayMMDD, setBirthdayMMDD] = useState<string | null>(null);
+  const [birthdayModalOpen, setBirthdayModalOpen] = useState(false);
+  const [pickMonth, setPickMonth] = useState(1);
+  const [pickDay, setPickDay] = useState(1);
+  const [savingBirthday, setSavingBirthday] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      (async () => {
+        const uid = firebaseUser?.uid;
+        if (!uid) {
+          setHasStyleProfile(false);
+          setCheckingStyle(false);
+          setBirthdayMMDD(null);
+          return;
+        }
+        setCheckingStyle(true);
+        try {
+          const snap = await getDoc(doc(db, COLLECTIONS.USERS, uid));
+          const data = snap.data();
+          const sp = data?.styleProfile as
+            | { profile?: unknown; styles?: unknown }
+            | undefined;
+          const ok = !!(sp?.profile && sp?.styles);
+          const b = data?.birthday;
+          if (!cancelled) {
+            setHasStyleProfile(ok);
+            setBirthdayMMDD(typeof b === 'string' ? b : null);
+          }
+        } catch {
+          if (!cancelled) {
+            setHasStyleProfile(false);
+            setBirthdayMMDD(null);
+          }
+        } finally {
+          if (!cancelled) setCheckingStyle(false);
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, [firebaseUser?.uid]),
+  );
+
+  useEffect(() => {
+    if (!birthdayModalOpen) return;
+    const { month, day } = parseMMDD(birthdayMMDD);
+    setPickMonth(month);
+    setPickDay(Math.min(day, daysInMonth(month)));
+  }, [birthdayModalOpen, birthdayMMDD]);
+
+  const maxDayPick = useMemo(() => daysInMonth(pickMonth), [pickMonth]);
+
+  useEffect(() => {
+    if (pickDay > maxDayPick) setPickDay(maxDayPick);
+  }, [pickDay, maxDayPick]);
+
+  async function saveBirthday(): Promise<void> {
+    const uid = firebaseUser?.uid;
+    if (!uid) return;
+    const mmdd = `${pad2(pickMonth)}-${pad2(pickDay)}`;
+    setSavingBirthday(true);
+    try {
+      await setDoc(
+        doc(db, COLLECTIONS.USERS, uid),
+        { birthday: mmdd, updatedAt: serverTimestamp() },
+        { merge: true },
+      );
+      setBirthdayMMDD(mmdd);
+      setBirthdayModalOpen(false);
+    } finally {
+      setSavingBirthday(false);
+    }
+  }
+
+  async function openSavedStyleProfile(): Promise<void> {
+    const uid = firebaseUser?.uid;
+    if (!uid) return;
+    const snap = await getDoc(doc(db, COLLECTIONS.USERS, uid));
+    const sp = snap.data()?.styleProfile as {
+      profile: ProfileAnalysisResult['profile'];
+      styles: ProfileAnalysisResult['styles'];
+    } | undefined;
+    if (!sp?.profile || !sp?.styles) return;
+    const analysis: ProfileAnalysisResult = {
+      success: true,
+      profile: sp.profile,
+      styles: sp.styles,
+    };
+    navigateToStyleFromProfile(navigation, 'StyleResults', { analysis, readOnly: true });
+  }
 
   const displayName = firebaseUser?.displayName ?? null;
   const email       = firebaseUser?.email ?? '—';
@@ -124,7 +286,60 @@ export default function ProfileScreen({ navigation }: Props): React.JSX.Element 
             <View style={styles.cardDivider} />
             <InfoRow iconName="person-outline"  label="Name"    value={displayName ?? '—'} />
             <View style={styles.cardDivider} />
+            <TouchableOpacity
+              style={styles.birthdayRow}
+              onPress={() => setBirthdayModalOpen(true)}
+              activeOpacity={0.75}
+              accessibilityRole="button"
+              accessibilityLabel="Set birthday"
+            >
+              <View style={styles.birthdayIconWrap}>
+                <FontAwesome5 name="birthday-cake" size={16} color={C.gold} solid />
+              </View>
+              <View style={styles.infoText}>
+                <Text style={styles.infoLabel}>Birthday</Text>
+                <Text style={styles.infoValue} numberOfLines={1}>
+                  {formatBirthdayDisplay(birthdayMMDD)}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#444444" />
+            </TouchableOpacity>
+            <View style={styles.cardDivider} />
             <InfoRow iconName="key-outline"     label="User ID" value={(firebaseUser?.uid?.slice(0, 16) ?? '—') + '…'} />
+          </View>
+        </View>
+
+        {/* ── AI style ── */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>AI STYLE</Text>
+          <View style={styles.card}>
+            {checkingStyle ? (
+              <Text style={styles.aiHint}>Checking style profile…</Text>
+            ) : hasStyleProfile ? (
+              <>
+                <TouchableOpacity
+                  style={styles.aiPrimaryBtn}
+                  onPress={openSavedStyleProfile}
+                  accessibilityRole="button"
+                  accessibilityLabel="View my style profile"
+                >
+                  <Text style={styles.aiPrimaryBtnText}>View My Style Profile</Text>
+                </TouchableOpacity>
+                <Text style={styles.aiPowered}>Powered by Claude AI</Text>
+              </>
+            ) : (
+              <>
+                <TouchableOpacity
+                  style={styles.aiPrimaryBtn}
+                  onPress={() => navigateToStyleFromProfile(navigation, 'StyleOnboarding')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Get style recommendations"
+                >
+                  <Text style={styles.aiPrimaryBtnText}>Get Style Recommendations</Text>
+                </TouchableOpacity>
+                <Text style={styles.aiPowered}>Powered by Claude AI</Text>
+              </>
+            )}
           </View>
         </View>
 
@@ -177,6 +392,71 @@ export default function ProfileScreen({ navigation }: Props): React.JSX.Element 
 
         <Text style={styles.version}>613 Barbershop · v1.0.0</Text>
       </ScrollView>
+
+      <Modal
+        visible={birthdayModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setBirthdayModalOpen(false)}
+      >
+        <Pressable style={styles.bModalOverlay} onPress={() => setBirthdayModalOpen(false)}>
+          <View style={styles.bModalCard} onStartShouldSetResponder={() => true}>
+            <Text style={styles.bModalTitle}>Your birthday</Text>
+            <Text style={styles.bModalSub}>Month and day only (for birthday rewards)</Text>
+
+            <Text style={styles.bModalLabel}>Month</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.bChipScroll}>
+              {MONTH_NAMES.map((name, i) => {
+                const m = i + 1;
+                const sel = pickMonth === m;
+                return (
+                  <Pressable
+                    key={name}
+                    onPress={() => setPickMonth(m)}
+                    style={[styles.bChip, sel && styles.bChipSel]}
+                  >
+                    <Text style={[styles.bChipText, sel && styles.bChipTextSel]}>{name.slice(0, 3)}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            <Text style={styles.bModalLabel}>Day</Text>
+            <View style={styles.bDayGrid}>
+              {Array.from({ length: maxDayPick }, (_, i) => i + 1).map((d) => {
+                const sel = pickDay === d;
+                return (
+                  <Pressable
+                    key={d}
+                    onPress={() => setPickDay(d)}
+                    style={[styles.bDayCell, sel && styles.bDayCellSel]}
+                  >
+                    <Text style={[styles.bDayText, sel && styles.bDayTextSel]}>{d}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <View style={styles.bModalActions}>
+              <TouchableOpacity
+                style={styles.bModalCancel}
+                onPress={() => setBirthdayModalOpen(false)}
+                accessibilityRole="button"
+              >
+                <Text style={styles.bModalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.bModalSave, savingBirthday && { opacity: 0.6 }]}
+                onPress={saveBirthday}
+                disabled={savingBirthday}
+                accessibilityRole="button"
+              >
+                <Text style={styles.bModalSaveText}>{savingBirthday ? 'Saving…' : 'Save'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -279,4 +559,45 @@ const styles = StyleSheet.create({
   logoutHint:    { fontSize: 11, color: C.muted, textAlign: 'center', marginTop: 8, letterSpacing: 0.3 },
 
   version: { fontSize: 11, color: C.muted, textAlign: 'center', marginTop: 36, letterSpacing: 0.5 },
+
+  birthdayRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 16, paddingVertical: 14, gap: 14,
+  },
+  birthdayIconWrap: {
+    width: 36, height: 36, borderRadius: 10, backgroundColor: C.goldGlow,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: C.goldBorder, flexShrink: 0,
+  },
+
+  bModalOverlay: {
+    flex: 1, backgroundColor: '#000000AA', justifyContent: 'center', padding: 24,
+  },
+  bModalCard: {
+    backgroundColor: C.card, borderRadius: 16, borderWidth: 1, borderColor: C.divider,
+    padding: 20, maxHeight: '90%',
+  },
+  bModalTitle:   { fontSize: 18, fontWeight: '800', color: C.white, marginBottom: 6 },
+  bModalSub:     { fontSize: 12, color: C.sub, marginBottom: 16, lineHeight: 17 },
+  bModalLabel:   { fontSize: 11, color: C.muted, fontWeight: '700', letterSpacing: 1, marginBottom: 8 },
+  bChipScroll:   { marginBottom: 14 },
+  bChip:         { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10, backgroundColor: C.elevated, borderWidth: 1, borderColor: C.divider, marginRight: 8 },
+  bChipSel:      { borderColor: C.gold, backgroundColor: C.goldGlow },
+  bChipText:     { fontSize: 13, fontWeight: '700', color: C.sub },
+  bChipTextSel:  { color: C.gold },
+  bDayGrid:      { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
+  bDayCell:      { width: (SW - 88) / 7 - 4, minWidth: 36, paddingVertical: 10, borderRadius: 10, backgroundColor: C.elevated, borderWidth: 1, borderColor: C.divider, alignItems: 'center' },
+  bDayCellSel:   { borderColor: C.gold, backgroundColor: C.goldGlow },
+  bDayText:      { fontSize: 14, fontWeight: '700', color: C.sub },
+  bDayTextSel:   { color: C.gold },
+  bModalActions: { flexDirection: 'row', gap: 12, justifyContent: 'flex-end' },
+  bModalCancel:  { paddingVertical: 12, paddingHorizontal: 18 },
+  bModalCancelText: { fontSize: 14, fontWeight: '700', color: C.sub },
+  bModalSave:    { backgroundColor: C.gold, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 22 },
+  bModalSaveText:{ fontSize: 14, fontWeight: '800', color: C.bg },
+
+  aiHint:         { fontSize: 13, color: C.sub, padding: 16, textAlign: 'center' },
+  aiPrimaryBtn:   { marginHorizontal: 16, marginTop: 14, marginBottom: 8, backgroundColor: C.gold, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+  aiPrimaryBtnText: { fontSize: 15, fontWeight: '800', color: C.bg, letterSpacing: 0.3 },
+  aiPowered:      { fontSize: 11, color: C.muted, textAlign: 'center', paddingBottom: 14, letterSpacing: 0.3 },
 });

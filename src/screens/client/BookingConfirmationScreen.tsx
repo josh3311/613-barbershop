@@ -9,15 +9,19 @@ import {
   Animated,
   Linking,
   Platform,
+  Image,
 } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
-import { Timestamp } from 'firebase/firestore';
+import { Timestamp, doc, getDoc } from 'firebase/firestore';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BookStackParamList } from '@/navigation/types';
 import { BookingService } from '@/services/booking.service';
 import { useAuth } from '@/hooks/useAuth';
+import { db } from '@/config/firebase';
+import { COLLECTIONS } from '@/constants/collections';
+import type { Booking, RequestedStyle } from '@/types/booking.types';
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
 
@@ -134,6 +138,8 @@ export default function BookingConfirmationScreen({ route, navigation }: Props):
   const [phase,     setPhase]     = useState<Phase>('preview');
   const [bookingId, setBookingId] = useState<string | null>(null);
   const [errorMsg,  setErrorMsg]  = useState<string | null>(null);
+  const [savedStylePreview, setSavedStylePreview] = useState<RequestedStyle | null>(null);
+  const [confirmedBooking, setConfirmedBooking] = useState<Booking | null>(null);
 
   // Derived from the real Firestore doc ID — not fake Math.random()
   const confCode = bookingId ? bookingId.substring(0, 6).toUpperCase() : '';
@@ -158,6 +164,32 @@ export default function BookingConfirmationScreen({ route, navigation }: Props):
   useEffect(() => {
     if (phase === 'success') playSuccess();
   }, [phase, playSuccess]);
+
+  useEffect(() => {
+    if (!firebaseUser || phase !== 'preview') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, COLLECTIONS.USERS, firebaseUser.uid));
+        if (cancelled) return;
+        const s = snap.data()?.savedStyle as RequestedStyle & { savedAt?: unknown } | undefined;
+        if (s?.name && s?.photoURL && s?.description) {
+          setSavedStylePreview({
+            name: s.name,
+            photoURL: s.photoURL,
+            description: s.description,
+          });
+        } else {
+          setSavedStylePreview(null);
+        }
+      } catch {
+        setSavedStylePreview(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [firebaseUser, phase]);
 
   // ── Confirm: write booking to Firestore ────────────────────────────────────
 
@@ -195,6 +227,7 @@ export default function BookingConfirmationScreen({ route, navigation }: Props):
     }
 
     setBookingId(result.data.id);
+    setConfirmedBooking(result.data);
     setPhase('success');
   }
 
@@ -227,6 +260,9 @@ export default function BookingConfirmationScreen({ route, navigation }: Props):
 
   // ── Shared summary card ────────────────────────────────────────────────────
 
+  const attachedStyle: RequestedStyle | null | undefined =
+    phase === 'success' ? confirmedBooking?.requestedStyle : savedStylePreview;
+
   const summaryCard = (
     <View style={styles.summaryCard}>
       <View style={styles.summaryCardAccent} />
@@ -257,6 +293,28 @@ export default function BookingConfirmationScreen({ route, navigation }: Props):
         <>
           <View style={styles.rowDivider} />
           <SummaryRow iconName="barcode-outline" label="Booking ID" value={confCode} valueStyle={styles.codeValue} />
+        </>
+      ) : null}
+
+      {attachedStyle ? (
+        <>
+          <View style={styles.rowDivider} />
+          <View style={styles.styleAttachBlock}>
+            <Text style={styles.styleAttachLabel}>
+              {phase === 'success' ? 'Style for this visit' : 'Style we will attach'}
+            </Text>
+            <View style={styles.styleAttachRow}>
+              <Image source={{ uri: attachedStyle.photoURL }} style={styles.styleAttachThumb} />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.styleAttachName} numberOfLines={2}>
+                  {attachedStyle.name}
+                </Text>
+                <Text style={styles.styleAttachDesc} numberOfLines={3}>
+                  {attachedStyle.description}
+                </Text>
+              </View>
+            </View>
+          </View>
         </>
       ) : null}
     </View>
@@ -562,6 +620,19 @@ const styles = StyleSheet.create({
   priceValue:      { color: C.gold, fontSize: 18 },
   codeValue:       { color: C.gold, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace', letterSpacing: 3, fontSize: 18 },
   rowDivider:      { height: 1, backgroundColor: C.divider, marginHorizontal: 16 },
+
+  styleAttachBlock: { paddingHorizontal: 16, paddingBottom: 16 },
+  styleAttachLabel: {
+    fontSize: 10,
+    color: C.gold,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    marginBottom: 10,
+  },
+  styleAttachRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  styleAttachThumb: { width: 56, height: 56, borderRadius: 10, backgroundColor: C.surface, borderWidth: 1, borderColor: C.goldBorder },
+  styleAttachName: { fontSize: 15, fontWeight: '800', color: C.white, marginBottom: 4 },
+  styleAttachDesc: { fontSize: 12, color: C.sub, lineHeight: 17 },
 
   // Info strip
   infoStrip: {

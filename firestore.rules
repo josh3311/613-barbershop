@@ -16,9 +16,13 @@ service cloud.firestore {
           == (resource.data.keys().hasAll(['reviewCount']) ? resource.data.reviewCount : 0) + 1;
     }
 
-    // Users can only read/write their own document
+    // Users can only read/write their own document and AI stylist chat sessions
     match /users/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      match /styleChats/{chatId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
     }
 
     // Bookings: clients create their own bookings; barbers can read/update bookings assigned to them.

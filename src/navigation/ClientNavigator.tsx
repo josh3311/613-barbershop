@@ -7,8 +7,9 @@ import { AuthService } from '@/services/auth.service';
 
 import HomeScreen    from '@/screens/client/HomeScreen';
 import BookNavigator from '@/navigation/BookNavigator';
+import StyleNavigator from '@/navigation/StyleNavigator';
 import HistoryNavigator from '@/navigation/HistoryNavigator';
-import ProfileScreen from '@/screens/client/ProfileScreen';
+import ProfileNavigator from '@/navigation/ProfileNavigator';
 
 const Tab = createBottomTabNavigator<ClientTabParamList>();
 
@@ -96,6 +97,17 @@ export default function ClientNavigator(): React.JSX.Element {
         }}
       />
       <Tab.Screen
+        name="Style"
+        component={StyleNavigator}
+        options={{
+          title: 'Style',
+          headerShown: false,
+          tabBarIcon: ({ focused, color }) => (
+            <Ionicons name={focused ? 'color-wand' : 'color-wand-outline'} size={24} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
         name="History"
         component={HistoryNavigator}
         options={{
@@ -108,9 +120,10 @@ export default function ClientNavigator(): React.JSX.Element {
       />
       <Tab.Screen
         name="Profile"
-        component={ProfileScreen}
+        component={ProfileNavigator}
         options={{
           title: 'Profile',
+          headerShown: false,
           tabBarIcon: ({ focused, color }) => (
             <Ionicons name={focused ? 'person-circle' : 'person-circle-outline'} size={24} color={color} />
           ),

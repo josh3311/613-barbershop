@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
   TouchableOpacity, StatusBar, Alert, Platform,
+  Modal, Image, Pressable,
 } from 'react-native';
 import { ActivityIndicator } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,7 +12,11 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BarberTabParamList, ScheduleStackParamList } from '@/navigation/types';
 import { useAuth } from '@/hooks/useAuth';
+import { doc, getDoc } from 'firebase/firestore';
 import { BookingService } from '@/services/booking.service';
+import { AIBarberGuideService, type BarberCutStep } from '@/services/aiBarberGuide.service';
+import { db } from '@/config/firebase';
+import { COLLECTIONS } from '@/constants/collections';
 import { Booking, BookingStatus } from '@/types/booking.types';
 import { safeToDate } from '@/utils/date.utils';
 
@@ -105,6 +110,12 @@ function BookingCard({
   booking: Booking;
   onMessage: () => void;
 }): React.JSX.Element {
+  const [styleModal, setStyleModal] = useState(false);
+  const [guideModal, setGuideModal] = useState(false);
+  const [guideSteps, setGuideSteps] = useState<BarberCutStep[] | null>(null);
+  const [guideBusy, setGuideBusy] = useState(false);
+  const [guideErr, setGuideErr] = useState<string | null>(null);
+
   const [busy,    setBusy]    = useState(false);
   const cfg        = STATUS_CFG[booking.status] ?? STATUS_CFG.pending;
   const time       = formatTime(safeToDate(booking.scheduledAt));
@@ -151,8 +162,28 @@ function BookingCard({
 
   async function handleAdvance(): Promise<void> {
     if (!advanceNext) return;
+    if (advanceNext === 'completed') {
+      Alert.alert(
+        'Complete visit',
+        'Did this client redeem a free facial steam loyalty reward on this visit?',
+        [
+          { text: 'No', style: 'cancel', onPress: () => { void completeVisit(false); } },
+          { text: 'Yes, redeemed', onPress: () => { void completeVisit(true); } },
+        ],
+      );
+      return;
+    }
     setBusy(true);
     await BookingService.updateStatus(booking.id, { status: advanceNext });
+    setBusy(false);
+  }
+
+  async function completeVisit(rewardClaimed: boolean): Promise<void> {
+    setBusy(true);
+    await BookingService.updateStatus(booking.id, {
+      status: 'completed',
+      ...(rewardClaimed ? { rewardClaimed: true } : {}),
+    });
     setBusy(false);
   }
 
@@ -161,7 +192,35 @@ function BookingCard({
                      booking.status === 'cancelled'  ||
                      booking.status === 'no_show';
 
+  async function openCutGuide(): Promise<void> {
+    const rs = booking.requestedStyle;
+    if (!rs) return;
+    setGuideBusy(true);
+    setGuideErr(null);
+    try {
+      let hairTexture = 'varied';
+      const snap = await getDoc(doc(db, COLLECTIONS.USERS, booking.clientId));
+      const prof = snap.data()?.styleProfile as { profile?: Record<string, unknown> } | undefined;
+      const p = prof?.profile;
+      if (p) {
+        const ht = p.hair_texture ?? p.hairTexture;
+        if (typeof ht === 'string' && ht.trim()) {
+          hairTexture = ht.trim();
+        }
+      }
+      const guide = await AIBarberGuideService.getCutInstructions(rs.name, hairTexture);
+      setGuideSteps(guide.steps);
+      setStyleModal(false);
+      setGuideModal(true);
+    } catch (e) {
+      setGuideErr(e instanceof Error ? e.message : 'Could not load instructions.');
+    } finally {
+      setGuideBusy(false);
+    }
+  }
+
   return (
+    <View style={s.cardWrap}>
     <View style={[
       s.card,
       booking.status === 'declined' && s.cardDeclined,
@@ -182,6 +241,28 @@ function BookingCard({
 
         {/* Client + service */}
         <Text style={[s.cardClient, isTerminal && { color: C.sub }]}>{clientName}</Text>
+
+        {booking.requestedStyle && (
+          <TouchableOpacity
+            style={s.requestedRow}
+            onPress={() => setStyleModal(true)}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel={`Wants ${booking.requestedStyle.name}`}
+          >
+            <Image
+              source={{ uri: booking.requestedStyle.photoURL }}
+              style={s.requestedThumb}
+            />
+            <View style={s.requestedTextCol}>
+              <Text style={s.requestedWantsLine} numberOfLines={2}>
+                Wants: {booking.requestedStyle.name}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={C.gold} />
+          </TouchableOpacity>
+        )}
+
         <View style={s.cardMeta}>
           <Ionicons name="cut-outline" size={12} color={C.sub} style={{ marginRight: 4 }} />
           <Text style={s.cardMetaText}>{svcName}</Text>
@@ -259,6 +340,76 @@ function BookingCard({
           </View>
         )}
       </View>
+    </View>
+
+    <Modal
+      visible={styleModal}
+      transparent
+      animationType="fade"
+      onRequestClose={() => { setStyleModal(false); setGuideErr(null); }}
+    >
+      <Pressable style={s.modalBackdrop} onPress={() => { setStyleModal(false); setGuideErr(null); }}>
+        <Pressable style={s.modalCard} onPress={(e) => e.stopPropagation()}>
+          <Text style={s.modalTitle}>{booking.requestedStyle?.name}</Text>
+          {booking.requestedStyle && (
+            <Image source={{ uri: booking.requestedStyle.photoURL }} style={s.modalPhoto} resizeMode="cover" />
+          )}
+          <Text style={s.modalDesc}>{booking.requestedStyle?.description}</Text>
+          <TouchableOpacity
+            style={s.guideBtn}
+            onPress={() => void openCutGuide()}
+            disabled={guideBusy}
+            accessibilityRole="button"
+            accessibilityLabel="How do I do this cut"
+          >
+            {guideBusy ? (
+              <ActivityIndicator color={C.bg} size="small" />
+            ) : (
+              <Text style={s.guideBtnText}>How do I do this cut?</Text>
+            )}
+          </TouchableOpacity>
+          {guideErr ? <Text style={s.guideErr}>{guideErr}</Text> : null}
+          <TouchableOpacity style={s.modalClose} onPress={() => { setStyleModal(false); setGuideErr(null); }}>
+            <Text style={s.modalCloseText}>Close</Text>
+          </TouchableOpacity>
+        </Pressable>
+      </Pressable>
+    </Modal>
+
+    <Modal
+      visible={guideModal}
+      transparent
+      animationType="slide"
+      onRequestClose={() => { setGuideModal(false); setGuideSteps(null); }}
+    >
+      <View style={s.guideModalRoot}>
+        <View style={s.guideModalHeader}>
+          <Text style={s.guideModalTitle}>Step-by-step</Text>
+          <TouchableOpacity onPress={() => { setGuideModal(false); setGuideSteps(null); }}>
+            <Ionicons name="close" size={26} color={C.white} />
+          </TouchableOpacity>
+        </View>
+        <ScrollView contentContainerStyle={s.guideScroll} showsVerticalScrollIndicator={false}>
+          {guideSteps && guideSteps.length === 0 && (
+            <Text style={s.guideEmpty}>No steps came back. Try again in a moment.</Text>
+          )}
+          {(guideSteps ?? []).map((step) => (
+            <View key={step.number} style={s.stepCard}>
+              <View style={s.stepNum}>
+                <Text style={s.stepNumText}>{step.number}</Text>
+              </View>
+              <View style={s.stepBody}>
+                <Text style={s.stepTitle}>{step.title}</Text>
+                <Text style={s.stepDesc}>{step.description}</Text>
+                {step.tools ? (
+                  <Text style={s.stepTools}>Tools: {step.tools}</Text>
+                ) : null}
+              </View>
+            </View>
+          ))}
+        </ScrollView>
+      </View>
+    </Modal>
     </View>
   );
 }
@@ -474,12 +625,14 @@ const s = StyleSheet.create({
   emptyTitle: { fontSize: 18, fontWeight: '800', color: C.white },
   emptySub:   { fontSize: 13, color: C.sub, textAlign: 'center', lineHeight: 18 },
 
+  cardWrap: { marginBottom: 12 },
+
   // ── Booking card ────────────────────────────────────────────────────────────
   card: {
     flexDirection: 'row',
     backgroundColor: C.card, borderRadius: 14,
     borderWidth: 1, borderColor: C.cardBorder,
-    marginBottom: 12, overflow: 'hidden',
+    overflow: 'hidden',
     ...Platform.select({
       ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.25, shadowRadius: 6 },
       android: { elevation: 4 },
@@ -517,6 +670,99 @@ const s = StyleSheet.create({
     borderColor: C.goldBorder,
   },
   msgRowText: { fontSize: 13, fontWeight: '700', color: C.white, flex: 1 },
+
+  requestedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: C.gold,
+    backgroundColor: '#1A1708',
+    gap: 10,
+  },
+  requestedThumb: { width: 50, height: 50, borderRadius: 8, backgroundColor: C.greyBg },
+  requestedTextCol: { flex: 1, minWidth: 0 },
+  requestedWantsLine: { fontSize: 14, fontWeight: '800', color: C.white },
+
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: '#000000CC',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  modalCard: {
+    backgroundColor: C.card,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: C.goldBorder,
+    padding: 18,
+  },
+  modalTitle: { fontSize: 18, fontWeight: '800', color: C.white, marginBottom: 12 },
+  modalPhoto: {
+    width: '100%',
+    aspectRatio: 16 / 9,
+    borderRadius: 12,
+    backgroundColor: C.greyBg,
+    marginBottom: 12,
+  },
+  modalDesc: { fontSize: 14, color: C.sub, lineHeight: 21, marginBottom: 16 },
+  guideBtn: {
+    backgroundColor: C.gold,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  guideBtnText: { fontSize: 15, fontWeight: '800', color: C.bg },
+  guideErr: { fontSize: 13, color: C.red, marginBottom: 8 },
+  modalClose: { alignItems: 'center', paddingVertical: 8 },
+  modalCloseText: { fontSize: 14, fontWeight: '700', color: C.gold },
+
+  guideModalRoot: {
+    flex: 1,
+    backgroundColor: C.bg,
+    paddingTop: 52,
+  },
+  guideModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 18,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: C.divider,
+  },
+  guideModalTitle: { fontSize: 18, fontWeight: '800', color: C.gold },
+  guideScroll: { padding: 16, paddingBottom: 40 },
+  guideEmpty: { fontSize: 14, color: C.sub, textAlign: 'center', marginTop: 24 },
+  stepCard: {
+    flexDirection: 'row',
+    backgroundColor: C.card,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.goldBorder,
+    padding: 14,
+    marginBottom: 12,
+    gap: 12,
+  },
+  stepNum: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#1A1708',
+    borderWidth: 1,
+    borderColor: C.goldBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepNumText: { fontSize: 16, fontWeight: '900', color: C.gold },
+  stepBody: { flex: 1, minWidth: 0 },
+  stepTitle: { fontSize: 15, fontWeight: '800', color: C.white, marginBottom: 6 },
+  stepDesc: { fontSize: 14, color: C.sub, lineHeight: 20, marginBottom: 6 },
+  stepTools: { fontSize: 12, color: C.gold, fontWeight: '600' },
 
   // Action buttons
   actionRow: { flexDirection: 'row', gap: 10 },

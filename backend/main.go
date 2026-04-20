@@ -37,6 +37,9 @@ func main() {
 	r.POST("/api/generate-briefing", generateBriefing)
 	r.POST("/api/analyze-style", analyzeStyle)
 	r.POST("/api/portfolio-match", portfolioMatch)
+	r.POST("/api/style-photo", stylePhoto)
+	r.POST("/api/style-chat", styleChat)
+	r.POST("/api/barber-cut-guide", barberCutGuide)
 
 	port := os.Getenv("PORT")
 	if port == "" {

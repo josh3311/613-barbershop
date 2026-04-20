@@ -7,12 +7,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { ActivityIndicator } from 'react-native-paper';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Timestamp } from 'firebase/firestore';
+import { doc, onSnapshot, Timestamp } from 'firebase/firestore';
 import { ClientTabParamList } from '@/navigation/types';
 import { useAuth } from '@/hooks/useAuth';
 import { BookingService } from '@/services/booking.service';
 import { Booking } from '@/types/booking.types';
 import { safeToDate } from '@/utils/date.utils';
+import { db } from '@/config/firebase';
+import { COLLECTIONS } from '@/constants/collections';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -43,6 +45,21 @@ const SERVICE_NAMES: Record<string, string> = {
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : String(n);
+}
+
+function todayMMDD(): string {
+  const n = new Date();
+  return `${pad2(n.getMonth() + 1)}-${pad2(n.getDate())}`;
+}
+
+type UserLoyaltyMeta = {
+  birthday: string | null;
+  completedCuts: number;
+  loyaltyLastClaimedAtCut: number;
+};
 
 function toMs(t: Timestamp | null | undefined | unknown): number {
   if (t instanceof Timestamp || t === null || t === undefined) {
@@ -87,6 +104,8 @@ export default function HomeScreen({ navigation }: Props): React.JSX.Element {
 
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [bookingsLoading, setBookingsLoading] = useState(true);
+  const [userMeta, setUserMeta] = useState<UserLoyaltyMeta | null>(null);
+  const [birthdayDismissed, setBirthdayDismissed] = useState<string | null>(null);
 
   useEffect(() => {
     if (!firebaseUser) {
@@ -106,7 +125,43 @@ export default function HomeScreen({ navigation }: Props): React.JSX.Element {
     return unsub;
   }, [firebaseUser]);
 
+  useEffect(() => {
+    if (!firebaseUser) {
+      setUserMeta(null);
+      return;
+    }
+    const ref = doc(db, COLLECTIONS.USERS, firebaseUser.uid);
+    return onSnapshot(ref, (snap) => {
+      const d = snap.data();
+      setUserMeta({
+        birthday: typeof d?.birthday === 'string' ? d.birthday : null,
+        completedCuts: typeof d?.completedCuts === 'number' ? d.completedCuts : 0,
+        loyaltyLastClaimedAtCut:
+          typeof d?.loyaltyLastClaimedAtCut === 'number' ? d.loyaltyLastClaimedAtCut : 0,
+      });
+    });
+  }, [firebaseUser]);
+
   const nextBooking = useMemo(() => pickNextUpcoming(bookings), [bookings]);
+
+  const showBirthdayBanner = useMemo(() => {
+    if (!firebaseUser || !userMeta?.birthday) return false;
+    if (userMeta.birthday !== todayMMDD()) return false;
+    const key = `${firebaseUser.uid}|${userMeta.birthday}|${new Date().getFullYear()}`;
+    return birthdayDismissed !== key;
+  }, [firebaseUser, userMeta, birthdayDismissed]);
+
+  const loyalty = useMemo(() => {
+    if (!userMeta) return null;
+    const cuts = userMeta.completedCuts;
+    const last = userMeta.loyaltyLastClaimedAtCut;
+    const mod = cuts % 7;
+    const earned =
+      cuts > 0 && cuts % 7 === 0 && cuts > last;
+    const progress = mod;
+    const untilNext = earned ? 0 : 7 - progress;
+    return { cuts, last, mod, earned, progress, untilNext };
+  }, [userMeta]);
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
@@ -119,6 +174,28 @@ export default function HomeScreen({ navigation }: Props): React.JSX.Element {
         contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 80 }]}
         showsVerticalScrollIndicator={false}
       >
+        {firebaseUser && showBirthdayBanner && userMeta?.birthday ? (
+          <View style={s.birthdayBanner}>
+            <View style={s.birthdayBannerTextWrap}>
+              <Text style={s.birthdayTitle}>
+                Happy Birthday! Enjoy a free product on us today 🎂
+              </Text>
+              <Text style={s.birthdaySub}>Show this to your barber when you arrive</Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => {
+                setBirthdayDismissed(`${firebaseUser.uid}|${userMeta.birthday}|${new Date().getFullYear()}`);
+              }}
+              style={s.birthdayDismiss}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss birthday message"
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <Text style={s.birthdayDismissX}>×</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         {/* ── Hero ── */}
         <View style={s.hero}>
           <View style={s.heroRing} />
@@ -264,6 +341,42 @@ export default function HomeScreen({ navigation }: Props): React.JSX.Element {
             ))}
           </View>
         </View>
+
+        {firebaseUser && loyalty ? (
+          <View style={s.section}>
+            <Text style={s.sectionTitle}>LOYALTY REWARDS</Text>
+            <View style={s.loyaltyCard}>
+              <View style={s.loyaltyCardAccent} />
+              {loyalty.earned ? (
+                <>
+                  <Text style={s.loyaltyEarnedTitle}>You earned a free facial steam!</Text>
+                  <Text style={s.loyaltyEarnedSub}>
+                    Show this to your barber at your next visit
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text style={s.loyaltyProgressLabel}>
+                    {loyalty.progress}/7
+                  </Text>
+                  <View style={s.loyaltyTrack}>
+                    <View
+                      style={[
+                        s.loyaltyFill,
+                        { width: `${Math.round((loyalty.progress / 7) * 100)}%` },
+                      ]}
+                    />
+                  </View>
+                  <Text style={s.loyaltyHint}>
+                    {loyalty.cuts === 0
+                      ? 'Start your stamp card — book a cut to begin'
+                      : `${loyalty.untilNext} cut${loyalty.untilNext === 1 ? '' : 's'} until your free facial steam`}
+                  </Text>
+                </>
+              )}
+            </View>
+          </View>
+        ) : null}
 
         {/* ── Why 613 ── */}
         <View style={s.section}>
@@ -491,6 +604,38 @@ const s = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   featureText: { flex: 1, fontSize: 13, color: C.sub, lineHeight: 18 },
+
+  birthdayBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: C.gold,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    marginBottom: 16,
+    gap: 10,
+  },
+  birthdayBannerTextWrap: { flex: 1, minWidth: 0 },
+  birthdayTitle:   { fontSize: 15, fontWeight: '800', color: C.bg, lineHeight: 21 },
+  birthdaySub:     { fontSize: 12, fontWeight: '600', color: C.bg, opacity: 0.85, marginTop: 4, lineHeight: 17 },
+  birthdayDismiss: { padding: 4, marginTop: -4 },
+  birthdayDismissX: { fontSize: 22, fontWeight: '700', color: C.bg, lineHeight: 24 },
+
+  loyaltyCard: {
+    backgroundColor: C.card,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.cardBorder,
+    padding: 16,
+    overflow: 'hidden',
+  },
+  loyaltyCardAccent: { position: 'absolute', top: 0, left: 0, right: 0, height: 2, backgroundColor: C.gold },
+  loyaltyProgressLabel: { fontSize: 13, fontWeight: '700', color: C.white, marginBottom: 10 },
+  loyaltyTrack:   { height: 8, borderRadius: 4, backgroundColor: '#2A2A2A', overflow: 'hidden', marginBottom: 10 },
+  loyaltyFill:    { height: 8, borderRadius: 4, backgroundColor: C.gold },
+  loyaltyHint:    { fontSize: 12, color: C.sub, lineHeight: 17 },
+  loyaltyEarnedTitle: { fontSize: 16, fontWeight: '800', color: C.gold, marginBottom: 6 },
+  loyaltyEarnedSub:   { fontSize: 12, color: C.sub, lineHeight: 17 },
 
   footer: { fontSize: 11, color: C.muted, textAlign: 'center', marginBottom: 8 },
 });

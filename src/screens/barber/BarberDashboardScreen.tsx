@@ -311,7 +311,7 @@ function BarberAppointmentCard({
   onAction,
 }: {
   item: RichBooking;
-  onAction: (id: string, nextSt: BookingStatus, declinedReason?: string) => void;
+  onAction: (id: string, nextSt: BookingStatus, declinedReason?: string, rewardClaimed?: boolean) => void;
 }): React.JSX.Element {
   const [busy, setBusy] = useState(false);
   const cfg = STATUS_CFG[item.status] ?? STATUS_CFG.pending;
@@ -351,8 +351,25 @@ function BarberAppointmentCard({
 
   async function handleAdvance(): Promise<void> {
     if (!advanceNext) return;
+    if (advanceNext === 'completed') {
+      Alert.alert(
+        'Complete visit',
+        'Did this client redeem a free facial steam loyalty reward on this visit?',
+        [
+          { text: 'No', style: 'cancel', onPress: () => { void completeVisit(false); } },
+          { text: 'Yes, redeemed', onPress: () => { void completeVisit(true); } },
+        ],
+      );
+      return;
+    }
     setBusy(true);
     await onAction(item.id, advanceNext);
+    setBusy(false);
+  }
+
+  async function completeVisit(rewardClaimed: boolean): Promise<void> {
+    setBusy(true);
+    await onAction(item.id, 'completed', undefined, rewardClaimed);
     setBusy(false);
   }
 
@@ -626,16 +643,26 @@ export default function BarberDashboardScreen(): React.JSX.Element {
     bookingId: string,
     newStatus: BookingStatus,
     declinedReason?: string,
+    rewardClaimed?: boolean,
   ): Promise<void> {
-    // Optimistic update
-    setBookings(prev =>
-      prev.map(b => b.id === bookingId ? { ...b, status: newStatus } : b),
+    const prevStatus = bookings.find((b) => b.id === bookingId)?.status;
+    setBookings((prev) =>
+      prev.map((b) => (b.id === bookingId ? { ...b, status: newStatus } : b)),
     );
-    // Persist to Firestore
-    await BookingService.updateStatus(bookingId, {
+    const result = await BookingService.updateStatus(bookingId, {
       status: newStatus,
       ...(declinedReason ? { declinedReason } : {}),
+      ...(rewardClaimed ? { rewardClaimed: true } : {}),
     });
+    if (!result.success) {
+      if (prevStatus !== undefined) {
+        setBookings((prev) =>
+          prev.map((b) => (b.id === bookingId ? { ...b, status: prevStatus } : b)),
+        );
+      }
+      Alert.alert('Could not update', result.error ?? 'Please try again.');
+      return;
+    }
     // TODO: Send push notification to client when status changes
   }
 

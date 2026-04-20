@@ -10,12 +10,16 @@ import {
   query,
   where,
   Timestamp,
+  increment,
+  deleteField,
 } from 'firebase/firestore';
 import { db } from '@/config/firebase';
+import { COLLECTIONS } from '@/constants/collections';
 import {
   Booking,
   BookingStatus,
   CreateBookingPayload,
+  RequestedStyle,
   UpdateBookingStatusPayload,
 } from '@/types/booking.types';
 import { FirestoreResult } from '@/types/common.types';
@@ -28,6 +32,22 @@ const toMs = (t: Timestamp | null | undefined | unknown): number => {
   }
   return Number(t);
 };
+
+function findNextUpcomingBooking(bookings: Booking[]): Booking | null {
+  const now = Date.now();
+  const eligible = bookings.filter((b) => {
+    if (b.status !== 'pending' && b.status !== 'confirmed' && b.status !== 'in_progress') {
+      return false;
+    }
+    if (b.status === 'in_progress') return true;
+    const start = toMs(b.scheduledAt);
+    const end = start + (b.durationMinutes ?? 45) * 60_000;
+    return start >= now || (now >= start && now <= end);
+  });
+  if (eligible.length === 0) return null;
+  eligible.sort((a, b) => toMs(a.scheduledAt) - toMs(b.scheduledAt));
+  return eligible[0];
+}
 
 const bookingsCol = () =>
   collection(db, 'bookings').withConverter(bookingConverter);
@@ -153,7 +173,15 @@ export const BookingService = {
 
   async create(payload: CreateBookingPayload): Promise<FirestoreResult<Booking>> {
     try {
-      const ref = await addDoc(collection(db, 'bookings'), {
+      const userSnap = await getDoc(doc(db, COLLECTIONS.USERS, payload.clientId));
+      const saved = userSnap.data()?.savedStyle as RequestedStyle & { savedAt?: unknown } | undefined;
+      const hasSaved =
+        saved &&
+        typeof saved.name === 'string' &&
+        typeof saved.photoURL === 'string' &&
+        typeof saved.description === 'string';
+
+      const bookingPayload: Record<string, unknown> = {
         ...payload,
         status: 'pending' as BookingStatus,
         cancelledAt:        null,
@@ -164,10 +192,27 @@ export const BookingService = {
         declinedReason:     null,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-      });
+      };
+
+      if (hasSaved) {
+        bookingPayload.requestedStyle = {
+          name: saved.name,
+          photoURL: saved.photoURL,
+          description: saved.description,
+        };
+      }
+
+      const ref = await addDoc(collection(db, 'bookings'), bookingPayload);
       const snap = await getDoc(
         doc(db, 'bookings', ref.id).withConverter(bookingConverter),
       );
+
+      if (hasSaved) {
+        await updateDoc(doc(db, COLLECTIONS.USERS, payload.clientId), {
+          savedStyle: deleteField(),
+        });
+      }
+
       return { success: true, data: snap.data()! };
     } catch (e) {
       return { success: false, error: String(e) };
@@ -179,6 +224,11 @@ export const BookingService = {
     payload: UpdateBookingStatusPayload,
   ): Promise<FirestoreResult<void>> {
     try {
+      const snap = await getDoc(bookingDoc(id));
+      const prev = snap.exists() ? snap.data() : null;
+      const prevStatus = prev?.status;
+      const clientId = prev?.clientId;
+
       const extra: Record<string, unknown> = {};
 
       if (payload.status === 'cancelled') {
@@ -195,13 +245,70 @@ export const BookingService = {
         extra.declinedReason = payload.declinedReason ?? null;
         // TODO: Send push notification to client when booking is declined
       }
+      if (payload.rewardClaimed === true) {
+        extra.rewardClaimed = true;
+      }
 
-      await updateDoc(bookingDoc(id), {
+      // Plain doc path: partial updates must not go through bookingConverter.toFirestore
+      // (which would spread the full model and can break or omit fields).
+      await updateDoc(doc(db, COLLECTIONS.BOOKINGS, id), {
         status: payload.status,
         ...extra,
         updatedAt: serverTimestamp(),
       });
+
+      if (
+        payload.status === 'completed' &&
+        prevStatus !== 'completed' &&
+        clientId
+      ) {
+        await updateDoc(doc(db, COLLECTIONS.USERS, clientId), {
+          completedCuts: increment(1),
+        });
+      }
+
+      if (payload.rewardClaimed === true && clientId) {
+        const userSnap = await getDoc(doc(db, COLLECTIONS.USERS, clientId));
+        const cuts = typeof userSnap.data()?.completedCuts === 'number'
+          ? (userSnap.data()?.completedCuts as number)
+          : 0;
+        const milestone = Math.floor(cuts / 7) * 7;
+        await updateDoc(doc(db, COLLECTIONS.USERS, clientId), {
+          loyaltyLastClaimedAtCut: milestone,
+        });
+      }
+
       return { success: true, data: undefined };
+    } catch (e) {
+      return { success: false, error: String(e) };
+    }
+  },
+
+  /**
+   * If the client has an upcoming pending/confirmed booking, attach the requested look.
+   * Otherwise store on the user document as `savedStyle` for when they book later.
+   */
+  async attachRequestedStyleForClient(
+    clientId: string,
+    requestedStyle: RequestedStyle,
+  ): Promise<FirestoreResult<{ mode: 'booking' | 'saved'; bookingId?: string }>> {
+    try {
+      const listRes = await BookingService.getByClient(clientId);
+      if (!listRes.success) {
+        return { success: false, error: listRes.error };
+      }
+      const next = findNextUpcomingBooking(listRes.data);
+      if (next) {
+        await updateDoc(doc(db, COLLECTIONS.BOOKINGS, next.id), {
+          requestedStyle,
+          updatedAt: serverTimestamp(),
+        });
+        return { success: true, data: { mode: 'booking', bookingId: next.id } };
+      }
+      await updateDoc(doc(db, COLLECTIONS.USERS, clientId), {
+        savedStyle: { ...requestedStyle, savedAt: serverTimestamp() },
+      });
+      return { success: true, data: { mode: 'saved' } };
     } catch (e) {
       return { success: false, error: String(e) };
     }

@@ -1,4 +1,5 @@
 import { NavigatorScreenParams } from '@react-navigation/native';
+import type { ProfileAnalysisResult } from '@/services/ai.service';
 
 // ─── Auth Stack ───────────────────────────────────────────────────────────────
 
@@ -12,11 +13,25 @@ export type AuthStackParamList = {
 
 // ─── Client Tab Navigator ─────────────────────────────────────────────────────
 
+export type StyleStackParamList = {
+  StyleOnboarding: undefined;
+  StyleResults: { analysis: ProfileAnalysisResult; readOnly?: boolean };
+  StyleChat: {
+    analysis: ProfileAnalysisResult;
+    recommendationPhotos: Record<string, string>;
+  };
+};
+
+export type ProfileStackParamList = {
+  ProfileHome: undefined;
+};
+
 export type ClientTabParamList = {
   Home: undefined;
   Book: undefined;
+  Style: NavigatorScreenParams<StyleStackParamList>;
   History: undefined;
-  Profile: undefined;
+  Profile: NavigatorScreenParams<ProfileStackParamList>;
 };
 
 // ─── Client Stack (nested inside each tab) ───────────────────────────────────
@@ -57,11 +72,6 @@ export type HistoryStackParamList = {
 export type ScheduleStackParamList = {
   ScheduleList: undefined;
   Chat: ChatRouteParams;
-};
-
-export type ProfileStackParamList = {
-  ProfileScreen: undefined;
-  EditProfile: undefined;
 };
 
 // ─── Barber Tab Navigator ─────────────────────────────────────────────────────

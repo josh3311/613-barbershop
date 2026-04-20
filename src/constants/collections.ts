@@ -4,6 +4,8 @@
  */
 export const COLLECTIONS = {
   USERS: 'users',
+  /** Subcollection under each user doc: `users/{uid}/styleChats/{chatId}` */
+  STYLE_CHATS: 'styleChats',
   BARBERS: 'barbers',
   SERVICES: 'services',
   BOOKINGS: 'bookings',

@@ -27,9 +27,10 @@ type ImageSource struct {
 }
 
 type ClaudeRequest struct {
-	Model     string          `json:"model"`
-	MaxTokens int             `json:"max_tokens"`
-	Messages  []ClaudeMessage `json:"messages"`
+	Model       string          `json:"model"`
+	MaxTokens   int             `json:"max_tokens"`
+	System      string          `json:"system,omitempty"`
+	Messages    []ClaudeMessage `json:"messages"`
 }
 
 type ClaudeResponse struct {
@@ -44,15 +45,24 @@ type ClaudeResponse struct {
 }
 
 func callClaude(messages []ClaudeMessage) (string, error) {
+	return callClaudeFull(messages, "", 1024)
+}
+
+func callClaudeFull(messages []ClaudeMessage, system string, maxTokens int) (string, error) {
 	apiKey := os.Getenv("ANTHROPIC_API_KEY")
 	if apiKey == "" {
 		return "", fmt.Errorf("ANTHROPIC_API_KEY not set")
 	}
 
+	if maxTokens <= 0 {
+		maxTokens = 1024
+	}
+
 	reqBody := ClaudeRequest{
-		Model:     "claude-haiku-4-5-20251001",
-		MaxTokens: 1024,
-		Messages:  messages,
+		Model:       "claude-haiku-4-5-20251001",
+		MaxTokens:   maxTokens,
+		System:      system,
+		Messages:    messages,
 	}
 
 	jsonData, err := json.Marshal(reqBody)
