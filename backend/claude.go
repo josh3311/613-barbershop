@@ -50,7 +50,7 @@ func callClaude(messages []ClaudeMessage) (string, error) {
 	}
 
 	reqBody := ClaudeRequest{
-		Model:     "claude-3-5-sonnet-20241022",
+		Model:     "claude-haiku-4-5-20251001",
 		MaxTokens: 1024,
 		Messages:  messages,
 	}

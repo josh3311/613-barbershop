@@ -33,7 +33,7 @@ func main() {
 		c.JSON(200, gin.H{"status": "ok", "service": "613-ai-backend"})
 	})
 
-	r.POST("/api/analyze-face", analyzeFace)
+	r.POST("/api/analyze-profile", analyzeProfile)
 	r.POST("/api/generate-briefing", generateBriefing)
 	r.POST("/api/analyze-style", analyzeStyle)
 	r.POST("/api/portfolio-match", portfolioMatch)
