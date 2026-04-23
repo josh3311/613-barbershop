@@ -2,6 +2,14 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
 
 export async function readImageAsBase64(uri: string): Promise<string> {
+  const trimmedAll = uri.trim();
+  if (/^data:/i.test(trimmedAll)) {
+    const comma = trimmedAll.indexOf(',');
+    if (comma < 0) {
+      throw new Error('Invalid data URL');
+    }
+    return trimmedAll.slice(comma + 1);
+  }
   if (Platform.OS === 'web') {
     const res = await fetch(uri);
     const blob = await res.blob();
@@ -20,6 +28,25 @@ export async function readImageAsBase64(uri: string): Promise<string> {
       reader.readAsDataURL(blob);
     });
   }
+
+  const trimmed = uri.trim();
+  if (/^https?:\/\//i.test(trimmed)) {
+    const ext = inferImageMediaType(trimmed).includes('png') ? 'png' : 'jpg';
+    const baseDir = FileSystem.cacheDirectory ?? '';
+    const localPath = `${baseDir}readimg_${Date.now()}.${ext}`;
+    const { uri: localUri, status } = await FileSystem.downloadAsync(trimmed, localPath);
+    if (status < 200 || status > 299) {
+      throw new Error(`Could not download image (HTTP ${status})`);
+    }
+    try {
+      return await FileSystem.readAsStringAsync(localUri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+    } finally {
+      await FileSystem.deleteAsync(localUri, { idempotent: true }).catch(() => undefined);
+    }
+  }
+
   return FileSystem.readAsStringAsync(uri, {
     encoding: FileSystem.EncodingType.Base64,
   });

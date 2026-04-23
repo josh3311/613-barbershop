@@ -6,11 +6,11 @@ import {
   getDocs,
   onSnapshot,
   updateDoc,
+  setDoc,
   serverTimestamp,
   query,
   where,
   Timestamp,
-  increment,
   deleteField,
 } from 'firebase/firestore';
 import { db } from '@/config/firebase';
@@ -56,6 +56,35 @@ const bookingDoc = (id: string) =>
   doc(db, 'bookings', id).withConverter(bookingConverter);
 
 export const BookingService = {
+  /**
+   * Loyalty stamps: read loyaltyCount (default 0), increment; at 7 reset to 0 and set hasFreecut.
+   */
+  async incrementClientLoyalty(clientId: string): Promise<FirestoreResult<void>> {
+    try {
+      const userRef = doc(db, COLLECTIONS.USERS, clientId);
+      const snap = await getDoc(userRef);
+      const raw = snap.exists() ? snap.data() : undefined;
+      const count = typeof raw?.loyaltyCount === 'number' ? raw.loyaltyCount : 0;
+      const next = count + 1;
+
+      if (!snap.exists()) {
+        await setDoc(userRef, { loyaltyCount: 1 }, { merge: true });
+        return { success: true, data: undefined };
+      }
+      if (next >= 7) {
+        await updateDoc(userRef, {
+          loyaltyCount: 0,
+          hasFreecut: true,
+        });
+      } else {
+        await updateDoc(userRef, { loyaltyCount: next });
+      }
+      return { success: true, data: undefined };
+    } catch (e) {
+      return { success: false, error: String(e) };
+    }
+  },
+
   async getById(id: string): Promise<FirestoreResult<Booking>> {
     try {
       const snap = await getDoc(bookingDoc(id));
@@ -199,6 +228,9 @@ export const BookingService = {
           name: saved.name,
           photoURL: saved.photoURL,
           description: saved.description,
+          ...(typeof saved.barberNotes === 'string' && saved.barberNotes.trim().length > 0
+            ? { barberNotes: saved.barberNotes.trim() }
+            : {}),
         };
       }
 
@@ -262,20 +294,10 @@ export const BookingService = {
         prevStatus !== 'completed' &&
         clientId
       ) {
-        await updateDoc(doc(db, COLLECTIONS.USERS, clientId), {
-          completedCuts: increment(1),
-        });
-      }
-
-      if (payload.rewardClaimed === true && clientId) {
-        const userSnap = await getDoc(doc(db, COLLECTIONS.USERS, clientId));
-        const cuts = typeof userSnap.data()?.completedCuts === 'number'
-          ? (userSnap.data()?.completedCuts as number)
-          : 0;
-        const milestone = Math.floor(cuts / 7) * 7;
-        await updateDoc(doc(db, COLLECTIONS.USERS, clientId), {
-          loyaltyLastClaimedAtCut: milestone,
-        });
+        const loy = await BookingService.incrementClientLoyalty(clientId);
+        if (!loy.success) {
+          console.warn('[BookingService] incrementClientLoyalty failed:', loy.error);
+        }
       }
 
       return { success: true, data: undefined };

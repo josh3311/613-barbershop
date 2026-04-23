@@ -19,17 +19,19 @@ import { ClientTabParamList, StyleStackParamList } from '@/navigation/types';
 import { db } from '@/config/firebase';
 import { COLLECTIONS } from '@/constants/collections';
 import { useAuth } from '@/hooks/useAuth';
+import { BookingService } from '@/services/booking.service';
 import type { ProfileRecord, StyleRecommendation } from '@/services/ai.service';
+import { readImageAsBase64, inferImageMediaType } from '@/utils/imageBase64.utils';
 import {
   UnsplashService,
   STYLE_PHOTO_PLACEHOLDER_URL,
   isStylePhotoPlaceholderUrl,
+  stylePhotoHintsFromProfileRecord,
 } from '@/services/unsplash.service';
 import {
   friendlyBestFor,
   friendlyHairNote,
   friendlyMaintenance,
-  friendlyMatchLine,
 } from '@/utils/styleDisplay.utils';
 
 const C = {
@@ -73,16 +75,19 @@ function getProfileString(
 export default function StyleResultsScreen({ navigation, route }: Props): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const { firebaseUser } = useAuth();
-  const { analysis, readOnly } = route.params;
+  const { analysis, readOnly, selfieUri, selfieDataUrl: routeSelfieDataUrl } = route.params;
   const [saving, setSaving] = React.useState(false);
   const [photos, setPhotos] = useState<Record<string, string>>({});
   const [photosLoading, setPhotosLoading] = useState(true);
+  const [bookBusyStyle, setBookBusyStyle] = useState<string | null>(null);
 
   const recs: StyleRecommendation[] = useMemo(() => {
     const list = analysis.styles?.recommendations;
     if (!Array.isArray(list)) return [];
     return [...list].sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
   }, [analysis.styles]);
+
+  const photoHints = useMemo(() => stylePhotoHintsFromProfileRecord(analysis.profile), [analysis.profile]);
 
   useEffect(() => {
     let cancelled = false;
@@ -93,7 +98,9 @@ export default function StyleResultsScreen({ navigation, route }: Props): React.
       }
       setPhotosLoading(true);
       try {
-        const urls = await Promise.all(recs.map((r) => UnsplashService.getStylePhoto(r.style_name)));
+        const urls = await Promise.all(
+          recs.map((r) => UnsplashService.getStylePhoto(r.style_name, photoHints)),
+        );
         if (cancelled) return;
         const map: Record<string, string> = {};
         recs.forEach((r, i) => {
@@ -108,16 +115,7 @@ export default function StyleResultsScreen({ navigation, route }: Props): React.
     return () => {
       cancelled = true;
     };
-  }, [recs]);
-
-  useEffect(() => {
-    const entries = Object.entries(photos);
-    if (entries.length === 0) return;
-    entries.forEach(([styleName, url]) => {
-      // eslint-disable-next-line no-console
-      console.log('[StyleResults] photo URL for', styleName, ':', url);
-    });
-  }, [photos]);
+  }, [recs, photoHints]);
 
   const p = analysis.profile;
 
@@ -128,12 +126,24 @@ export default function StyleResultsScreen({ navigation, route }: Props): React.
     }
     setSaving(true);
     try {
+      let photoURL: string | undefined;
+      const fromRoute = routeSelfieDataUrl?.trim();
+      if (fromRoute && fromRoute.length > 0) {
+        photoURL = fromRoute.startsWith('data:') ? fromRoute : `data:image/jpeg;base64,${fromRoute}`;
+      } else if (selfieUri && selfieUri.trim().length > 0) {
+        const uri = selfieUri.trim();
+        const b64 = await readImageAsBase64(uri);
+        const mt = inferImageMediaType(uri);
+        photoURL = `data:${mt};base64,${b64}`;
+      }
+
       await setDoc(
         doc(db, COLLECTIONS.USERS, firebaseUser.uid),
         {
           styleProfile: {
             profile: analysis.profile,
             styles: analysis.styles,
+            ...(photoURL ? { photoURL } : {}),
             updatedAt: serverTimestamp(),
           },
         },
@@ -159,6 +169,41 @@ export default function StyleResultsScreen({ navigation, route }: Props): React.
     });
   }
 
+  async function bookThisStyle(item: StyleRecommendation): Promise<void> {
+    if (!firebaseUser?.uid) {
+      Alert.alert('Not signed in', 'Sign in to attach a style to your booking.');
+      return;
+    }
+    setBookBusyStyle(item.style_name);
+    try {
+      const ph =
+        photos[item.style_name] && !isStylePhotoPlaceholderUrl(photos[item.style_name])
+          ? photos[item.style_name]
+          : STYLE_PHOTO_PLACEHOLDER_URL;
+      const res = await BookingService.attachRequestedStyleForClient(firebaseUser.uid, {
+        name: item.style_name,
+        photoURL: ph,
+        description:
+          item.why_it_suits_you?.trim() ||
+          `The look you picked: ${item.style_name}. Your barber can fine-tune it in the chair.`,
+      });
+      if (!res.success) {
+        Alert.alert('Could not attach', res.error);
+        return;
+      }
+      if (res.data.mode === 'booking') {
+        Alert.alert('Style added', 'Style added to your booking! Your barber will see it.');
+      } else {
+        Alert.alert(
+          'Style saved',
+          'Style saved! It will be attached to your next booking automatically',
+        );
+      }
+    } finally {
+      setBookBusyStyle(null);
+    }
+  }
+
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <View style={styles.headerRow}>
@@ -175,7 +220,7 @@ export default function StyleResultsScreen({ navigation, route }: Props): React.
       </View>
 
       <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 200 }]}
+        contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 120 }]}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.summaryCard}>
@@ -206,61 +251,73 @@ export default function StyleResultsScreen({ navigation, route }: Props): React.
         {recs.map((item) => {
           const photoUri = photos[item.style_name];
           const usePlaceholder = isStylePhotoPlaceholderUrl(photoUri);
+          const bookingThis = bookBusyStyle === item.style_name;
+          const rankNum = item.rank ?? 0;
           return (
-          <View key={`${item.rank}-${item.style_name}`} style={styles.styleCard}>
-            <View style={[styles.photoFrame, usePlaceholder && styles.photoFramePlaceholder]}>
-              {photoUri ? (
-                <Image
-                  source={{ uri: photoUri }}
-                  style={[styles.photo, usePlaceholder && styles.photoMuted]}
-                  resizeMode="cover"
-                />
-              ) : (
-                <View style={styles.photoSolid} />
-              )}
-              {usePlaceholder ? (
-                <View style={styles.photoOverlay} pointerEvents="none">
-                  <Text style={styles.photoOverlayText} numberOfLines={3}>
-                    {item.style_name}
-                  </Text>
+            <View key={`${item.rank}-${item.style_name}`} style={styles.styleCard}>
+              <View style={[styles.photoFrame, usePlaceholder && styles.photoFramePlaceholder]}>
+                {photoUri ? (
+                  <Image
+                    source={{ uri: photoUri }}
+                    style={[styles.photo, usePlaceholder && styles.photoMuted]}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={styles.photoSolid} />
+                )}
+                {usePlaceholder ? (
+                  <View style={styles.photoOverlay} pointerEvents="none">
+                    <Text style={styles.photoOverlayText} numberOfLines={3}>
+                      {item.style_name}
+                    </Text>
+                  </View>
+                ) : null}
+                <View style={styles.rankBadge}>
+                  <Text style={styles.rankBadgeText}>#{rankNum}</Text>
                 </View>
-              ) : null}
-              <View style={styles.rankBadge}>
-                <Text style={styles.rankBadgeText}>#{item.rank}</Text>
               </View>
-            </View>
-            <Text style={styles.styleName}>{item.style_name}</Text>
-            <Text style={styles.matchLine}>{friendlyMatchLine(item.suitability_score ?? 0)}</Text>
-            <Text style={styles.whyText}>{item.why_it_suits_you}</Text>
-            <View style={styles.tagRow}>
-              <Tag text={friendlyMaintenance(item.maintenance_level)} />
-              <Tag text={`About ${item.duration_minutes} min`} />
-              {friendlyBestFor(item.best_for) ? (
-                <Tag text={friendlyBestFor(item.best_for)} />
+              <Text style={styles.styleName}>{item.style_name}</Text>
+              <Text style={styles.greatMatchLabel}>Great match for you</Text>
+              <Text style={styles.whyText}>{item.why_it_suits_you}</Text>
+              <View style={styles.tagRow}>
+                <Tag text={friendlyMaintenance(item.maintenance_level)} />
+                <Tag text={`About ${item.duration_minutes} min`} />
+                {friendlyBestFor(item.best_for) ? (
+                  <Tag text={friendlyBestFor(item.best_for)} />
+                ) : null}
+              </View>
+              {friendlyHairNote(item.hair_texture_compatibility) ? (
+                <Text style={styles.hairNote}>
+                  Hair note: {friendlyHairNote(item.hair_texture_compatibility)}
+                </Text>
               ) : null}
+              <TouchableOpacity
+                style={[styles.bookStyleBtn, (photosLoading || bookingThis) && styles.bookStyleBtnDisabled]}
+                onPress={() => void bookThisStyle(item)}
+                disabled={photosLoading || bookingThis}
+                accessibilityRole="button"
+                accessibilityLabel={`Book this style: ${item.style_name}`}
+              >
+                {bookingThis ? (
+                  <ActivityIndicator color={C.bg} size="small" />
+                ) : (
+                  <Text style={styles.bookStyleBtnText}>Book this style</Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.chatOutlineBtn}
+                onPress={openChat}
+                accessibilityRole="button"
+                accessibilityLabel={`Chat about this style: ${item.style_name}`}
+              >
+                <Text style={styles.chatOutlineBtnText}>Chat about this style</Text>
+              </TouchableOpacity>
             </View>
-            {friendlyHairNote(item.hair_texture_compatibility) ? (
-              <Text style={styles.hairNote}>
-                Hair note: {friendlyHairNote(item.hair_texture_compatibility)}
-              </Text>
-            ) : null}
-          </View>
           );
         })}
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
-        {recs.length > 0 && (
-          <TouchableOpacity
-            style={styles.chatBtn}
-            onPress={openChat}
-            accessibilityRole="button"
-            accessibilityLabel="Chat with AI Stylist"
-          >
-            <Ionicons name="chatbubbles-outline" size={20} color={C.bg} style={{ marginRight: 8 }} />
-            <Text style={styles.chatBtnText}>Chat with AI Stylist</Text>
-          </TouchableOpacity>
-        )}
         {readOnly ? (
           <TouchableOpacity
             style={styles.saveBtn}
@@ -273,7 +330,7 @@ export default function StyleResultsScreen({ navigation, route }: Props): React.
         ) : (
           <TouchableOpacity
             style={[styles.saveBtn, saving && styles.saveBtnBusy]}
-            onPress={saveProfile}
+            onPress={() => void saveProfile()}
             disabled={saving}
             accessibilityRole="button"
             accessibilityLabel="Save my style profile"
@@ -395,11 +452,11 @@ const styles = StyleSheet.create({
     marginTop: 14,
     paddingHorizontal: 16,
   },
-  matchLine: {
+  greatMatchLabel: {
     fontSize: 13,
     fontWeight: '700',
     color: C.gold,
-    marginTop: 4,
+    marginTop: 6,
     paddingHorizontal: 16,
   },
   whyText: { fontSize: 14, color: C.sub, lineHeight: 21, marginTop: 10, paddingHorizontal: 16 },
@@ -417,10 +474,34 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: C.muted,
     marginTop: 12,
-    marginBottom: 16,
     paddingHorizontal: 16,
     lineHeight: 17,
   },
+  bookStyleBtn: {
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 10,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: C.gold,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+  },
+  bookStyleBtnDisabled: { opacity: 0.55 },
+  bookStyleBtnText: { fontSize: 15, fontWeight: '800', color: C.bg, letterSpacing: 0.2 },
+  chatOutlineBtn: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: C.gold,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  chatOutlineBtnText: { fontSize: 15, fontWeight: '800', color: C.gold, letterSpacing: 0.2 },
 
   footer: {
     position: 'absolute',
@@ -432,17 +513,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.bg,
     borderTopWidth: 1,
     borderTopColor: C.border,
-    gap: 10,
   },
-  chatBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: C.gold,
-    borderRadius: 14,
-    paddingVertical: 14,
-  },
-  chatBtnText: { fontSize: 15, fontWeight: '800', color: C.bg, letterSpacing: 0.2 },
   saveBtn: { backgroundColor: C.gold, borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
   saveBtnBusy: { opacity: 0.7 },
   saveBtnText: { fontSize: 16, fontWeight: '800', color: C.bg, letterSpacing: 0.3 },

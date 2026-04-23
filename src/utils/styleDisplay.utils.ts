@@ -32,7 +32,20 @@ export function friendlyHairNote(text: string | undefined): string {
 }
 
 export function stripBookStyleMarkers(text: string): string {
-  return text.replace(/\[BOOK_STYLE:[^\]]+\]\s*\n?/g, '').trim();
+  let t = text.replace(/\[BOOK_STYLE:[^\]]+\]\s*\n?/g, '');
+  t = t.replace(/\n*Barber notes:\s*[\s\S]+$/im, '').trim();
+  return t.trim();
+}
+
+/** Text after [BOOK_STYLE:…] and "Barber notes:" (for Firestore requestedStyle.barberNotes). */
+export function extractBarberNotesFromAssistantReply(text: string): string | null {
+  const bookMatch = text.match(/\[BOOK_STYLE:[^\]]+\]/);
+  if (!bookMatch || bookMatch.index === undefined) return null;
+  const afterMarker = text.slice(bookMatch.index + bookMatch[0].length);
+  const m = afterMarker.match(/\bBarber notes:\s*([\s\S]+)$/im);
+  if (!m) return null;
+  const notes = m[1].trim();
+  return notes.length > 0 ? notes : null;
 }
 
 export function firstBookStyleName(text: string): string | null {

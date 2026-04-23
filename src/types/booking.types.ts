@@ -17,6 +17,8 @@ export type RequestedStyle = {
   name: string;
   photoURL: string;
   description: string;
+  /** Detailed cut notes from AI chat (guards, fade height, texture, etc.) */
+  barberNotes?: string;
 };
 
 /**

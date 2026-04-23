@@ -19,16 +19,24 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { doc, getDoc } from 'firebase/firestore';
 import { StyleStackParamList } from '@/navigation/types';
+import { db } from '@/config/firebase';
+import { COLLECTIONS } from '@/constants/collections';
 import { AIChatService, type StyleChatTurn } from '@/services/aiChat.service';
 import {
   AIService,
   type ProfileAnalysisResult,
+  type ProfileRecord,
   type StyleRecommendation,
 } from '@/services/ai.service';
 import { BookingService } from '@/services/booking.service';
 import { useAuth } from '@/hooks/useAuth';
-import { STYLE_PHOTO_PLACEHOLDER_URL } from '@/services/unsplash.service';
+import {
+  UnsplashService,
+  STYLE_PHOTO_PLACEHOLDER_URL,
+  stylePhotoHintsFromProfileRecord,
+} from '@/services/unsplash.service';
 import {
   createStyleChatSession,
   findTodaysStyleChat,
@@ -44,6 +52,7 @@ import {
   firstBookStyleName,
   findRecommendationByBookName,
   mentionedRecommendationPhotos,
+  extractBarberNotesFromAssistantReply,
 } from '@/utils/styleDisplay.utils';
 import type { StyleChatSessionDoc } from '@/types/chat.types';
 import { safeToDate } from '@/utils/date.utils';
@@ -62,6 +71,15 @@ const C = {
   errBorder: '#D4AF37',
   green: '#4CAF50',
 } as const;
+
+const EMPTY_ANALYSIS: ProfileAnalysisResult = {
+  success: true,
+  profile: {},
+  styles: { recommendations: [] },
+};
+
+const PHOTO_ANALYSIS_REPLY_INTRO =
+  "I've analyzed your photo! Here's what I see working for you based on your features...\n\n";
 
 type Props = NativeStackScreenProps<StyleStackParamList, 'StyleChat'>;
 
@@ -94,25 +112,45 @@ function toPersistableMessages(msgs: StyleChatTurn[]): Array<{
 
 function nextChatTitle(msgs: StyleChatTurn[]): string | undefined {
   const first = msgs.find(
-    (m) => m.role === 'user' && !m.hidden && m.content.trim().length > 0,
+    (m) =>
+      m.role === 'user' &&
+      !m.hidden &&
+      (m.content.trim().length > 0 || Boolean((m.imageUrl ?? '').trim())),
   );
-  return first ? titleFromFirstUserText(first.content) : undefined;
+  if (!first) return undefined;
+  if ((first.imageUrl ?? '').trim() && !first.content.trim()) return 'Photo';
+  return titleFromFirstUserText(first.content);
+}
+
+function visibleStoredMessageCount(messages: StyleChatSessionDoc['messages'] | undefined): number {
+  return (messages ?? []).filter((m) => !m.hidden).length;
 }
 
 export default function StyleChatScreen({ navigation, route }: Props): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const { firebaseUser } = useAuth();
-  const { analysis: routeAnalysis, recommendationPhotos: routePhotos } = route.params;
+  const routeAnalysis = route.params?.analysis;
+  const routePhotos = route.params?.recommendationPhotos;
   const scrollRef = useRef<ScrollView>(null);
 
-  const [liveAnalysis, setLiveAnalysis] = useState<ProfileAnalysisResult>(routeAnalysis);
-  const [recommendationPhotos] = useState(routePhotos);
+  const [liveAnalysis, setLiveAnalysis] = useState<ProfileAnalysisResult>(
+    () => routeAnalysis ?? EMPTY_ANALYSIS,
+  );
+  const [recommendationPhotos, setRecommendationPhotos] = useState<Record<string, string>>(
+    () => routePhotos ?? {},
+  );
+  const [hydratingStyleProfile, setHydratingStyleProfile] = useState(() => !routeAnalysis);
 
   const recs: StyleRecommendation[] = React.useMemo(() => {
     const list = liveAnalysis.styles?.recommendations;
     if (!Array.isArray(list)) return [];
     return [...list].sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
   }, [liveAnalysis.styles]);
+
+  const photoHints = React.useMemo(
+    () => stylePhotoHintsFromProfileRecord(liveAnalysis.profile),
+    [liveAnalysis.profile],
+  );
 
   const [messages, setMessages] = useState<StyleChatTurn[]>([]);
   const [chatId, setChatId] = useState<string | null>(null);
@@ -139,7 +177,71 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
   }, []);
 
   useEffect(() => {
-    if (!firebaseUser?.uid) return;
+    if (routeAnalysis) {
+      setLiveAnalysis(routeAnalysis);
+      setHydratingStyleProfile(false);
+      return;
+    }
+    if (!firebaseUser?.uid) {
+      setHydratingStyleProfile(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, COLLECTIONS.USERS, firebaseUser.uid));
+        if (cancelled) return;
+        const sp = snap.data()?.styleProfile as
+          | { profile?: ProfileRecord; styles?: ProfileAnalysisResult['styles'] }
+          | undefined;
+        if (sp?.profile && sp?.styles?.recommendations) {
+          setLiveAnalysis({
+            success: true,
+            profile: sp.profile,
+            styles: sp.styles,
+          });
+        }
+      } finally {
+        if (!cancelled) setHydratingStyleProfile(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [firebaseUser?.uid, routeAnalysis]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (recs.length === 0) {
+      setRecommendationPhotos({});
+      return;
+    }
+    (async () => {
+      try {
+        const urls = await Promise.all(
+          recs.map((r) => UnsplashService.getStylePhoto(r.style_name, photoHints)),
+        );
+        if (cancelled) return;
+        const map: Record<string, string> = {};
+        recs.forEach((r, i) => {
+          map[r.style_name] = urls[i] ?? STYLE_PHOTO_PLACEHOLDER_URL;
+        });
+        setRecommendationPhotos(map);
+      } catch {
+        if (!cancelled) setRecommendationPhotos({});
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [recs, photoHints]);
+
+  useEffect(() => {
+    if (!firebaseUser?.uid) {
+      setSessionReady(true);
+      return;
+    }
+    if (hydratingStyleProfile) return;
     let cancelled = false;
     (async () => {
       try {
@@ -169,7 +271,7 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
     return () => {
       cancelled = true;
     };
-  }, [firebaseUser?.uid]);
+  }, [firebaseUser?.uid, hydratingStyleProfile]);
 
   async function persistChat(msgs: StyleChatTurn[]): Promise<void> {
     if (!firebaseUser?.uid || !chatId) return;
@@ -193,16 +295,35 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
 
   function loadSession(row: { id: string; data: StyleChatSessionDoc }): void {
     setChatId(row.id);
-    setMessages(
-      (row.data.messages ?? []).map((m) => ({
-        role: m.role,
-        content: m.content,
-        ...(m.imageUrl ? { imageUrl: m.imageUrl } : {}),
-        ...(m.hidden ? { hidden: true } : {}),
-      })),
-    );
+    const loaded = (row.data.messages ?? []).map((m) => ({
+      role: m.role,
+      content: m.content,
+      ...(m.imageUrl ? { imageUrl: m.imageUrl } : {}),
+      ...(m.hidden ? { hidden: true } : {}),
+    }));
+    setMessages(loaded);
+    messagesRef.current = loaded;
     setHistoryOpen(false);
     scrollToEnd();
+  }
+
+  async function startNewChat(): Promise<void> {
+    if (!firebaseUser?.uid) {
+      setErrorBanner('Sign in to start a new chat.');
+      return;
+    }
+    if (sending || photoBusy) return;
+    setErrorBanner(null);
+    try {
+      const id = await createStyleChatSession(firebaseUser.uid);
+      setChatId(id);
+      setMessages([]);
+      messagesRef.current = [];
+      setHistoryOpen(false);
+      scrollToEnd();
+    } catch (e) {
+      setErrorBanner(e instanceof Error ? e.message : 'Could not start a new chat.');
+    }
   }
 
   async function sendUserMessage(text: string): Promise<void> {
@@ -237,7 +358,7 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
     }
   }
 
-  async function addStyleToBooking(styleName: string): Promise<void> {
+  async function addStyleToBooking(styleName: string, assistantRaw?: string): Promise<void> {
     if (!firebaseUser?.uid || bookingBusy) return;
     const reco = findRecommendationByBookName(styleName, recs);
     const photoURL =
@@ -247,6 +368,8 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
     const description =
       reco?.why_it_suits_you?.trim() ||
       `The look you picked: ${styleName}. Your barber can fine-tune it with you in the chair.`;
+    const barberNotes =
+      typeof assistantRaw === 'string' ? extractBarberNotesFromAssistantReply(assistantRaw) : null;
 
     setErrorBanner(null);
     setBookingBusy(true);
@@ -254,6 +377,7 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
       name: reco?.style_name ?? styleName,
       photoURL,
       description,
+      ...(barberNotes ? { barberNotes } : {}),
     });
     setBookingBusy(false);
 
@@ -278,10 +402,10 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
 
     const displayUri = uri;
     const prevSnapshot = [...messagesRef.current];
-    const placeholder: StyleChatTurn = { role: 'user', content: '', imageUrl: displayUri };
-    const withPlaceholder = [...prevSnapshot, placeholder];
-    setMessages(withPlaceholder);
-    messagesRef.current = withPlaceholder;
+    const visiblePhotoTurn: StyleChatTurn = { role: 'user', content: '', imageUrl: displayUri };
+    const withPhotoBubble = [...prevSnapshot, visiblePhotoTurn];
+    setMessages(withPhotoBubble);
+    messagesRef.current = withPhotoBubble;
     setPhotoBusy(true);
     setErrorBanner(null);
     scrollToEnd();
@@ -304,11 +428,6 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
         JSON.stringify(newAnalysis) +
         '. Based on this new photo combined with their existing profile, refine your recommendations. What new styles do you see working for them?';
 
-      const visiblePhotoTurn: StyleChatTurn = {
-        role: 'user',
-        content: '',
-        imageUrl: displayUri,
-      };
       const internalTurn: StyleChatTurn = {
         role: 'user',
         content: followUp,
@@ -324,7 +443,10 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
         newAnalysis.profile,
         newRecs,
       );
-      const withAssistant: StyleChatTurn[] = [...threadForAi, { role: 'assistant', content: reply }];
+      const withAssistant: StyleChatTurn[] = [
+        ...threadForAi,
+        { role: 'assistant', content: PHOTO_ANALYSIS_REPLY_INTRO + reply },
+      ];
       setMessages(withAssistant);
       messagesRef.current = withAssistant;
       await persistChat(withAssistant);
@@ -451,14 +573,24 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
           <Ionicons name="chevron-back" size={24} color={C.white} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>AI Stylist</Text>
-        <TouchableOpacity
-          onPress={() => void openHistory()}
-          style={styles.headerRightBtn}
-          accessibilityRole="button"
-          accessibilityLabel="Chat history"
-        >
-          <Ionicons name="time-outline" size={24} color={C.gold} />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            onPress={() => void startNewChat()}
+            style={styles.headerIconBtn}
+            accessibilityRole="button"
+            accessibilityLabel="New chat"
+          >
+            <Ionicons name="add-circle-outline" size={26} color={C.gold} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => void openHistory()}
+            style={styles.headerIconBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Chat history"
+          >
+            <Ionicons name="time-outline" size={24} color={C.gold} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
@@ -557,7 +689,7 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
                   return (
                     <TouchableOpacity
                       style={styles.bookBtn}
-                      onPress={() => void addStyleToBooking(bookName)}
+                      onPress={() => void addStyleToBooking(bookName, raw)}
                       disabled={bookingBusy}
                       accessibilityRole="button"
                       accessibilityLabel={`Add ${bookName} to my next booking`}
@@ -646,6 +778,7 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
                     month: 'short',
                     day: 'numeric',
                   });
+                  const msgCount = visibleStoredMessageCount(item.data.messages);
                   return (
                     <TouchableOpacity
                       style={styles.historyRow}
@@ -655,6 +788,9 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
                       <Text style={styles.historyDate}>{dateStr}</Text>
                       <Text style={styles.historyPreview} numberOfLines={2}>
                         {item.data.title || 'Chat'}
+                      </Text>
+                      <Text style={styles.historyMeta}>
+                        {msgCount} {msgCount === 1 ? 'message' : 'messages'}
                       </Text>
                     </TouchableOpacity>
                   );
@@ -700,7 +836,8 @@ const styles = StyleSheet.create({
     borderBottomColor: C.border,
   },
   backBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  headerRightBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  headerActions: { flexDirection: 'row', alignItems: 'center' },
+  headerIconBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   headerTitle: {
     flex: 1,
     textAlign: 'center',
@@ -865,5 +1002,6 @@ const styles = StyleSheet.create({
     borderBottomColor: C.border,
   },
   historyDate: { fontSize: 12, color: C.gold, fontWeight: '700', marginBottom: 4 },
-  historyPreview: { fontSize: 15, color: C.white },
+  historyPreview: { fontSize: 15, color: C.white, marginBottom: 4 },
+  historyMeta: { fontSize: 12, color: C.sub, fontWeight: '600' },
 });

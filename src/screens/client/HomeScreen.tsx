@@ -1,13 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, Dimensions, StatusBar,
+  TouchableOpacity, Dimensions, StatusBar, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ActivityIndicator } from 'react-native-paper';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { doc, onSnapshot, Timestamp } from 'firebase/firestore';
+import { doc, onSnapshot, Timestamp, updateDoc } from 'firebase/firestore';
 import { ClientTabParamList } from '@/navigation/types';
 import { useAuth } from '@/hooks/useAuth';
 import { BookingService } from '@/services/booking.service';
@@ -57,8 +57,8 @@ function todayMMDD(): string {
 
 type UserLoyaltyMeta = {
   birthday: string | null;
-  completedCuts: number;
-  loyaltyLastClaimedAtCut: number;
+  loyaltyCount: number;
+  hasFreecut: boolean;
 };
 
 function toMs(t: Timestamp | null | undefined | unknown): number {
@@ -135,14 +135,27 @@ export default function HomeScreen({ navigation }: Props): React.JSX.Element {
       const d = snap.data();
       setUserMeta({
         birthday: typeof d?.birthday === 'string' ? d.birthday : null,
-        completedCuts: typeof d?.completedCuts === 'number' ? d.completedCuts : 0,
-        loyaltyLastClaimedAtCut:
-          typeof d?.loyaltyLastClaimedAtCut === 'number' ? d.loyaltyLastClaimedAtCut : 0,
+        loyaltyCount: typeof d?.loyaltyCount === 'number' ? d.loyaltyCount : 0,
+        hasFreecut: d?.hasFreecut === true,
       });
     });
   }, [firebaseUser]);
 
   const nextBooking = useMemo(() => pickNextUpcoming(bookings), [bookings]);
+
+  async function dismissFreeCutBanner(): Promise<void> {
+    if (!firebaseUser) return;
+    try {
+      await updateDoc(doc(db, COLLECTIONS.USERS, firebaseUser.uid), {
+        hasFreecut: false,
+      });
+    } catch (e) {
+      Alert.alert(
+        'Could not update',
+        e instanceof Error ? e.message : 'Please try again.',
+      );
+    }
+  }
 
   const showBirthdayBanner = useMemo(() => {
     if (!firebaseUser || !userMeta?.birthday) return false;
@@ -150,18 +163,6 @@ export default function HomeScreen({ navigation }: Props): React.JSX.Element {
     const key = `${firebaseUser.uid}|${userMeta.birthday}|${new Date().getFullYear()}`;
     return birthdayDismissed !== key;
   }, [firebaseUser, userMeta, birthdayDismissed]);
-
-  const loyalty = useMemo(() => {
-    if (!userMeta) return null;
-    const cuts = userMeta.completedCuts;
-    const last = userMeta.loyaltyLastClaimedAtCut;
-    const mod = cuts % 7;
-    const earned =
-      cuts > 0 && cuts % 7 === 0 && cuts > last;
-    const progress = mod;
-    const untilNext = earned ? 0 : 7 - progress;
-    return { cuts, last, mod, earned, progress, untilNext };
-  }, [userMeta]);
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
@@ -176,9 +177,12 @@ export default function HomeScreen({ navigation }: Props): React.JSX.Element {
       >
         {firebaseUser && showBirthdayBanner && userMeta?.birthday ? (
           <View style={s.birthdayBanner}>
+            <View style={s.birthdayIconWrap}>
+              <Ionicons name="gift-outline" size={22} color={C.bg} />
+            </View>
             <View style={s.birthdayBannerTextWrap}>
               <Text style={s.birthdayTitle}>
-                Happy Birthday! Enjoy a free product on us today 🎂
+                Happy Birthday — enjoy a free product on us today
               </Text>
               <Text style={s.birthdaySub}>Show this to your barber when you arrive</Text>
             </View>
@@ -296,14 +300,14 @@ export default function HomeScreen({ navigation }: Props): React.JSX.Element {
           <View style={s.infoDivider} />
           <View style={s.infoItem}>
             <Ionicons name="location-outline" size={16} color={C.gold} />
-            <Text style={s.infoLabel}>Ottawa, ON</Text>
-            <Text style={s.infoValue}>613 Area</Text>
+            <Text style={s.infoLabel}>Visit us</Text>
+            <Text style={s.infoValue} numberOfLines={2}>598 Rideau St, Ottawa</Text>
           </View>
           <View style={s.infoDivider} />
           <View style={s.infoItem}>
-            <Ionicons name="star-outline" size={16} color={C.gold} />
+            <Ionicons name="star" size={16} color={C.gold} />
             <Text style={s.infoLabel}>Rating</Text>
-            <Text style={s.infoValue}>5.0 ★</Text>
+            <Text style={s.infoValue}>5.0</Text>
           </View>
         </View>
 
@@ -342,38 +346,55 @@ export default function HomeScreen({ navigation }: Props): React.JSX.Element {
           </View>
         </View>
 
-        {firebaseUser && loyalty ? (
+        {firebaseUser && userMeta ? (
           <View style={s.section}>
             <Text style={s.sectionTitle}>LOYALTY REWARDS</Text>
+            {userMeta.hasFreecut ? (
+              <View style={s.freeCutBanner}>
+                <View style={s.freeCutIconWrap}>
+                  <Ionicons name="cut" size={22} color={C.bg} />
+                </View>
+                <View style={s.freeCutTextCol}>
+                  <Text style={s.freeCutTitle}>You earned a free cut on your next booking</Text>
+                  <Text style={s.freeCutSub}>
+                    Every 7 completed visits earns one free haircut in the app. Book whenever you are ready.
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => void dismissFreeCutBanner()}
+                  style={s.freeCutDismiss}
+                  accessibilityRole="button"
+                  accessibilityLabel="Dismiss free cut message"
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                >
+                  <Text style={s.freeCutDismissX}>×</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
             <View style={s.loyaltyCard}>
               <View style={s.loyaltyCardAccent} />
-              {loyalty.earned ? (
-                <>
-                  <Text style={s.loyaltyEarnedTitle}>You earned a free facial steam!</Text>
-                  <Text style={s.loyaltyEarnedSub}>
-                    Show this to your barber at your next visit
-                  </Text>
-                </>
-              ) : (
-                <>
-                  <Text style={s.loyaltyProgressLabel}>
-                    {loyalty.progress}/7
-                  </Text>
-                  <View style={s.loyaltyTrack}>
-                    <View
-                      style={[
-                        s.loyaltyFill,
-                        { width: `${Math.round((loyalty.progress / 7) * 100)}%` },
-                      ]}
-                    />
-                  </View>
-                  <Text style={s.loyaltyHint}>
-                    {loyalty.cuts === 0
-                      ? 'Start your stamp card — book a cut to begin'
-                      : `${loyalty.untilNext} cut${loyalty.untilNext === 1 ? '' : 's'} until your free facial steam`}
-                  </Text>
-                </>
-              )}
+              <Text style={s.loyaltyStampHeading}>
+                Stamps · {userMeta.loyaltyCount} of 7
+              </Text>
+              <View style={s.stampRow}>
+                {Array.from({ length: 7 }, (_, i) => {
+                  const earned = i < userMeta.loyaltyCount;
+                  return (
+                    <View key={i} style={s.stampSlot}>
+                      <Ionicons
+                        name={earned ? 'cut' : 'cut-outline'}
+                        size={22}
+                        color={earned ? C.gold : '#666666'}
+                      />
+                    </View>
+                  );
+                })}
+              </View>
+              <Text style={s.loyaltyHint}>
+                {userMeta.loyaltyCount === 0
+                  ? 'Complete a visit to earn your first stamp'
+                  : `${7 - userMeta.loyaltyCount} more visit${7 - userMeta.loyaltyCount === 1 ? '' : 's'} until a free cut`}
+              </Text>
             </View>
           </View>
         ) : null}
@@ -399,7 +420,7 @@ export default function HomeScreen({ navigation }: Props): React.JSX.Element {
           </View>
         </View>
 
-        <Text style={s.footer}>613 Barbershop · Ottawa, ON</Text>
+        <Text style={s.footer}>613 Barbershop · 598 Rideau St, Ottawa, ON K1N 6A2</Text>
       </ScrollView>
     </View>
   );
@@ -615,6 +636,14 @@ const s = StyleSheet.create({
     marginBottom: 16,
     gap: 10,
   },
+  birthdayIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: 'rgba(10,10,10,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   birthdayBannerTextWrap: { flex: 1, minWidth: 0 },
   birthdayTitle:   { fontSize: 15, fontWeight: '800', color: C.bg, lineHeight: 21 },
   birthdaySub:     { fontSize: 12, fontWeight: '600', color: C.bg, opacity: 0.85, marginTop: 4, lineHeight: 17 },
@@ -630,12 +659,43 @@ const s = StyleSheet.create({
     overflow: 'hidden',
   },
   loyaltyCardAccent: { position: 'absolute', top: 0, left: 0, right: 0, height: 2, backgroundColor: C.gold },
-  loyaltyProgressLabel: { fontSize: 13, fontWeight: '700', color: C.white, marginBottom: 10 },
-  loyaltyTrack:   { height: 8, borderRadius: 4, backgroundColor: '#2A2A2A', overflow: 'hidden', marginBottom: 10 },
-  loyaltyFill:    { height: 8, borderRadius: 4, backgroundColor: C.gold },
-  loyaltyHint:    { fontSize: 12, color: C.sub, lineHeight: 17 },
-  loyaltyEarnedTitle: { fontSize: 16, fontWeight: '800', color: C.gold, marginBottom: 6 },
-  loyaltyEarnedSub:   { fontSize: 12, color: C.sub, lineHeight: 17 },
+  loyaltyStampHeading: { fontSize: 13, fontWeight: '800', color: C.white, marginBottom: 12 },
+  stampRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    gap: 2,
+  },
+  stampSlot: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loyaltyHint: { fontSize: 12, color: C.sub, lineHeight: 17 },
+  freeCutBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: C.gold,
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    marginBottom: 12,
+    gap: 10,
+  },
+  freeCutIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: 'rgba(10,10,10,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  freeCutTextCol: { flex: 1, minWidth: 0 },
+  freeCutTitle: { fontSize: 16, fontWeight: '800', color: C.bg, lineHeight: 22 },
+  freeCutSub: { fontSize: 12, fontWeight: '600', color: C.bg, opacity: 0.9, marginTop: 4, lineHeight: 17 },
+  freeCutDismiss: { padding: 4, marginTop: -4 },
+  freeCutDismissX: { fontSize: 22, fontWeight: '700', color: C.bg, lineHeight: 24 },
 
   footer: { fontSize: 11, color: C.muted, textAlign: 'center', marginBottom: 8 },
 });

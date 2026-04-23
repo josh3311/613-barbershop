@@ -4,7 +4,7 @@ import {
   TouchableOpacity, StatusBar, Alert, Platform,
   Modal, Image, Pressable,
 } from 'react-native';
-import { ActivityIndicator } from 'react-native-paper';
+import { ActivityIndicator, Snackbar, Text as PaperText } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import { CompositeScreenProps } from '@react-navigation/native';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
@@ -106,9 +106,13 @@ function formatTime(date: Date): string {
 function BookingCard({
   booking,
   onMessage,
+  onPatchStatus,
+  onCompleteToast,
 }: {
   booking: Booking;
   onMessage: () => void;
+  onPatchStatus: (bookingId: string, status: BookingStatus) => void;
+  onCompleteToast: () => void;
 }): React.JSX.Element {
   const [styleModal, setStyleModal] = useState(false);
   const [guideModal, setGuideModal] = useState(false);
@@ -131,9 +135,14 @@ function BookingCard({
     booking.status === 'in_progress' ? 'completed'   : null;
 
   async function handleConfirm(): Promise<void> {
+    const prev = booking.status;
     setBusy(true);
-    await BookingService.updateStatus(booking.id, { status: 'confirmed' });
-    // TODO: Send push notification to client — booking confirmed
+    onPatchStatus(booking.id, 'confirmed');
+    const res = await BookingService.updateStatus(booking.id, { status: 'confirmed' });
+    if (!res.success) {
+      onPatchStatus(booking.id, prev);
+      Alert.alert('Could not update', res.error ?? 'Try again.');
+    }
     setBusy(false);
   }
 
@@ -147,12 +156,17 @@ function BookingCard({
           text: 'Decline',
           style: 'destructive',
           onPress: async () => {
+            const prev = booking.status;
             setBusy(true);
-            await BookingService.updateStatus(booking.id, {
+            onPatchStatus(booking.id, 'declined');
+            const res = await BookingService.updateStatus(booking.id, {
               status: 'declined',
               declinedReason: 'Barber unavailable',
-              // TODO: Send push notification to client — booking declined
             });
+            if (!res.success) {
+              onPatchStatus(booking.id, prev);
+              Alert.alert('Could not update', res.error ?? 'Try again.');
+            }
             setBusy(false);
           },
         },
@@ -173,17 +187,31 @@ function BookingCard({
       );
       return;
     }
+    const prev = booking.status;
     setBusy(true);
-    await BookingService.updateStatus(booking.id, { status: advanceNext });
+    onPatchStatus(booking.id, advanceNext);
+    const res = await BookingService.updateStatus(booking.id, { status: advanceNext });
+    if (!res.success) {
+      onPatchStatus(booking.id, prev);
+      Alert.alert('Could not update', res.error ?? 'Try again.');
+    }
     setBusy(false);
   }
 
   async function completeVisit(rewardClaimed: boolean): Promise<void> {
+    const prev = booking.status;
     setBusy(true);
-    await BookingService.updateStatus(booking.id, {
+    onPatchStatus(booking.id, 'completed');
+    const res = await BookingService.updateStatus(booking.id, {
       status: 'completed',
       ...(rewardClaimed ? { rewardClaimed: true } : {}),
     });
+    if (!res.success) {
+      onPatchStatus(booking.id, prev);
+      Alert.alert('Could not update', res.error ?? 'Try again.');
+    } else {
+      onCompleteToast();
+    }
     setBusy(false);
   }
 
@@ -248,7 +276,7 @@ function BookingCard({
             onPress={() => setStyleModal(true)}
             activeOpacity={0.85}
             accessibilityRole="button"
-            accessibilityLabel={`Wants ${booking.requestedStyle.name}`}
+            accessibilityLabel={`Client wants ${booking.requestedStyle.name}`}
           >
             <Image
               source={{ uri: booking.requestedStyle.photoURL }}
@@ -256,8 +284,13 @@ function BookingCard({
             />
             <View style={s.requestedTextCol}>
               <Text style={s.requestedWantsLine} numberOfLines={2}>
-                Wants: {booking.requestedStyle.name}
+                Client wants: {booking.requestedStyle.name}
               </Text>
+              {booking.requestedStyle.barberNotes ? (
+                <Text style={s.requestedBarberNotes} numberOfLines={4}>
+                  {booking.requestedStyle.barberNotes}
+                </Text>
+              ) : null}
             </View>
             <Ionicons name="chevron-forward" size={18} color={C.gold} />
           </TouchableOpacity>
@@ -355,6 +388,12 @@ function BookingCard({
             <Image source={{ uri: booking.requestedStyle.photoURL }} style={s.modalPhoto} resizeMode="cover" />
           )}
           <Text style={s.modalDesc}>{booking.requestedStyle?.description}</Text>
+          {booking.requestedStyle?.barberNotes ? (
+            <View style={s.modalNotesBlock}>
+              <Text style={s.modalNotesLabel}>Barber notes</Text>
+              <Text style={s.modalNotesBody}>{booking.requestedStyle.barberNotes}</Text>
+            </View>
+          ) : null}
           <TouchableOpacity
             style={s.guideBtn}
             onPress={() => void openCutGuide()}
@@ -425,6 +464,13 @@ export default function ScheduleScreen({ navigation }: Props): React.JSX.Element
   const [selIdx,      setSelIdx]      = useState(0);
   const [allBookings, setAllBookings] = useState<Booking[]>([]);
   const [loading,     setLoading]     = useState(true);
+  const [completeSnack, setCompleteSnack] = useState(false);
+
+  function patchBookingStatus(bookingId: string, status: BookingStatus): void {
+    setAllBookings((prev) =>
+      prev.map((b) => (b.id === bookingId ? { ...b, status } : b)),
+    );
+  }
 
   // ── Real-time listener ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -550,6 +596,8 @@ export default function ScheduleScreen({ navigation }: Props): React.JSX.Element
             <BookingCard
               key={b.id}
               booking={b}
+              onPatchStatus={patchBookingStatus}
+              onCompleteToast={() => setCompleteSnack(true)}
               onMessage={() =>
                 navigation.navigate('Chat', {
                   clientId: b.clientId,
@@ -563,6 +611,16 @@ export default function ScheduleScreen({ navigation }: Props): React.JSX.Element
           ))}
         </ScrollView>
       )}
+
+      <Snackbar
+        visible={completeSnack}
+        onDismiss={() => setCompleteSnack(false)}
+        duration={2200}
+        style={{ backgroundColor: C.gold }}
+        wrapperStyle={{ paddingHorizontal: 16 }}
+      >
+        <PaperText style={{ color: C.bg, fontWeight: '800' }}>Booking completed</PaperText>
+      </Snackbar>
     </View>
   );
 }
@@ -686,6 +744,13 @@ const s = StyleSheet.create({
   requestedThumb: { width: 50, height: 50, borderRadius: 8, backgroundColor: C.greyBg },
   requestedTextCol: { flex: 1, minWidth: 0 },
   requestedWantsLine: { fontSize: 14, fontWeight: '800', color: C.white },
+  requestedBarberNotes: {
+    marginTop: 6,
+    fontSize: 12,
+    color: C.sub,
+    lineHeight: 17,
+    fontWeight: '500',
+  },
 
   modalBackdrop: {
     flex: 1,
@@ -709,6 +774,15 @@ const s = StyleSheet.create({
     marginBottom: 12,
   },
   modalDesc: { fontSize: 14, color: C.sub, lineHeight: 21, marginBottom: 16 },
+  modalNotesBlock: { marginBottom: 16, width: '100%' },
+  modalNotesLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: C.gold,
+    letterSpacing: 1,
+    marginBottom: 6,
+  },
+  modalNotesBody: { fontSize: 13, color: C.white, lineHeight: 20 },
   guideBtn: {
     backgroundColor: C.gold,
     borderRadius: 12,

@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -53,7 +54,7 @@ func analyzeProfile(c *gin.Context) {
 			Content: []ClaudeContent{
 				{
 					Type: "text",
-					Text: `You are an AI style consultant for 613 Barbershop in Ottawa.
+					Text: `You are an AI style consultant for 613 Barbershop at 598 Rideau St, Ottawa, ON K1N 6A2, Canada.
 Analyze this photo and return ONLY valid JSON, no markdown, no backticks, no extra text:
 
 {
@@ -117,7 +118,7 @@ hair_texture must be one of: coily, kinky, wavy, straight, curly, unknown`,
 			Content: []ClaudeContent{
 				{
 					Type: "text",
-					Text: fmt.Sprintf(`You are an expert barber at 613 Barbershop in Ottawa.
+					Text: fmt.Sprintf(`You are an expert barber at 613 Barbershop, 598 Rideau St, Ottawa, ON K1N 6A2, Canada.
 
 Client profile: %s
 
@@ -204,7 +205,32 @@ func portfolioMatch(c *gin.Context) {
 }
 
 type stylePhotoRequest struct {
-	StyleName string `json:"style_name"`
+	StyleName    string `json:"style_name"`
+	Ethnicity    string `json:"ethnicity,omitempty"`
+	HairTexture  string `json:"hair_texture,omitempty"`
+	FaceShape    string `json:"face_shape,omitempty"`
+}
+
+// buildStylePhotoUnsplashQuery returns an ethnicity-aware Unsplash search string.
+func buildStylePhotoUnsplashQuery(styleName, ethnicity string) string {
+	name := strings.TrimSpace(styleName)
+	if name == "" {
+		return ""
+	}
+	e := strings.ToLower(strings.TrimSpace(ethnicity))
+	if strings.Contains(e, "black") || strings.Contains(e, "afro") {
+		return name + " haircut Black man"
+	}
+	if strings.Contains(e, "asian") {
+		return name + " haircut Asian man"
+	}
+	if strings.Contains(e, "latino") || strings.Contains(e, "latin") {
+		return name + " haircut Latino man"
+	}
+	if strings.Contains(e, "white") || strings.Contains(e, "european") {
+		return name + " haircut man"
+	}
+	return name + " haircut men"
 }
 
 type unsplashSearchAPIResponse struct {
@@ -235,8 +261,12 @@ func stylePhoto(c *gin.Context) {
 		return
 	}
 
+	q := buildStylePhotoUnsplashQuery(name, req.Ethnicity)
+	if q == "" {
+		q = strings.TrimSpace(name) + " haircut men"
+	}
 	vals := url.Values{}
-	vals.Set("query", strings.TrimSpace(name)+" haircut men")
+	vals.Set("query", q)
 	vals.Set("per_page", "1")
 	vals.Set("client_id", key)
 	full := "https://api.unsplash.com/search/photos?" + vals.Encode()
@@ -300,11 +330,53 @@ func styleChat(c *gin.Context) {
 		if recStr == "" || recStr == "null" {
 			recStr = "[]"
 		}
-		system = fmt.Sprintf(
-			`You are a friendly barber at 613 Barbershop helping a client choose their next haircut. You know their style profile: %s. Their top recommendations are: %s. Speak casually and in plain English. No jargon. When recommending a style, mention it by its exact name from the recommendations list. If the client says they want to book a style or add it to their booking, respond with this exact marker on its own line: [BOOK_STYLE:Style Name Here]`,
-			profileStr,
-			recStr,
-		)
+		loc, err := time.LoadLocation("America/Toronto")
+		if err != nil {
+			loc = time.UTC
+		}
+		now := time.Now().In(loc)
+		dateStr := now.Format("Monday, January 2, 2006")
+		yearStr := fmt.Sprintf("%d", now.Year())
+		system = strings.Join([]string{
+			"You are an expert barber and AI stylist at 613 Barbershop, 598 Rideau St, Ottawa, ON K1N 6A2, Canada.",
+			"",
+			"Client profile: " + profileStr,
+			"Their current style recommendations: " + recStr,
+			"Today's date: " + dateStr,
+			"",
+			"SHOP KNOWLEDGE:",
+			"Location: 598 Rideau St, Ottawa, ON K1N 6A2, Canada. Give this full address when clients ask where the shop is.",
+			"Services and prices: Fade $40 (30 min); Haircut $35 (45 min); Beard Trim $25 (20 min); Beard + Cut $50 (60 min).",
+			"Loyalty: every 7 completed cuts earns one free cut, tracked automatically in the app.",
+			"Booking: real-time in-app booking; barber confirms each appointment. Free cancellation up to 2 hours before the appointment.",
+			"Barber services: professional cuts, shape-ups, fades, beard trimming. Barber profiles are available in the app.",
+			"AI features: photo-based style analysis, personalized recommendations with real reference photos, AI stylist chat.",
+			"Answer shop questions only from this knowledge. If unsure, tell the client to confirm in the app. Proactively mention loyalty or other benefits when it fits. Do not use emojis.",
+			"",
+			"CONTEXT — TRENDING HAIR (use " + yearStr + ", not outdated looks):",
+			"Today's date is " + dateStr + ". You are aware of current trending haircut styles for " + yearStr + ". Always recommend styles that are currently trending when it fits the client.",
+			"For Black men in " + yearStr + ", trending styles often include: high top fades, temp fades, drop fades, Edgar cuts, twist outs, loc styles, 360 waves, and shape-ups with designs.",
+			"",
+			"YOUR JOB:",
+			"- Recommend the most current trending styles for " + yearStr + " that suit this specific client",
+			"- Always consider: their face shape, hair texture, skin tone, ethnicity, and lifestyle",
+			"- For Black clients with coily/kinky hair, prioritize: temp fades, drop fades, high top fades, shape-ups with designs, 360 waves, twist outs, locs, Edgar cuts",
+			"- For Asian clients: two-block cuts, textured crops, perms, curtain bangs",
+			"- For Latino clients: temple fades, Edgar cuts, slick backs, burst fades",
+			"- Always mention HOW LONG the style takes and HOW EASY it is to maintain",
+			"- If client doesn't know what they want, ask 3 quick questions: occasion, maintenance preference, how often they visit the barber",
+			"- Then recommend 3 specific styles with reasons why each suits them personally",
+			"- NEVER recommend outdated styles",
+			"- Speak casually like a friendly expert barber — not like a robot",
+			"",
+			"BOOKING INTEGRATION:",
+			"- When client picks a style, ask: \"Want me to add this to your booking with full specs for your barber?\"",
+			"- When they say yes, create a detailed barber brief and use [BOOK_STYLE:StyleName] marker",
+			"- The barber brief format: Style name + specific details (guard numbers, fade height, design details, texture treatment) + client's hair texture + any special requests",
+			"- Example: [BOOK_STYLE:Temp Fade with 360 Waves] followed by \"Barber notes: Start with #1.5 on sides, temp fade at the temple, blend to skin, 360 wave pattern on top, shape-up the hairline, client has coily type 4 hair\"",
+			"",
+			"YOU CANNOT create bookings or see the calendar. Direct booking time to the Book tab.",
+		}, "\n")
 	}
 	if system == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "system (or profile and recommendations) is required"})
@@ -395,4 +467,9 @@ func barberCutGuide(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, parsed)
+}
+
+// tryOn is a stub; virtual try-on is paused until a face-preserving solution is available.
+func tryOn(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"error": "Feature coming soon"})
 }

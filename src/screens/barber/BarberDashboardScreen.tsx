@@ -29,7 +29,7 @@ import {
   Alert,
   Text as RNText,
 } from 'react-native';
-import { Text, ActivityIndicator } from 'react-native-paper';
+import { Text, ActivityIndicator, Snackbar } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BarberService } from '@/services/barber.service';
@@ -316,14 +316,6 @@ function BarberAppointmentCard({
   const [busy, setBusy] = useState(false);
   const cfg = STATUS_CFG[item.status] ?? STATUS_CFG.pending;
 
-  // Single-button advance for post-confirm statuses
-  const advanceLabel = item.status === 'confirmed'   ? 'Mark In Chair'
-                     : item.status === 'in_progress' ? 'Complete'
-                     : null;
-  const advanceNext: BookingStatus | null =
-    item.status === 'confirmed'   ? 'in_progress' :
-    item.status === 'in_progress' ? 'completed'   : null;
-
   async function handleConfirm(): Promise<void> {
     setBusy(true);
     await onAction(item.id, 'confirmed');
@@ -349,27 +341,17 @@ function BarberAppointmentCard({
     );
   }
 
-  async function handleAdvance(): Promise<void> {
-    if (!advanceNext) return;
-    if (advanceNext === 'completed') {
-      Alert.alert(
-        'Complete visit',
-        'Did this client redeem a free facial steam loyalty reward on this visit?',
-        [
-          { text: 'No', style: 'cancel', onPress: () => { void completeVisit(false); } },
-          { text: 'Yes, redeemed', onPress: () => { void completeVisit(true); } },
-        ],
-      );
-      return;
-    }
+  async function handleMarkInChair(): Promise<void> {
     setBusy(true);
-    await onAction(item.id, advanceNext);
+    await onAction(item.id, 'in_progress');
     setBusy(false);
   }
 
-  async function completeVisit(rewardClaimed: boolean): Promise<void> {
+  // Direct complete — no intermediate Alert dialog (Alert.cancel onPress is unreliable on web).
+  async function handleComplete(): Promise<void> {
+    console.log('Complete tapped on card for booking:', item.id, 'current status:', item.status);
     setBusy(true);
-    await onAction(item.id, 'completed', undefined, rewardClaimed);
+    await onAction(item.id, 'completed');
     setBusy(false);
   }
 
@@ -424,15 +406,38 @@ function BarberAppointmentCard({
             <Text style={bc.declineBtnText}>Decline</Text>
           </TouchableOpacity>
         </View>
-      ) : advanceLabel && advanceNext ? (
+      ) : item.status === 'confirmed' ? (
+        <View style={bc.actionRow}>
+          <TouchableOpacity
+            style={bc.inChairBtn}
+            onPress={handleMarkInChair}
+            accessibilityRole="button"
+            accessibilityLabel="Mark client in chair"
+            activeOpacity={0.8}
+          >
+            <Text style={bc.inChairBtnText}>In Chair  →</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={bc.completeBtn}
+            onPress={handleComplete}
+            accessibilityRole="button"
+            accessibilityLabel="Mark booking complete"
+            activeOpacity={0.8}
+          >
+            <Ionicons name="checkmark-done-outline" size={14} color={C.bg} style={{ marginRight: 5 }} />
+            <Text style={bc.completeBtnText}>Complete</Text>
+          </TouchableOpacity>
+        </View>
+      ) : item.status === 'in_progress' ? (
         <TouchableOpacity
-          onPress={handleAdvance}
-          style={bc.actionBtn}
+          onPress={handleComplete}
+          style={bc.completeBtnFull}
           accessibilityRole="button"
-          accessibilityLabel={advanceLabel}
+          accessibilityLabel="Mark booking complete"
           activeOpacity={0.8}
         >
-          <Text style={bc.actionBtnText}>{advanceLabel}  →</Text>
+          <Ionicons name="checkmark-done-outline" size={16} color={C.bg} style={{ marginRight: 6 }} />
+          <Text style={bc.completeBtnFullText}>Complete  ✓</Text>
         </TouchableOpacity>
       ) : null}
 
@@ -462,13 +467,6 @@ const bc = StyleSheet.create({
   metaIcon:{ fontSize: 12 },
   metaText:{ fontSize: 12, color: C.grey },
   metaDot: { fontSize: 12, color: C.muted },
-  actionBtn: {
-    backgroundColor: C.card, borderRadius: 10,
-    height: 38, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: C.goldBorder,
-  },
-  actionBtnText: { fontSize: 13, fontWeight: '700', color: C.gold },
-
   actionRow:      { flexDirection: 'row', gap: 10 },
   confirmBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
@@ -483,6 +481,30 @@ const bc = StyleSheet.create({
     borderWidth: 1, borderColor: C.dangerBdr,
   },
   declineBtnText: { fontSize: 13, fontWeight: '800', color: C.red },
+
+  // confirmed → two-button row
+  inChairBtn: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: C.card, borderRadius: 10, height: 40,
+    borderWidth: 1, borderColor: C.goldBorder,
+  },
+  inChairBtnText: { fontSize: 13, fontWeight: '700', color: C.gold },
+  completeBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: C.green, borderRadius: 10, height: 40,
+    shadowColor: C.green, shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.4, shadowRadius: 8, elevation: 6,
+  },
+  completeBtnText: { fontSize: 13, fontWeight: '800', color: C.bg },
+
+  // in_progress → full-width complete
+  completeBtnFull: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: C.green, borderRadius: 10, height: 42,
+    shadowColor: C.green, shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.4, shadowRadius: 8, elevation: 6,
+  },
+  completeBtnFullText: { fontSize: 14, fontWeight: '800', color: C.bg },
 
   busyRow:  { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 },
   busyText: { fontSize: 13, color: C.sub },
@@ -506,7 +528,7 @@ function AddWalkInModal({ visible, onClose }: { visible: boolean; onClose: () =>
           <View style={wm.handle} />
           <Text style={wm.title}>Add Walk-In Client</Text>
           <Text style={wm.sub}>
-            Full walk-in booking form coming soon.{'\n'}This will let you assign a barber, service, and instant slot.
+            Register a walk-in by assigning a barber, service, and time slot. Connect your full intake form here when you are ready.
           </Text>
           <TouchableOpacity style={wm.closeBtn} onPress={onClose}>
             <Text style={wm.closeBtnText}>Close</Text>
@@ -564,6 +586,7 @@ export default function BarberDashboardScreen(): React.JSX.Element {
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showModal,  setShowModal]  = useState(false);
+  const [completeSnack, setCompleteSnack] = useState(false);
 
   // ── Real-time listener (barber view) ───────────────────────────────────────
   useEffect(() => {
@@ -645,25 +668,42 @@ export default function BarberDashboardScreen(): React.JSX.Element {
     declinedReason?: string,
     rewardClaimed?: boolean,
   ): Promise<void> {
+    console.log('Complete tapped for booking:', bookingId);
     const prevStatus = bookings.find((b) => b.id === bookingId)?.status;
-    setBookings((prev) =>
-      prev.map((b) => (b.id === bookingId ? { ...b, status: newStatus } : b)),
-    );
-    const result = await BookingService.updateStatus(bookingId, {
-      status: newStatus,
-      ...(declinedReason ? { declinedReason } : {}),
-      ...(rewardClaimed ? { rewardClaimed: true } : {}),
-    });
-    if (!result.success) {
+    console.log('Current status:', prevStatus, '→ New status:', newStatus);
+
+    try {
+      setBookings((prev) =>
+        prev.map((b) => (b.id === bookingId ? { ...b, status: newStatus } : b)),
+      );
+      const result = await BookingService.updateStatus(bookingId, {
+        status: newStatus,
+        ...(declinedReason ? { declinedReason } : {}),
+        ...(rewardClaimed ? { rewardClaimed: true } : {}),
+      });
+      console.log('BookingService.updateStatus result:', result);
+      if (!result.success) {
+        if (prevStatus !== undefined) {
+          setBookings((prev) =>
+            prev.map((b) => (b.id === bookingId ? { ...b, status: prevStatus } : b)),
+          );
+        }
+        Alert.alert('Could not update', result.error ?? 'Please try again.');
+        return;
+      }
+      if (newStatus === 'completed') {
+        setCompleteSnack(true);
+      }
+    } catch (err: unknown) {
+      console.error('Complete failed:', err);
       if (prevStatus !== undefined) {
         setBookings((prev) =>
           prev.map((b) => (b.id === bookingId ? { ...b, status: prevStatus } : b)),
         );
       }
-      Alert.alert('Could not update', result.error ?? 'Please try again.');
-      return;
+      const msg = err instanceof Error ? err.message : String(err);
+      Alert.alert('Error', msg);
     }
-    // TODO: Send push notification to client when status changes
   }
 
   // ── Reassign (owner only) ──────────────────────────────────────────────────
@@ -890,6 +930,16 @@ export default function BarberDashboardScreen(): React.JSX.Element {
       </ScrollView>
 
       <AddWalkInModal visible={showModal} onClose={() => setShowModal(false)} />
+
+      <Snackbar
+        visible={completeSnack}
+        onDismiss={() => setCompleteSnack(false)}
+        duration={2200}
+        style={{ backgroundColor: C.gold }}
+        wrapperStyle={{ paddingHorizontal: 16 }}
+      >
+        <RNText style={{ color: C.bg, fontWeight: '800' }}>Booking completed</RNText>
+      </Snackbar>
     </View>
   );
 }

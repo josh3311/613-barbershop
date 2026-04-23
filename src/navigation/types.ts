@@ -15,10 +15,17 @@ export type AuthStackParamList = {
 
 export type StyleStackParamList = {
   StyleOnboarding: undefined;
-  StyleResults: { analysis: ProfileAnalysisResult; readOnly?: boolean };
-  StyleChat: {
+  StyleResults: {
     analysis: ProfileAnalysisResult;
-    recommendationPhotos: Record<string, string>;
+    readOnly?: boolean;
+    selfieUri?: string;
+    /** Raw base64 data URL saved to Firestore on "Save profile" (no Storage). */
+    selfieDataUrl?: string;
+  };
+  /** Omit params to load saved `styleProfile` from Firestore, or start with an empty profile. */
+  StyleChat: {
+    analysis?: ProfileAnalysisResult;
+    recommendationPhotos?: Record<string, string>;
   };
 };
 
