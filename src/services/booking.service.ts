@@ -33,6 +33,20 @@ const toMs = (t: Timestamp | null | undefined | unknown): number => {
   return Number(t);
 };
 
+/** Resolve the client's Firebase uid from raw Firestore booking fields (supports legacy names). */
+function resolveBookingClientUserId(
+  raw: Record<string, unknown> | undefined,
+): string | null {
+  if (!raw) return null;
+  const c = raw.clientId;
+  if (typeof c === 'string' && c.trim().length > 0) return c.trim();
+  const u = raw.userId;
+  if (typeof u === 'string' && u.trim().length > 0) return u.trim();
+  const cu = raw.customerUserId;
+  if (typeof cu === 'string' && cu.trim().length > 0) return cu.trim();
+  return null;
+}
+
 function findNextUpcomingBooking(bookings: Booking[]): Booking | null {
   const now = Date.now();
   const eligible = bookings.filter((b) => {
@@ -58,30 +72,115 @@ const bookingDoc = (id: string) =>
 export const BookingService = {
   /**
    * Loyalty stamps: read loyaltyCount (default 0), increment; at 7 reset to 0 and set hasFreecut.
+   * `clientUserId` is the client's Firebase Auth uid (field on booking: `clientId`, or legacy `userId` / `customerUserId`).
    */
-  async incrementClientLoyalty(clientId: string): Promise<FirestoreResult<void>> {
+  async incrementClientLoyalty(clientUserId: string): Promise<FirestoreResult<void>> {
+    console.log('[loyalty] start for user:', clientUserId);
     try {
-      const userRef = doc(db, COLLECTIONS.USERS, clientId);
-      const snap = await getDoc(userRef);
-      const raw = snap.exists() ? snap.data() : undefined;
-      const count = typeof raw?.loyaltyCount === 'number' ? raw.loyaltyCount : 0;
-      const next = count + 1;
+      const uid = (clientUserId ?? '').trim();
+      if (!uid) {
+        console.log('[loyalty] skip empty clientUserId');
+        return { success: false, error: 'Missing client user id' };
+      }
 
-      if (!snap.exists()) {
-        await setDoc(userRef, { loyaltyCount: 1 }, { merge: true });
-        return { success: true, data: undefined };
-      }
-      if (next >= 7) {
-        await updateDoc(userRef, {
-          loyaltyCount: 0,
-          hasFreecut: true,
-        });
+      const userRef = doc(db, COLLECTIONS.USERS, uid);
+      const snap = await getDoc(userRef);
+      const readCount =
+        snap.exists() && typeof snap.data()?.loyaltyCount === 'number'
+          ? (snap.data()?.loyaltyCount as number)
+          : 0;
+      console.log('[loyalty] read loyaltyCount:', readCount, 'userDocExists:', snap.exists());
+
+      const nextStamp = readCount + 1;
+      let newCount: number;
+      let hasFreecut: boolean | undefined;
+
+      if (nextStamp >= 7) {
+        newCount = 0;
+        hasFreecut = true;
       } else {
-        await updateDoc(userRef, { loyaltyCount: next });
+        newCount = nextStamp;
+        hasFreecut = undefined;
       }
+
+      const patch: Record<string, unknown> = {
+        loyaltyCount: newCount,
+        updatedAt: serverTimestamp(),
+      };
+      if (hasFreecut === true) {
+        patch.hasFreecut = true;
+      }
+
+      await setDoc(userRef, patch, { merge: true });
+      console.log(
+        '[loyalty] wrote loyaltyCount:',
+        newCount,
+        'hasFreecut:',
+        hasFreecut === true ? true : '(unchanged)',
+      );
       return { success: true, data: undefined };
-    } catch (e) {
-      return { success: false, error: String(e) };
+    } catch (err) {
+      console.error('[loyalty] FAILED:', err);
+      return { success: false, error: String(err) };
+    }
+  },
+
+  /**
+   * One-time / admin: award loyalty for completed bookings missing `loyaltyAwarded`.
+   */
+  async backfillLoyaltyForCompletedBookings(): Promise<
+    FirestoreResult<{ processed: number; skipped: number; errors: string[] }>
+  > {
+    console.log('[updateStatus] backfill loyalty scan start');
+    try {
+      const q = query(
+        collection(db, COLLECTIONS.BOOKINGS),
+        where('status', '==', 'completed'),
+      );
+      const snap = await getDocs(q);
+      let processed = 0;
+      let skipped = 0;
+      const errors: string[] = [];
+
+      for (const d of snap.docs) {
+        const raw = d.data() as Record<string, unknown>;
+        if (raw.loyaltyAwarded === true) {
+          skipped += 1;
+          continue;
+        }
+        const clientUserId = resolveBookingClientUserId(raw);
+        if (!clientUserId) {
+          errors.push(`${d.id}: no client uid on booking`);
+          continue;
+        }
+        console.log('[updateStatus] backfill processing booking:', d.id, 'client:', clientUserId);
+        const loy = await BookingService.incrementClientLoyalty(clientUserId);
+        if (!loy.success) {
+          errors.push(`${d.id}: ${loy.error}`);
+          continue;
+        }
+        try {
+          await updateDoc(doc(db, COLLECTIONS.BOOKINGS, d.id), {
+            loyaltyAwarded: true,
+            updatedAt: serverTimestamp(),
+          });
+          processed += 1;
+        } catch (e) {
+          console.error('[updateStatus] backfill FAILED flag booking:', d.id, e);
+          errors.push(`${d.id}: loyaltyAwarded flag ${String(e)}`);
+        }
+      }
+
+      console.log(
+        '[updateStatus] backfill loyalty done processed:',
+        processed,
+        'skipped:',
+        skipped,
+      );
+      return { success: true, data: { processed, skipped, errors } };
+    } catch (err) {
+      console.error('[updateStatus] backfill loyalty FAILED:', err);
+      return { success: false, error: String(err) };
     }
   },
 
@@ -255,11 +354,16 @@ export const BookingService = {
     id: string,
     payload: UpdateBookingStatusPayload,
   ): Promise<FirestoreResult<void>> {
+    console.log('[updateStatus] to:', payload.status, 'booking:', id);
     try {
-      const snap = await getDoc(bookingDoc(id));
-      const prev = snap.exists() ? snap.data() : null;
-      const prevStatus = prev?.status;
-      const clientId = prev?.clientId;
+      const bookingRef = doc(db, COLLECTIONS.BOOKINGS, id);
+      const rawSnap = await getDoc(bookingRef);
+      if (!rawSnap.exists()) {
+        return { success: false, error: `Booking ${id} not found` };
+      }
+      const raw = rawSnap.data() as Record<string, unknown>;
+      const loyaltyAlreadyAwarded = raw.loyaltyAwarded === true;
+      const clientUserId = resolveBookingClientUserId(raw);
 
       const extra: Record<string, unknown> = {};
 
@@ -283,25 +387,43 @@ export const BookingService = {
 
       // Plain doc path: partial updates must not go through bookingConverter.toFirestore
       // (which would spread the full model and can break or omit fields).
-      await updateDoc(doc(db, COLLECTIONS.BOOKINGS, id), {
+      await updateDoc(bookingRef, {
         status: payload.status,
         ...extra,
         updatedAt: serverTimestamp(),
       });
 
-      if (
-        payload.status === 'completed' &&
-        prevStatus !== 'completed' &&
-        clientId
-      ) {
-        const loy = await BookingService.incrementClientLoyalty(clientId);
-        if (!loy.success) {
-          console.warn('[BookingService] incrementClientLoyalty failed:', loy.error);
+      // Award loyalty whenever the booking is (or stays) completed and has not been
+      // stamped yet. Do NOT require prevStatus !== 'completed': if status was already
+      // completed but a prior increment failed (e.g. rules not deployed), barber apps
+      // often send { status: 'completed' } again — we must still stamp once.
+      if (payload.status === 'completed') {
+        if (loyaltyAlreadyAwarded) {
+          console.log('[updateStatus] skip loyalty, already awarded booking:', id);
+        } else if (!clientUserId) {
+          console.log('[updateStatus] skip loyalty, no client uid on booking:', id);
+        } else {
+          console.log('[updateStatus] triggering loyalty for:', clientUserId);
+          const loy = await BookingService.incrementClientLoyalty(clientUserId);
+          if (loy.success) {
+            try {
+              await updateDoc(bookingRef, {
+                loyaltyAwarded: true,
+                updatedAt: serverTimestamp(),
+              });
+              console.log('[updateStatus] loyaltyAwarded set true booking:', id);
+            } catch (err) {
+              console.error('[updateStatus] FAILED setting loyaltyAwarded:', err);
+            }
+          } else {
+            console.log('[updateStatus] loyalty increment failed:', loy.error);
+          }
         }
       }
 
       return { success: true, data: undefined };
     } catch (e) {
+      console.error('[updateStatus] FAILED:', e);
       return { success: false, error: String(e) };
     }
   },

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   Platform,
   StatusBar,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -17,6 +19,7 @@ import { useAdminToday } from '@/context/AdminTodayContext';
 import { AdminStackParamList } from '@/navigation/types';
 import { Booking } from '@/types/booking.types';
 import { Barber } from '@/types/barber.types';
+import { BookingService } from '@/services/booking.service';
 
 const C = {
   bg:     '#0A0A0A',
@@ -149,6 +152,7 @@ export default function AdminDashboardScreen(): React.JSX.Element {
     useNavigation<NativeStackNavigationProp<AdminStackParamList>>();
   const { appUser } = useAuth();
   const { todayBookings, barbersById, loading, error } = useAdminToday();
+  const [backfillBusy, setBackfillBusy] = useState(false);
 
   const stats = useMemo(() => {
     const total = todayBookings.length;
@@ -181,6 +185,45 @@ export default function AdminDashboardScreen(): React.JSX.Element {
 
   const greet = greetingPeriod();
   const ownerName = firstName(appUser?.displayName);
+
+  async function handleBackfillLoyalty(): Promise<void> {
+    if (backfillBusy) return;
+    const msg =
+      'Award loyalty stamps for all completed bookings that are not marked loyaltyAwarded yet? ' +
+      'Run once after fixing Firestore rules.';
+    const go =
+      Platform.OS === 'web'
+        ? window.confirm(msg)
+        : await new Promise<boolean>((resolve) => {
+            Alert.alert('Backfill loyalty', msg, [
+              { text: 'Cancel', onPress: () => resolve(false) },
+              { text: 'Run', onPress: () => resolve(true) },
+            ]);
+          });
+    if (!go) return;
+    setBackfillBusy(true);
+    try {
+      const res = await BookingService.backfillLoyaltyForCompletedBookings();
+      if (!res.success) {
+        const err = res.error ?? 'Unknown error';
+        if (Platform.OS === 'web') window.alert(err);
+        else Alert.alert('Backfill failed', err);
+        return;
+      }
+      const { processed, skipped, errors } = res.data;
+      const detail =
+        `Processed: ${processed}\nAlready stamped: ${skipped}` +
+        (errors.length ? `\nIssues:\n${errors.slice(0, 8).join('\n')}` : '');
+      if (Platform.OS === 'web') window.alert(detail);
+      else Alert.alert('Backfill loyalty', detail);
+    } catch (e) {
+      const err = e instanceof Error ? e.message : String(e);
+      if (Platform.OS === 'web') window.alert(err);
+      else Alert.alert('Backfill failed', err);
+    } finally {
+      setBackfillBusy(false);
+    }
+  }
 
   return (
     <View style={[s.root, { paddingTop: insets.top }]}>
@@ -239,6 +282,20 @@ export default function AdminDashboardScreen(): React.JSX.Element {
                 </Text>
               </View>
             </View>
+
+            <TouchableOpacity
+              style={s.backfillBtn}
+              onPress={() => void handleBackfillLoyalty()}
+              disabled={backfillBusy}
+              accessibilityRole="button"
+              accessibilityLabel="Backfill loyalty stamps for completed bookings"
+            >
+              {backfillBusy ? (
+                <ActivityIndicator color={C.gold} />
+              ) : (
+                <Text style={s.backfillBtnText}>Backfill loyalty</Text>
+              )}
+            </TouchableOpacity>
 
             <Text style={s.sectionLabel}>Barbers</Text>
             {barberRows.length === 0 ? (
@@ -365,6 +422,24 @@ const s = StyleSheet.create({
     letterSpacing: 1.5,
     paddingHorizontal: 16,
     marginBottom: 10,
+  },
+  backfillBtn: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: C.gold + '55',
+    backgroundColor: '#161616',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+  },
+  backfillBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: C.gold,
+    letterSpacing: 0.5,
   },
   badgeRow: {
     flexDirection: 'row',

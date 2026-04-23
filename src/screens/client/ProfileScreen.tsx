@@ -8,6 +8,8 @@ import {
   Dimensions,
   Modal,
   Pressable,
+  Alert,
+  Platform,
 } from 'react-native';
 import { Text } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
@@ -241,6 +243,46 @@ export default function ProfileScreen({ navigation }: Props): React.JSX.Element 
     ? new Date(firebaseUser.metadata.creationTime).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
     : '—';
 
+  async function handleChangePassword(): Promise<void> {
+    const email = (firebaseUser?.email ?? '').trim();
+    if (!email) {
+      if (Platform.OS === 'web') {
+        window.alert('We could not find an email address on your account.');
+      } else {
+        Alert.alert('Change Password', 'We could not find an email address on your account.');
+      }
+      return;
+    }
+    const message =
+      `Send a password-reset email to ${email}?\n\n` +
+      'You will receive a secure link from Firebase to set a new password.';
+    const confirmed =
+      Platform.OS === 'web' ? window.confirm(message) : await new Promise<boolean>((resolve) => {
+        Alert.alert('Change Password', message, [
+          { text: 'Not now', style: 'cancel', onPress: () => resolve(false) },
+          { text: 'Send email', onPress: () => resolve(true) },
+        ]);
+      });
+    if (!confirmed) return;
+
+    try {
+      const res = await AuthService.sendPasswordReset(email);
+      if (!res.success) {
+        const errMsg = res.error || 'Could not send reset email. Please try again.';
+        if (Platform.OS === 'web') window.alert(errMsg);
+        else Alert.alert('Change Password', errMsg);
+        return;
+      }
+      const ok = 'Password reset email sent. Check your inbox.';
+      if (Platform.OS === 'web') window.alert(ok);
+      else Alert.alert('Change Password', ok);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Could not send reset email.';
+      if (Platform.OS === 'web') window.alert(msg);
+      else Alert.alert('Change Password', msg);
+    }
+  }
+
   async function handleLogout(): Promise<void> {
     if (loggingOut) return;
     setLoggingOut(true);
@@ -351,7 +393,7 @@ export default function ProfileScreen({ navigation }: Props): React.JSX.Element 
               style={styles.actionRow}
               accessibilityRole="button"
               accessibilityLabel="Change password"
-              onPress={() => {}}
+              onPress={() => void handleChangePassword()}
             >
               <View style={styles.actionLeft}>
                 <View style={[styles.actionIconWrap, styles.actionIconGold]}>

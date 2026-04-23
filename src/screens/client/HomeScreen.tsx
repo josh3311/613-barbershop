@@ -61,6 +61,18 @@ type UserLoyaltyMeta = {
   hasFreecut: boolean;
 };
 
+/** Firestore may store loyaltyCount as number; normalize for stamp UI. */
+function normalizeLoyaltyCount(v: unknown): number {
+  if (typeof v === 'number' && !Number.isNaN(v)) {
+    return Math.max(0, Math.min(6, Math.floor(v)));
+  }
+  if (typeof v === 'string') {
+    const n = parseInt(v, 10);
+    return Number.isNaN(n) ? 0 : Math.max(0, Math.min(6, n));
+  }
+  return 0;
+}
+
 function toMs(t: Timestamp | null | undefined | unknown): number {
   if (t instanceof Timestamp || t === null || t === undefined) {
     return safeToDate(t as Timestamp | null | undefined).getTime();
@@ -68,16 +80,47 @@ function toMs(t: Timestamp | null | undefined | unknown): number {
   return Number(t);
 }
 
-/** Next visit: in-chair first, else earliest future confirmed appointment */
+/**
+ * Next visit: only bookings that are not completed/cancelled/declined/no_show,
+ * scheduled today or in the future. An `in_progress` booking only counts if
+ * its scheduled time is inside today's window (prevents a stale "In chair"
+ * from a previous day appearing on Home).
+ */
 function pickNextUpcoming(bookings: Booking[]): Booking | null {
-  const now = Date.now();
-  const inChair = bookings.find((b) => b.status === 'in_progress');
-  if (inChair) return inChair;
+  const nowMs = Date.now();
+  const todayStart = (() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  })();
+  const todayEnd = todayStart + 24 * 60 * 60 * 1000 - 1;
 
-  const upcoming = bookings
-    .filter((b) => b.status === 'confirmed' && toMs(b.scheduledAt) >= now)
-    .sort((a, b) => toMs(a.scheduledAt) - toMs(b.scheduledAt));
-  return upcoming[0] ?? null;
+  const eligible = bookings.filter((b) => {
+    if (b.status === 'completed' || b.status === 'cancelled' || b.status === 'declined' || b.status === 'no_show') {
+      return false;
+    }
+    const start = toMs(b.scheduledAt);
+    if (b.status === 'in_progress') {
+      const durationMs = (b.durationMinutes ?? 45) * 60_000;
+      const graceMs = 30 * 60_000;
+      return start <= nowMs && nowMs <= start + durationMs + graceMs;
+    }
+    if (b.status === 'pending' || b.status === 'confirmed') {
+      return start >= todayStart;
+    }
+    return false;
+  });
+
+  if (eligible.length === 0) return null;
+
+  const inChairToday = eligible.find((b) => {
+    const ms = toMs(b.scheduledAt);
+    return b.status === 'in_progress' && ms >= todayStart && ms <= todayEnd;
+  });
+  if (inChairToday) return inChairToday;
+
+  eligible.sort((a, b) => toMs(a.scheduledAt) - toMs(b.scheduledAt));
+  return eligible[0] ?? null;
 }
 
 function formatSlot(ts: Timestamp | null | undefined): string {
@@ -131,14 +174,24 @@ export default function HomeScreen({ navigation }: Props): React.JSX.Element {
       return;
     }
     const ref = doc(db, COLLECTIONS.USERS, firebaseUser.uid);
-    return onSnapshot(ref, (snap) => {
-      const d = snap.data();
-      setUserMeta({
-        birthday: typeof d?.birthday === 'string' ? d.birthday : null,
-        loyaltyCount: typeof d?.loyaltyCount === 'number' ? d.loyaltyCount : 0,
-        hasFreecut: d?.hasFreecut === true,
-      });
-    });
+    const unsub = onSnapshot(
+      ref,
+      (snap) => {
+        const d = snap.data();
+        const rawLc = d?.loyaltyCount;
+        const loyaltyCount = normalizeLoyaltyCount(rawLc);
+        console.log('[home] user snapshot loyaltyCount:', rawLc, 'normalized:', loyaltyCount);
+        setUserMeta({
+          birthday: typeof d?.birthday === 'string' ? d.birthday : null,
+          loyaltyCount,
+          hasFreecut: d?.hasFreecut === true,
+        });
+      },
+      (err) => {
+        console.error('[home] user snapshot error:', err);
+      },
+    );
+    return unsub;
   }, [firebaseUser]);
 
   const nextBooking = useMemo(() => pickNextUpcoming(bookings), [bookings]);
@@ -238,6 +291,10 @@ export default function HomeScreen({ navigation }: Props): React.JSX.Element {
                   {nextBooking.status === 'in_progress' ? (
                     <View style={[s.nextPill, { borderColor: C.blue + '66', backgroundColor: '#0A1520' }]}>
                       <Text style={[s.nextPillText, { color: C.blue }]}>In chair</Text>
+                    </View>
+                  ) : nextBooking.status === 'pending' ? (
+                    <View style={[s.nextPill, { borderColor: '#FF980066', backgroundColor: '#1A1000' }]}>
+                      <Text style={[s.nextPillText, { color: '#FF9800' }]}>Pending</Text>
                     </View>
                   ) : (
                     <View style={[s.nextPill, { borderColor: C.green + '66', backgroundColor: '#0D200D' }]}>

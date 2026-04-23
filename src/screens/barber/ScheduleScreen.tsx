@@ -147,44 +147,37 @@ function BookingCard({
   }
 
   async function handleDecline(): Promise<void> {
-    Alert.alert(
-      'Decline Appointment?',
-      `This will notify ${clientName} that their booking has been declined.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Decline',
-          style: 'destructive',
-          onPress: async () => {
-            const prev = booking.status;
-            setBusy(true);
-            onPatchStatus(booking.id, 'declined');
-            const res = await BookingService.updateStatus(booking.id, {
-              status: 'declined',
-              declinedReason: 'Barber unavailable',
-            });
-            if (!res.success) {
-              onPatchStatus(booking.id, prev);
-              Alert.alert('Could not update', res.error ?? 'Try again.');
-            }
-            setBusy(false);
-          },
-        },
-      ],
-    );
+    const msg = `Decline this appointment?\n\nThis will notify ${clientName} that their booking has been declined.`;
+    const confirmed =
+      Platform.OS === 'web'
+        ? window.confirm(msg)
+        : await new Promise<boolean>((resolve) => {
+            Alert.alert('Decline Appointment?', msg, [
+              { text: 'Keep', onPress: () => resolve(false) },
+              { text: 'Decline', style: 'destructive', onPress: () => resolve(true) },
+            ]);
+          });
+    if (!confirmed) return;
+    const prev = booking.status;
+    setBusy(true);
+    onPatchStatus(booking.id, 'declined');
+    const res = await BookingService.updateStatus(booking.id, {
+      status: 'declined',
+      declinedReason: 'Barber unavailable',
+    });
+    if (!res.success) {
+      onPatchStatus(booking.id, prev);
+      Alert.alert('Could not update', res.error ?? 'Try again.');
+    }
+    setBusy(false);
   }
 
   async function handleAdvance(): Promise<void> {
     if (!advanceNext) return;
     if (advanceNext === 'completed') {
-      Alert.alert(
-        'Complete visit',
-        'Did this client redeem a free facial steam loyalty reward on this visit?',
-        [
-          { text: 'No', style: 'cancel', onPress: () => { void completeVisit(false); } },
-          { text: 'Yes, redeemed', onPress: () => { void completeVisit(true); } },
-        ],
-      );
+      // No intermediate Alert — `Alert.alert` cancel-style buttons do not
+      // reliably fire onPress on web. Complete the visit directly.
+      await completeVisit(false);
       return;
     }
     const prev = booking.status;

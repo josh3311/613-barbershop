@@ -323,22 +323,20 @@ function BarberAppointmentCard({
   }
 
   async function handleDecline(): Promise<void> {
-    Alert.alert(
-      'Decline Appointment?',
-      `This will notify ${item.clientName} that their booking has been declined.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Decline',
-          style: 'destructive',
-          onPress: async () => {
-            setBusy(true);
-            await onAction(item.id, 'declined', 'Barber unavailable');
-            setBusy(false);
-          },
-        },
-      ],
-    );
+    const msg = `Decline this appointment?\n\nThis will notify ${item.clientName} that their booking has been declined.`;
+    const confirmed =
+      Platform.OS === 'web'
+        ? window.confirm(msg)
+        : await new Promise<boolean>((resolve) => {
+            Alert.alert('Decline Appointment?', msg, [
+              { text: 'Keep', onPress: () => resolve(false) },
+              { text: 'Decline', style: 'destructive', onPress: () => resolve(true) },
+            ]);
+          });
+    if (!confirmed) return;
+    setBusy(true);
+    await onAction(item.id, 'declined', 'Barber unavailable');
+    setBusy(false);
   }
 
   async function handleMarkInChair(): Promise<void> {

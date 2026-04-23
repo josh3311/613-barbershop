@@ -162,10 +162,14 @@ export default function BookingScreen({ route, navigation }: Props): React.JSX.E
     const result = await BookingService.getByBarberAndDate(barberId, day);
 
     if (result.success) {
-      // Build a set of "HH:MM" keys that are taken
+      // Build a set of "HH:MM" keys that are taken. Only bookings that
+      // actually hold the slot (pending / confirmed / in_progress / completed)
+      // count; cancelled / declined / no_show bookings free the slot again.
+      const BLOCKING = new Set(['pending', 'confirmed', 'in_progress', 'completed']);
       const taken = new Set<string>();
       result.data.forEach((b: Booking) => {
         if (b.scheduledAt == null) return;
+        if (!BLOCKING.has(b.status)) return;
         const d = safeToDate(b.scheduledAt);
         const h = String(d.getHours()).padStart(2, '0');
         const m = d.getMinutes() === 0 ? '00' : '30';
@@ -173,7 +177,6 @@ export default function BookingScreen({ route, navigation }: Props): React.JSX.E
       });
       setBookedKeys(taken);
     } else {
-      // Firestore error — treat all slots as open (no client-facing warning)
       setBookedKeys(new Set());
     }
 
@@ -389,7 +392,7 @@ export default function BookingScreen({ route, navigation }: Props): React.JSX.E
                   >
                     {isSel && (
                       <View style={styles.slotCheck} importantForAccessibility="no">
-                        <Text style={styles.slotCheckMark}>✓</Text>
+                        <Ionicons name="checkmark" size={12} color={C.bg} />
                       </View>
                     )}
                     <Text style={[

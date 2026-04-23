@@ -208,7 +208,13 @@ const s = StyleSheet.create({
     gap: 8,
   },
   rateBtnText: { fontSize: 13, fontWeight: '800', color: C.gold },
-  ratedLabel: { fontSize: 13, fontWeight: '700', color: C.sub, textAlign: 'center' },
+  ratedLabel: { fontSize: 13, fontWeight: '700', color: C.sub },
+  ratedLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
 
   cancelWrap: {
     borderTopWidth: 1, borderTopColor: C.redBdr,
@@ -401,7 +407,10 @@ function BookingCard({
             </View>
           )}
           {ratedState === 'rated' && (
-            <Text style={s.ratedLabel}>★ Rated</Text>
+            <View style={s.ratedLabelRow}>
+              <Ionicons name="star" size={14} color={C.gold} />
+              <Text style={s.ratedLabel}>Rated</Text>
+            </View>
           )}
           {ratedState === 'unrated' && onRatePress != null && (
             <TouchableOpacity

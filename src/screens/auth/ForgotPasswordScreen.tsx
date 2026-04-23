@@ -11,6 +11,7 @@ import {
   Animated,
 } from 'react-native';
 import { Text, TextInput, ActivityIndicator } from 'react-native-paper';
+import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '@/navigation/types';
 import { AuthService } from '@/services/auth.service';
@@ -130,7 +131,7 @@ export default function ForgotPasswordScreen({ navigation }: Props): React.JSX.E
 
             {/* Lock icon */}
             <View style={styles.lockBadge} accessibilityElementsHidden>
-              <Text style={styles.lockIcon}>🔐</Text>
+              <Ionicons name="lock-closed" size={28} color={C.gold} />
             </View>
 
             <Text style={styles.cardTitle}>Reset Password</Text>
@@ -141,7 +142,7 @@ export default function ForgotPasswordScreen({ navigation }: Props): React.JSX.E
             {/* ── Success state ── */}
             {sent ? (
               <View style={styles.successBox} accessibilityRole="alert" accessibilityLabel="Reset email sent">
-                <Text style={styles.successIcon}>✓</Text>
+                <Ionicons name="checkmark-circle" size={28} color={C.success} style={styles.successIcon} />
                 <View style={styles.successTextWrap}>
                   <Text style={styles.successTitle}>Email Sent!</Text>
                   <Text style={styles.successBody}>

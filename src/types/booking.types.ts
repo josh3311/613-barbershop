@@ -51,6 +51,8 @@ export interface Booking extends WithId {
   declinedReason: string | null;
   /** Barber marks loyalty facial-steam reward redeemed on this visit */
   rewardClaimed?: boolean;
+  /** True after a completed visit has been counted toward client loyalty (prevents double stamps) */
+  loyaltyAwarded?: boolean;
   /** From AI Style — what the client asked their barber to prepare for */
   requestedStyle?: RequestedStyle;
   createdAt: Timestamp;
@@ -68,6 +70,7 @@ export type CreateBookingPayload = Omit<
   | 'declinedAt'
   | 'declinedReason'
   | 'rewardClaimed'
+  | 'loyaltyAwarded'
   | 'createdAt'
   | 'updatedAt'
 >;

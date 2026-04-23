@@ -384,10 +384,16 @@ export default function BarberProfileScreen(): React.JSX.Element {
                 barber.reviewCount > 0 &&
                 typeof barber.rating === 'number' &&
                 barber.rating > 0 ? (
-                  <Text style={s.ratingReadonly} accessibilityRole="text">
-                    Your rating: {barber.rating.toFixed(1)} ★ ({barber.reviewCount}{' '}
-                    {barber.reviewCount === 1 ? 'review' : 'reviews'})
-                  </Text>
+                  <View style={s.ratingRow} accessibilityRole="text">
+                    <Text style={s.ratingReadonly}>
+                      Your rating: {barber.rating.toFixed(1)}
+                    </Text>
+                    <Ionicons name="star" size={14} color={C.gold} />
+                    <Text style={s.ratingReadonly}>
+                      ({barber.reviewCount}{' '}
+                      {barber.reviewCount === 1 ? 'review' : 'reviews'})
+                    </Text>
+                  </View>
                 ) : (
                   <Text style={s.ratingEmpty} accessibilityRole="text">
                     No ratings yet
@@ -679,6 +685,12 @@ const s = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: C.gold,
+  },
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
     marginBottom: 6,
   },
   ratingEmpty: {
