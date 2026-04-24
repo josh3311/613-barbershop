@@ -327,8 +327,14 @@ export const BookingService = {
           name: saved.name,
           photoURL: saved.photoURL,
           description: saved.description,
+          ...(typeof saved.beforePhotoURL === 'string' && saved.beforePhotoURL.trim().length > 0
+            ? { beforePhotoURL: saved.beforePhotoURL.trim() }
+            : {}),
           ...(typeof saved.barberNotes === 'string' && saved.barberNotes.trim().length > 0
             ? { barberNotes: saved.barberNotes.trim() }
+            : {}),
+          ...(typeof saved.clientNote === 'string' && saved.clientNote.trim().length > 0
+            ? { clientNote: saved.clientNote.trim() }
             : {}),
         };
       }
@@ -431,12 +437,32 @@ export const BookingService = {
   /**
    * If the client has an upcoming pending/confirmed booking, attach the requested look.
    * Otherwise store on the user document as `savedStyle` for when they book later.
+   * Strips out optional fields that are undefined / empty so Firestore never
+   * receives `undefined` (which would throw at write time).
    */
   async attachRequestedStyleForClient(
     clientId: string,
     requestedStyle: RequestedStyle,
   ): Promise<FirestoreResult<{ mode: 'booking' | 'saved'; bookingId?: string }>> {
     try {
+      const cleaned: RequestedStyle = {
+        name: requestedStyle.name,
+        photoURL: requestedStyle.photoURL,
+        description: requestedStyle.description,
+        ...(typeof requestedStyle.beforePhotoURL === 'string' &&
+        requestedStyle.beforePhotoURL.trim().length > 0
+          ? { beforePhotoURL: requestedStyle.beforePhotoURL.trim() }
+          : {}),
+        ...(typeof requestedStyle.barberNotes === 'string' &&
+        requestedStyle.barberNotes.trim().length > 0
+          ? { barberNotes: requestedStyle.barberNotes.trim() }
+          : {}),
+        ...(typeof requestedStyle.clientNote === 'string' &&
+        requestedStyle.clientNote.trim().length > 0
+          ? { clientNote: requestedStyle.clientNote.trim() }
+          : {}),
+      };
+
       const listRes = await BookingService.getByClient(clientId);
       if (!listRes.success) {
         return { success: false, error: listRes.error };
@@ -444,16 +470,17 @@ export const BookingService = {
       const next = findNextUpcomingBooking(listRes.data);
       if (next) {
         await updateDoc(doc(db, COLLECTIONS.BOOKINGS, next.id), {
-          requestedStyle,
+          requestedStyle: cleaned,
           updatedAt: serverTimestamp(),
         });
         return { success: true, data: { mode: 'booking', bookingId: next.id } };
       }
       await updateDoc(doc(db, COLLECTIONS.USERS, clientId), {
-        savedStyle: { ...requestedStyle, savedAt: serverTimestamp() },
+        savedStyle: { ...cleaned, savedAt: serverTimestamp() },
       });
       return { success: true, data: { mode: 'saved' } };
     } catch (e) {
+      console.error('[attachRequestedStyleForClient] FAILED:', e);
       return { success: false, error: String(e) };
     }
   },

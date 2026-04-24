@@ -15,14 +15,19 @@ export const AIBarberGuideService = {
   async getCutInstructions(
     styleName: string,
     hairTexture: string,
+    question?: string,
   ): Promise<BarberCutGuideResult> {
+    const body: Record<string, string> = {
+      style_name: styleName,
+      hair_texture: hairTexture || 'typical',
+    };
+    if (typeof question === 'string' && question.trim().length > 0) {
+      body.question = question.trim();
+    }
     const response = await fetch(`${getAiBackendUrl()}/api/barber-cut-guide`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        style_name: styleName,
-        hair_texture: hairTexture || 'typical',
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {

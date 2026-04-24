@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { AdminTabParamList } from './types';
 import { colors, fonts, spacing, tabBar, icons } from '@/theme';
+import { AdminTodayProvider } from '@/context/AdminTodayContext';
 
 import AdminDashboardScreen from '@/screens/admin/AdminDashboardScreen';
 import AdminProfileScreen from '@/screens/admin/AdminProfileScreen';
@@ -61,50 +62,52 @@ function AnimatedTabIcon({ focused, iconName, iconNameOutline, color }: TabIconP
 
 export default function AdminNavigator(): React.JSX.Element {
   return (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarStyle: styles.tabBar,
-        tabBarActiveTintColor: colors.gold,
-        tabBarInactiveTintColor: colors.grey,
-        tabBarLabelStyle: styles.tabLabel,
-        tabBarIcon: ({ focused, color }) => {
-          let iconName: keyof typeof Ionicons.glyphMap = icons.grid;
-          let iconNameOutline: keyof typeof Ionicons.glyphMap = icons.gridOutline;
+    <AdminTodayProvider>
+      <Tab.Navigator
+        screenOptions={({ route }) => ({
+          headerShown: false,
+          tabBarStyle: styles.tabBar,
+          tabBarActiveTintColor: colors.gold,
+          tabBarInactiveTintColor: colors.grey,
+          tabBarLabelStyle: styles.tabLabel,
+          tabBarIcon: ({ focused, color }) => {
+            let iconName: keyof typeof Ionicons.glyphMap = icons.grid;
+            let iconNameOutline: keyof typeof Ionicons.glyphMap = icons.gridOutline;
 
-          switch (route.name) {
-            case 'Dashboard':
-              iconName = icons.grid;
-              iconNameOutline = icons.gridOutline;
-              break;
-            case 'AdminProfile':
-              iconName = icons.tabProfile;
-              iconNameOutline = icons.tabProfileOutline;
-              break;
-          }
+            switch (route.name) {
+              case 'Dashboard':
+                iconName = icons.grid;
+                iconNameOutline = icons.gridOutline;
+                break;
+              case 'AdminProfile':
+                iconName = icons.tabProfile;
+                iconNameOutline = icons.tabProfileOutline;
+                break;
+            }
 
-          return (
-            <AnimatedTabIcon
-              focused={focused}
-              iconName={iconName}
-              iconNameOutline={iconNameOutline}
-              color={color}
-            />
-          );
-        },
-      })}
-    >
-      <Tab.Screen
-        name="Dashboard"
-        component={AdminDashboardScreen}
-        options={{ tabBarLabel: 'Dashboard' }}
-      />
-      <Tab.Screen
-        name="AdminProfile"
-        component={AdminProfileScreen}
-        options={{ tabBarLabel: 'Profile' }}
-      />
-    </Tab.Navigator>
+            return (
+              <AnimatedTabIcon
+                focused={focused}
+                iconName={iconName}
+                iconNameOutline={iconNameOutline}
+                color={color}
+              />
+            );
+          },
+        })}
+      >
+        <Tab.Screen
+          name="Dashboard"
+          component={AdminDashboardScreen}
+          options={{ tabBarLabel: 'Dashboard' }}
+        />
+        <Tab.Screen
+          name="AdminProfile"
+          component={AdminProfileScreen}
+          options={{ tabBarLabel: 'Profile' }}
+        />
+      </Tab.Navigator>
+    </AdminTodayProvider>
   );
 }
 

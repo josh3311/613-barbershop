@@ -15,10 +15,15 @@ export type CancelledBy = 'client' | 'barber' | 'admin';
 /** Client-chosen look from AI Style chat, shown to the barber on the schedule */
 export type RequestedStyle = {
   name: string;
+  /** After/result image URL — Unsplash reference photo OR FLUX Kontext result */
   photoURL: string;
+  /** Original selfie before FLUX Kontext (only set when the client used virtual try-on) */
+  beforePhotoURL?: string;
   description: string;
   /** Detailed cut notes from AI chat (guards, fade height, texture, etc.) */
   barberNotes?: string;
+  /** Free-form note typed by the client at booking time */
+  clientNote?: string;
 };
 
 /**

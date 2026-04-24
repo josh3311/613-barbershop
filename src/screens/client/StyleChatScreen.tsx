@@ -48,6 +48,7 @@ import {
 } from '@/services/styleChat.service';
 import { readImageAsBase64, inferImageMediaType } from '@/utils/imageBase64.utils';
 import SimpleMarkdownText from '@/components/SimpleMarkdownText';
+import BookingNoteModal from '@/components/BookingNoteModal';
 import {
   stripBookStyleMarkers,
   firstBookStyleName,
@@ -56,6 +57,7 @@ import {
   extractBarberNotesFromAssistantReply,
 } from '@/utils/styleDisplay.utils';
 import type { StyleChatSessionDoc } from '@/types/chat.types';
+import type { SavedLook } from '@/types/user.types';
 import { safeToDate } from '@/utils/date.utils';
 import { colors, fonts, spacing, radius, shadows, icons, animations } from '@/theme';
 
@@ -160,6 +162,19 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
   const [historyRows, setHistoryRows] = useState<Array<{ id: string; data: StyleChatSessionDoc }>>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
+  // FIX 3 — Saved looks state
+  const [savedLooks, setSavedLooks] = useState<SavedLook[]>([]);
+  const [openLook, setOpenLook] = useState<SavedLook | null>(null);
+  // Map style_name -> SavedLook for any [BOOK_STYLE:Name] triggered from the saved-looks row
+  const [bookLookByName, setBookLookByName] = useState<Record<string, SavedLook>>({});
+
+  // FIX 5 — pre-confirmation note modal
+  const [pendingBook, setPendingBook] = useState<{
+    styleName: string;
+    assistantRaw?: string;
+    look?: SavedLook;
+  } | null>(null);
+
   // Animation values for message bubbles
   const messageAnims = useRef<Map<number, Animated.Value>>(new Map()).current;
 
@@ -215,7 +230,8 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
       try {
         const snap = await getDoc(doc(db, COLLECTIONS.USERS, firebaseUser.uid));
         if (cancelled) return;
-        const sp = snap.data()?.styleProfile as
+        const data = snap.data();
+        const sp = data?.styleProfile as
           | { profile?: ProfileRecord; styles?: ProfileAnalysisResult['styles'] }
           | undefined;
         if (sp?.profile && sp?.styles?.recommendations) {
@@ -225,8 +241,27 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
             styles: sp.styles,
           });
         }
-      } catch {
-        // Silently fail - profile not required
+
+        // FIX 3 — load saved before/after looks (handle missing field gracefully)
+        const rawLooks = data?.savedLooks;
+        if (Array.isArray(rawLooks)) {
+          const cleaned: SavedLook[] = rawLooks
+            .filter(
+              (l): l is SavedLook =>
+                l &&
+                typeof l === 'object' &&
+                typeof l.id === 'string' &&
+                typeof l.afterUrl === 'string' &&
+                typeof l.beforeUrl === 'string' &&
+                typeof l.styleName === 'string',
+            )
+            .sort((a, b) => (b.savedAt ?? '').localeCompare(a.savedAt ?? ''));
+          setSavedLooks(cleaned);
+        } else {
+          setSavedLooks([]);
+        }
+      } catch (e) {
+        console.error('[styleChat] load profile FAILED:', e);
       } finally {
         if (!cancelled) setHydratingStyleProfile(false);
       }
@@ -389,27 +424,38 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
     }
   }
 
-  async function addStyleToBooking(styleName: string, assistantRaw?: string): Promise<void> {
+  async function addStyleToBooking(
+    styleName: string,
+    assistantRaw?: string,
+    opts?: { look?: SavedLook; clientNote?: string },
+  ): Promise<void> {
     if (!firebaseUser?.uid || bookingBusy) return;
     const reco = findRecommendationByBookName(styleName, recs);
+    const look = opts?.look;
+
     const photoURL =
+      look?.afterUrl ??
       recommendationPhotos[styleName] ??
       recommendationPhotos[reco?.style_name ?? ''] ??
       STYLE_PHOTO_PLACEHOLDER_URL;
     const description =
+      look?.styleDescription ||
       reco?.why_it_suits_you?.trim() ||
       `The look you picked: ${styleName}. Your barber can fine-tune it with you in the chair.`;
     const barberNotes =
-      typeof assistantRaw === 'string' ? extractBarberNotesFromAssistantReply(assistantRaw) : null;
+      look?.barberNotes ||
+      (typeof assistantRaw === 'string' ? extractBarberNotesFromAssistantReply(assistantRaw) : null);
 
     setErrorBanner(null);
     setBookingBusy(true);
     try {
       const res = await BookingService.attachRequestedStyleForClient(firebaseUser.uid, {
-        name: reco?.style_name ?? styleName,
+        name: look?.styleName ?? reco?.style_name ?? styleName,
         photoURL,
         description,
+        ...(look?.beforeUrl ? { beforePhotoURL: look.beforeUrl } : {}),
         ...(barberNotes ? { barberNotes } : {}),
+        ...(opts?.clientNote ? { clientNote: opts.clientNote } : {}),
       });
 
       if (!res.success) {
@@ -427,6 +473,84 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
     } finally {
       setBookingBusy(false);
     }
+  }
+
+  // FIX 3 — Inject a synthetic assistant message that triggers the existing
+  // [BOOK_STYLE] booking confirmation button, then track the source look
+  // so the button can show its AFTER thumbnail.
+  function bookFromSavedLook(look: SavedLook): void {
+    const summary = look.barberNotes
+      ? `Barber notes: ${look.barberNotes}`
+      : look.styleDescription;
+    const assistantContent = `**${look.styleName}**\n\n${look.styleDescription}\n\n${summary}\n\n[BOOK_STYLE:${look.styleName}]`;
+    const assistantTurn: StyleChatTurn = { role: 'assistant', content: assistantContent };
+    const next = [...messages, assistantTurn];
+    setMessages(next);
+    messagesRef.current = next;
+    setBookLookByName((prev) => ({ ...prev, [look.styleName]: look }));
+    setOpenLook(null);
+    void persistChat(next);
+    scrollToEnd();
+  }
+
+  // FIX 3 — Send before/after images into the chat so the AI can react.
+  async function shareLookWithAi(look: SavedLook): Promise<void> {
+    if (!chatId || !sessionReady || sending) return;
+    setOpenLook(null);
+
+    const beforeMsg: StyleChatTurn = {
+      role: 'user',
+      content: '',
+      imageUrl: look.beforeUrl,
+    };
+    const afterMsg: StyleChatTurn = {
+      role: 'user',
+      content: `Here's a virtual try-on I generated for "${look.styleName}". What do you think — would this work for me, and how should I describe it to my barber?`,
+      imageUrl: look.afterUrl,
+    };
+    const nextThread = [...messages, beforeMsg, afterMsg];
+    setMessages(nextThread);
+    messagesRef.current = nextThread;
+    setSending(true);
+    setErrorBanner(null);
+    scrollToEnd();
+
+    try {
+      const reply = await AIChatService.sendStyleChatMessage(
+        nextThread,
+        liveAnalysis.profile,
+        recs,
+      );
+      const withAssistant: StyleChatTurn[] = [
+        ...nextThread,
+        { role: 'assistant', content: reply },
+      ];
+      setMessages(withAssistant);
+      messagesRef.current = withAssistant;
+      await persistChat(withAssistant);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Something went wrong. Try again.';
+      setErrorBanner(msg);
+      setMessages(messages);
+      messagesRef.current = messages;
+    } finally {
+      setSending(false);
+      scrollToEnd();
+    }
+  }
+
+  // FIX 5 — confirm flow with note modal
+  function startBookFlow(styleName: string, assistantRaw: string, look?: SavedLook): void {
+    setPendingBook({ styleName, assistantRaw, look });
+  }
+  async function confirmBookWithNote(note: string): Promise<void> {
+    const pending = pendingBook;
+    setPendingBook(null);
+    if (!pending) return;
+    await addStyleToBooking(pending.styleName, pending.assistantRaw, {
+      look: pending.look,
+      clientNote: note,
+    });
   }
 
   async function processPhotoAfterPick(
@@ -646,6 +770,35 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
         </View>
       </View>
 
+      {/* FIX 3 — Saved looks strip (horizontal scroll above messages) */}
+      {savedLooks.length > 0 ? (
+        <View style={styles.savedLooksStrip}>
+          <RNText style={styles.savedLooksLabel}>Your saved looks</RNText>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.savedLooksRow}
+          >
+            {savedLooks.map((look) => (
+              <TouchableOpacity
+                key={look.id}
+                style={styles.savedLookCard}
+                onPress={() => setOpenLook(look)}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel={`Open saved look ${look.styleName}`}
+              >
+                <Image source={{ uri: look.afterUrl }} style={styles.savedLookImage} resizeMode="cover" />
+                <View style={styles.savedLookOverlay} />
+                <RNText style={styles.savedLookName} numberOfLines={2}>
+                  {look.styleName}
+                </RNText>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      ) : null}
+
       {/* Messages */}
       <ScrollView
         ref={scrollRef}
@@ -746,23 +899,38 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
                     const raw = msg.content;
                     const bookName = firstBookStyleName(raw);
                     if (!bookName) return null;
+                    const sourceLook = bookLookByName[bookName];
+                    const buttonLabel = sourceLook
+                      ? `Book ${bookName} — barber will see your preview`
+                      : `Add ${bookName} to my next booking`;
                     return (
                       <TouchableOpacity
                         style={[
                           styles.bookBtn,
+                          sourceLook && styles.bookBtnWithThumb,
                           pressedButton === `book-${idx}` && { transform: [{ scale: 0.97 }] },
                         ]}
-                        onPress={() => void addStyleToBooking(bookName, raw)}
+                        onPress={() => startBookFlow(bookName, raw, sourceLook)}
                         onPressIn={() => setPressedButton(`book-${idx}`)}
                         onPressOut={() => setPressedButton(null)}
                         disabled={bookingBusy}
                         accessibilityRole="button"
-                        accessibilityLabel={`Add ${bookName} to my next booking`}
+                        accessibilityLabel={buttonLabel}
                       >
                         {bookingBusy ? (
                           <ActivityIndicator color={colors.background} size="small" />
                         ) : (
-                          <Text style={styles.bookBtnText}>Add {bookName} to my next booking</Text>
+                          <>
+                            {sourceLook ? (
+                              <Image
+                                source={{ uri: sourceLook.afterUrl }}
+                                style={styles.bookBtnThumb}
+                              />
+                            ) : null}
+                            <Text style={styles.bookBtnText} numberOfLines={2}>
+                              {buttonLabel}
+                            </Text>
+                          </>
                         )}
                       </TouchableOpacity>
                     );
@@ -888,6 +1056,77 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
           </View>
         </View>
       </Modal>
+
+      {/* FIX 3 — Saved Look detail modal */}
+      <Modal
+        visible={openLook !== null}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setOpenLook(null)}
+      >
+        {openLook ? (
+          <View style={styles.lookModalRoot}>
+            <View style={[styles.lookModalHeader, { paddingTop: insets.top + spacing.sm }]}>
+              <TouchableOpacity
+                onPress={() => setOpenLook(null)}
+                style={styles.lookModalIconBtn}
+                accessibilityRole="button"
+                accessibilityLabel="Close look"
+              >
+                <Ionicons name="close" size={26} color={colors.white} />
+              </TouchableOpacity>
+              <RNText style={styles.lookModalTitle} numberOfLines={1}>
+                {openLook.styleName}
+              </RNText>
+              <View style={styles.lookModalIconBtn} />
+            </View>
+
+            <View style={styles.lookComparisonContainer}>
+              <View style={[styles.lookHalf, { left: 0 }]}>
+                <Image source={{ uri: openLook.beforeUrl }} style={styles.lookHalfImage} resizeMode="cover" />
+                <View style={[styles.lookHalfLabel, styles.lookHalfLabelLeft]}>
+                  <RNText style={styles.lookHalfLabelText}>Before</RNText>
+                </View>
+              </View>
+              <View style={[styles.lookHalf, { left: '50%' }]}>
+                <Image source={{ uri: openLook.afterUrl }} style={styles.lookHalfImage} resizeMode="cover" />
+                <View style={[styles.lookHalfLabel, styles.lookHalfLabelRight]}>
+                  <RNText style={styles.lookHalfLabelText}>After</RNText>
+                </View>
+              </View>
+              <View style={styles.lookDivider} />
+            </View>
+
+            <View style={[styles.lookActions, { paddingBottom: insets.bottom + spacing.lg }]}>
+              <TouchableOpacity
+                style={styles.lookBookBtn}
+                onPress={() => bookFromSavedLook(openLook)}
+                accessibilityRole="button"
+                accessibilityLabel="Book this style"
+              >
+                <RNText style={styles.lookBookBtnText}>Book this style</RNText>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.lookShareBtn}
+                onPress={() => void shareLookWithAi(openLook)}
+                disabled={sending}
+                accessibilityRole="button"
+                accessibilityLabel="Share with AI"
+              >
+                <RNText style={styles.lookShareBtnText}>Share with AI</RNText>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
+      </Modal>
+
+      {/* FIX 5 — pre-confirmation note modal */}
+      <BookingNoteModal
+        visible={pendingBook !== null}
+        styleName={pendingBook?.styleName ?? ''}
+        onConfirm={(note) => void confirmBookWithNote(note)}
+        onCancel={() => setPendingBook(null)}
+      />
 
       {/* Toast */}
       <Portal>
@@ -1040,9 +1279,150 @@ const styles = StyleSheet.create({
     backgroundColor: colors.gold,
     borderRadius: radius['2xl'],
     paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
     alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
   },
-  bookBtnText: { fontSize: fonts.size.md, fontFamily: fonts.bodyBold, color: colors.background },
+  bookBtnWithThumb: {
+    paddingVertical: spacing.sm,
+    paddingLeft: spacing.sm,
+  },
+  bookBtnThumb: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    marginRight: spacing.sm,
+    backgroundColor: colors.surfaceRaised,
+  },
+  bookBtnText: {
+    flex: 1,
+    fontSize: fonts.size.md,
+    fontFamily: fonts.bodyBold,
+    color: colors.background,
+    textAlign: 'center',
+  },
+
+  // FIX 3 — Saved looks strip (above messages)
+  savedLooksStrip: {
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  savedLooksLabel: {
+    fontSize: fonts.size.xs,
+    fontFamily: fonts.bodyBold,
+    color: colors.gold,
+    letterSpacing: fonts.letterSpacing.wider,
+    textTransform: 'uppercase',
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+  },
+  savedLooksRow: { gap: spacing.sm, paddingHorizontal: spacing.lg, paddingRight: spacing.lg },
+  savedLookCard: {
+    width: 100,
+    height: 130,
+    borderRadius: 10,
+    backgroundColor: '#111111',
+    borderWidth: 1,
+    borderColor: colors.gold,
+    overflow: 'hidden',
+  },
+  savedLookImage: { ...StyleSheet.absoluteFillObject },
+  savedLookOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.3)' },
+  savedLookName: {
+    position: 'absolute',
+    left: 6,
+    right: 6,
+    bottom: 6,
+    fontSize: 10,
+    fontFamily: fonts.bodyBold,
+    color: colors.white,
+  },
+
+  // FIX 3 — Saved Look detail modal
+  lookModalRoot: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  lookModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.sm,
+    paddingBottom: spacing.sm,
+  },
+  lookModalIconBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  lookModalTitle: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: fonts.size.xl,
+    fontFamily: fonts.bodyBold,
+    color: colors.white,
+  },
+  lookComparisonContainer: {
+    flex: 1,
+    minHeight: 400,
+    position: 'relative',
+    backgroundColor: '#000000',
+    overflow: 'hidden',
+  },
+  lookHalf: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: '50%',
+    overflow: 'hidden',
+  },
+  lookHalfImage: { width: '100%', height: '100%' },
+  lookHalfLabel: {
+    position: 'absolute',
+    bottom: spacing.md,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  lookHalfLabelLeft: { left: spacing.md },
+  lookHalfLabelRight: { right: spacing.md },
+  lookHalfLabelText: { fontSize: fonts.size.sm, fontFamily: fonts.bodySemiBold, color: colors.white },
+  lookDivider: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: '50%',
+    width: 2,
+    marginLeft: -1,
+    backgroundColor: colors.gold,
+  },
+  lookActions: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    backgroundColor: colors.background,
+  },
+  lookBookBtn: {
+    width: '100%',
+    paddingVertical: spacing.md,
+    borderRadius: radius['2xl'],
+    backgroundColor: colors.gold,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+  },
+  lookBookBtnText: { fontSize: fonts.size.md, fontFamily: fonts.bodyBold, color: colors.background },
+  lookShareBtn: {
+    width: '100%',
+    marginTop: spacing.sm,
+    paddingVertical: spacing.md,
+    borderRadius: radius['2xl'],
+    borderWidth: 1,
+    borderColor: colors.gold,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+  },
+  lookShareBtnText: { fontSize: fonts.size.md, fontFamily: fonts.bodyBold, color: colors.gold },
 
   // Typing indicator
   typingRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },

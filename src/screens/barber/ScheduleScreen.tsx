@@ -6,7 +6,7 @@
  * - Booking slots with status badges and action buttons
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -19,6 +19,7 @@ import {
   Image,
   Pressable,
   Animated,
+  TextInput,
 } from 'react-native';
 import { Text, ActivityIndicator, Snackbar } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
@@ -224,6 +225,12 @@ function BookingCard({
   const [guideBusy, setGuideBusy] = useState(false);
   const [guideErr, setGuideErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // FIX 6 — AI explanation collapsible (barber-only)
+  const [aiExpanded, setAiExpanded] = useState(false);
+  const [aiQuestion, setAiQuestion] = useState('');
+  const [aiSteps, setAiSteps] = useState<BarberCutStep[] | null>(null);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiErr, setAiErr] = useState<string | null>(null);
 
   const cfg = STATUS_CFG[booking.status] ?? STATUS_CFG.pending;
   const time = formatTime(safeToDate(booking.scheduledAt));
@@ -300,13 +307,9 @@ function BookingCard({
     setBusy(false);
   }
 
-  async function openCutGuide(): Promise<void> {
-    const rs = booking.requestedStyle;
-    if (!rs) return;
-    setGuideBusy(true);
-    setGuideErr(null);
+  async function resolveHairTexture(): Promise<string> {
+    let hairTexture = 'varied';
     try {
-      let hairTexture = 'varied';
       const snap = await getDoc(doc(db, COLLECTIONS.USERS, booking.clientId));
       const prof = snap.data()?.styleProfile as { profile?: Record<string, unknown> } | undefined;
       const p = prof?.profile;
@@ -316,6 +319,19 @@ function BookingCard({
           hairTexture = ht.trim();
         }
       }
+    } catch (e) {
+      console.error('[ScheduleScreen] resolveHairTexture failed:', e);
+    }
+    return hairTexture;
+  }
+
+  async function openCutGuide(): Promise<void> {
+    const rs = booking.requestedStyle;
+    if (!rs) return;
+    setGuideBusy(true);
+    setGuideErr(null);
+    try {
+      const hairTexture = await resolveHairTexture();
       const guide = await AIBarberGuideService.getCutInstructions(rs.name, hairTexture);
       setGuideSteps(guide.steps);
       setStyleModal(false);
@@ -325,6 +341,38 @@ function BookingCard({
     } finally {
       setGuideBusy(false);
     }
+  }
+
+  async function askAiAboutCut(): Promise<void> {
+    const rs = booking.requestedStyle;
+    if (!rs) return;
+    const q = aiQuestion.trim();
+    if (q.length === 0) {
+      setAiErr('Type a question first.');
+      return;
+    }
+    setAiBusy(true);
+    setAiErr(null);
+    setAiSteps(null);
+    try {
+      const hairTexture = await resolveHairTexture();
+      const guide = await AIBarberGuideService.getCutInstructions(rs.name, hairTexture, q);
+      setAiSteps(guide.steps);
+    } catch (e) {
+      setAiErr(e instanceof Error ? e.message : 'Could not load answer.');
+    } finally {
+      setAiBusy(false);
+    }
+  }
+
+  function closeStyleModal(): void {
+    setStyleModal(false);
+    setGuideErr(null);
+    setAiExpanded(false);
+    setAiQuestion('');
+    setAiSteps(null);
+    setAiErr(null);
+    setAiBusy(false);
   }
 
   const scaleAnim = useRef(new Animated.Value(1)).current;
@@ -456,56 +504,161 @@ function BookingCard({
         </View>
       </TouchableOpacity>
 
-      {/* Style Modal */}
+      {/* Style Modal — FIX 4 + FIX 6 */}
       <Modal
         visible={styleModal}
         transparent
         animationType="fade"
-        onRequestClose={() => {
-          setStyleModal(false);
-          setGuideErr(null);
-        }}
+        onRequestClose={closeStyleModal}
       >
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={() => {
-            setStyleModal(false);
-            setGuideErr(null);
-          }}
-        >
+        <Pressable style={styles.modalBackdrop} onPress={closeStyleModal}>
           <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.modalTitle}>{booking.requestedStyle?.name}</Text>
-            {booking.requestedStyle && (
-              <Image
-                source={{ uri: booking.requestedStyle.photoURL }}
-                style={styles.modalPhoto}
-                resizeMode="cover"
-              />
-            )}
-            <Text style={styles.modalDesc}>{booking.requestedStyle?.description}</Text>
-            {booking.requestedStyle?.barberNotes ? (
-              <View style={styles.modalNotesBlock}>
-                <Text style={styles.modalNotesLabel}>Barber notes</Text>
-                <Text style={styles.modalNotesBody}>{booking.requestedStyle.barberNotes}</Text>
-              </View>
-            ) : null}
-            <TouchableOpacity style={styles.guideBtn} onPress={() => void openCutGuide()} disabled={guideBusy}>
-              {guideBusy ? (
-                <ActivityIndicator color={C.bg} size="small" />
-              ) : (
-                <Text style={styles.guideBtnText}>How do I do this cut?</Text>
-              )}
-            </TouchableOpacity>
-            {guideErr ? <Text style={styles.guideErr}>{guideErr}</Text> : null}
-            <TouchableOpacity
-              style={styles.modalClose}
-              onPress={() => {
-                setStyleModal(false);
-                setGuideErr(null);
-              }}
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: spacing.sm }}
+              keyboardShouldPersistTaps="handled"
             >
-              <Text style={styles.modalCloseText}>Close</Text>
-            </TouchableOpacity>
+              {/* Style name — BebasNeue gold 22px */}
+              <Text style={styles.styleNameHeader}>{booking.requestedStyle?.name}</Text>
+
+              {/* FIX 4 — Before/After split (200px tall, full-width) */}
+              {booking.requestedStyle && (
+                <View style={styles.beforeAfterContainer}>
+                  {booking.requestedStyle.beforePhotoURL ? (
+                    <>
+                      <View style={[styles.beforeAfterHalf, { left: 0 }]}>
+                        <Image
+                          source={{ uri: booking.requestedStyle.beforePhotoURL }}
+                          style={styles.beforeAfterImage}
+                          resizeMode="cover"
+                        />
+                        <View style={[styles.baLabel, styles.baLabelLeft]}>
+                          <Text style={styles.baLabelText}>Before</Text>
+                        </View>
+                      </View>
+                      <View style={[styles.beforeAfterHalf, { left: '50%' }]}>
+                        <Image
+                          source={{ uri: booking.requestedStyle.photoURL }}
+                          style={styles.beforeAfterImage}
+                          resizeMode="cover"
+                        />
+                        <View style={[styles.baLabel, styles.baLabelRight]}>
+                          <Text style={styles.baLabelText}>After</Text>
+                        </View>
+                      </View>
+                      <View style={styles.baDivider} />
+                    </>
+                  ) : (
+                    <Image
+                      source={{ uri: booking.requestedStyle.photoURL }}
+                      style={styles.beforeAfterSingleImage}
+                      resizeMode="cover"
+                    />
+                  )}
+                </View>
+              )}
+
+              {/* Description */}
+              {booking.requestedStyle?.description ? (
+                <Text style={styles.modalDesc}>{booking.requestedStyle.description}</Text>
+              ) : null}
+
+              {/* Barber notes — white Inter */}
+              {booking.requestedStyle?.barberNotes ? (
+                <View style={styles.modalNotesBlock}>
+                  <Text style={styles.modalNotesLabel}>Barber notes</Text>
+                  <Text style={styles.modalNotesBody}>{booking.requestedStyle.barberNotes}</Text>
+                </View>
+              ) : null}
+
+              {/* Client note — grey italic */}
+              {booking.requestedStyle?.clientNote ? (
+                <Text style={styles.clientNoteText}>
+                  Client said: {booking.requestedStyle.clientNote}
+                </Text>
+              ) : null}
+
+              {/* "How do I do this cut?" gold button */}
+              <TouchableOpacity
+                style={styles.guideBtn}
+                onPress={() => void openCutGuide()}
+                disabled={guideBusy}
+                accessibilityRole="button"
+                accessibilityLabel="How do I do this cut"
+              >
+                {guideBusy ? (
+                  <ActivityIndicator color={C.bg} size="small" />
+                ) : (
+                  <Text style={styles.guideBtnText}>How do I do this cut?</Text>
+                )}
+              </TouchableOpacity>
+              {guideErr ? <Text style={styles.guideErr}>{guideErr}</Text> : null}
+
+              {/* FIX 6 — Collapsible "Not sure about this style?" (barber-only) */}
+              <TouchableOpacity
+                style={styles.aiSectionHeader}
+                onPress={() => setAiExpanded((v) => !v)}
+                accessibilityRole="button"
+                accessibilityLabel={aiExpanded ? 'Collapse ask AI section' : 'Expand ask AI section'}
+              >
+                <Text style={styles.aiSectionHeaderText}>Not sure about this style?</Text>
+                <Ionicons
+                  name={aiExpanded ? 'chevron-up' : 'chevron-down'}
+                  size={20}
+                  color={C.gold}
+                />
+              </TouchableOpacity>
+
+              {aiExpanded ? (
+                <View style={styles.aiSectionBody}>
+                  <TextInput
+                    style={styles.aiInput}
+                    placeholder="Describe what you're unsure about..."
+                    placeholderTextColor={C.greyDark}
+                    value={aiQuestion}
+                    onChangeText={setAiQuestion}
+                    multiline
+                    numberOfLines={3}
+                    textAlignVertical="top"
+                    maxLength={500}
+                    accessibilityLabel="Your question for AI"
+                  />
+                  <TouchableOpacity
+                    style={[styles.askAiBtn, aiBusy && { opacity: 0.6 }]}
+                    onPress={() => void askAiAboutCut()}
+                    disabled={aiBusy}
+                    accessibilityRole="button"
+                    accessibilityLabel="Ask AI"
+                  >
+                    {aiBusy ? (
+                      <ActivityIndicator color={C.bg} size="small" />
+                    ) : (
+                      <Text style={styles.askAiBtnText}>Ask AI</Text>
+                    )}
+                  </TouchableOpacity>
+                  {aiErr ? <Text style={styles.guideErr}>{aiErr}</Text> : null}
+                  {aiSteps && aiSteps.length === 0 ? (
+                    <Text style={styles.guideEmpty}>No steps came back. Try again.</Text>
+                  ) : null}
+                  {(aiSteps ?? []).map((step) => (
+                    <View key={step.number} style={styles.stepCard}>
+                      <View style={styles.stepNum}>
+                        <Text style={styles.stepNumText}>{step.number}</Text>
+                      </View>
+                      <View style={styles.stepBody}>
+                        <Text style={styles.stepTitle}>{step.title}</Text>
+                        <Text style={styles.stepDesc}>{step.description}</Text>
+                        {step.tools ? <Text style={styles.stepTools}>Tools: {step.tools}</Text> : null}
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+
+              <TouchableOpacity style={styles.modalClose} onPress={closeStyleModal}>
+                <Text style={styles.modalCloseText}>Close</Text>
+              </TouchableOpacity>
+            </ScrollView>
           </Pressable>
         </Pressable>
       </Modal>
@@ -1123,11 +1276,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
   modalCard: {
-    backgroundColor: C.surface,
+    backgroundColor: '#111111',
     borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: C.gold,
-    padding: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
+    maxHeight: '90%',
   },
   modalTitle: {
     fontFamily: fonts.heading,
@@ -1135,12 +1291,114 @@ const styles = StyleSheet.create({
     color: C.white,
     marginBottom: spacing.md,
   },
-  modalPhoto: {
-    width: '100%',
-    aspectRatio: 16 / 9,
-    borderRadius: radius.md,
-    backgroundColor: C.surfaceRaised,
+  // FIX 4 — Style name header (BebasNeue gold 22px)
+  styleNameHeader: {
+    fontFamily: fonts.heading,
+    fontSize: 22,
+    color: C.gold,
+    letterSpacing: fonts.letterSpacing.tight,
     marginBottom: spacing.md,
+  },
+  // FIX 4 — Before/After comparison
+  beforeAfterContainer: {
+    width: '100%',
+    height: 200,
+    position: 'relative',
+    borderRadius: radius.md,
+    overflow: 'hidden',
+    backgroundColor: '#000000',
+    marginBottom: spacing.md,
+  },
+  beforeAfterHalf: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: '50%',
+    overflow: 'hidden',
+  },
+  beforeAfterImage: { width: '100%', height: '100%' },
+  beforeAfterSingleImage: {
+    width: '100%',
+    height: '100%',
+  },
+  baLabel: {
+    position: 'absolute',
+    bottom: 8,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  baLabelLeft: { left: 8 },
+  baLabelRight: { right: 8 },
+  baLabelText: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: fonts.size.xs,
+    color: C.white,
+  },
+  baDivider: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: '50%',
+    width: 2,
+    marginLeft: -1,
+    backgroundColor: C.gold,
+  },
+  clientNoteText: {
+    fontFamily: fonts.body,
+    fontStyle: 'italic',
+    fontSize: fonts.size.sm,
+    color: C.grey,
+    marginBottom: spacing.md,
+    lineHeight: 20,
+  },
+  // FIX 6 — AI explanation section
+  aiSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: C.goldGlow,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: C.gold,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  aiSectionHeaderText: {
+    fontFamily: fonts.bodyBold,
+    fontSize: fonts.size.sm,
+    color: C.gold,
+  },
+  aiSectionBody: {
+    marginBottom: spacing.md,
+  },
+  aiInput: {
+    width: '100%',
+    minHeight: 80,
+    backgroundColor: '#1A1A1A',
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: C.gold,
+    color: C.white,
+    fontFamily: fonts.body,
+    fontSize: fonts.size.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  askAiBtn: {
+    backgroundColor: C.gold,
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  askAiBtnText: {
+    fontFamily: fonts.bodyBold,
+    fontSize: fonts.size.sm,
+    color: C.bg,
   },
   modalDesc: {
     fontFamily: fonts.body,

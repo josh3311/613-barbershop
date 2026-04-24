@@ -10,9 +10,6 @@ import {
   ActivityIndicator,
   Animated,
   Modal,
-  PanResponder,
-  GestureResponderEvent,
-  PanResponderGestureState,
 } from 'react-native';
 import { Text } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
@@ -36,9 +33,10 @@ import {
 } from '@/services/unsplash.service';
 import {
   friendlyBestFor,
-  friendlyHairNote,
   friendlyMaintenance,
 } from '@/utils/styleDisplay.utils';
+import BookingNoteModal from '@/components/BookingNoteModal';
+import type { SavedLook } from '@/types/user.types';
 import { colors, fonts, spacing, radius, shadows, icons, animations } from '@/theme';
 
 const SW = Dimensions.get('window').width;
@@ -67,7 +65,7 @@ function getProfileString(
   return typeof raw === 'string' ? raw : undefined;
 }
 
-// Before/After Comparison Modal Component
+// Before/After Comparison Modal Component (FIX 1: full-screen, 50/50 split)
 interface BeforeAfterModalProps {
   visible: boolean;
   onClose: () => void;
@@ -88,81 +86,111 @@ function BeforeAfterModal({
   saving,
 }: BeforeAfterModalProps): React.JSX.Element {
   const insets = useSafeAreaInsets();
-  const [dividerPosition, setDividerPosition] = useState(SW / 2);
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderMove: (_: GestureResponderEvent, gestureState: PanResponderGestureState) => {
-        const newPosition = gestureState.moveX;
-        if (newPosition >= 20 && newPosition <= SW - 20) {
-          setDividerPosition(newPosition);
-        }
-      },
-    }),
-  ).current;
+  const halfWidth = SW / 2;
+  const [showAfterFullscreen, setShowAfterFullscreen] = useState(false);
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
-        <View style={[styles.modalContent, { paddingTop: insets.top + spacing.lg }]}>
-          <View style={styles.modalHeader}>
+        <View style={styles.modalContent}>
+          {/* Header */}
+          <View style={[styles.modalHeader, { paddingTop: insets.top + spacing.sm }]}>
             <Text style={styles.modalTitle}>Your Style Preview</Text>
-            <TouchableOpacity onPress={onClose} style={styles.modalCloseBtn}>
+            <TouchableOpacity
+              onPress={onClose}
+              style={styles.modalCloseBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Close preview"
+            >
               <Ionicons name={icons.close} size={28} color={colors.white} />
             </TouchableOpacity>
           </View>
 
+          {/* Side-by-side images, exactly 50/50 of the full screen width */}
           <View style={styles.comparisonContainer}>
-            {/* Left side - Original */}
-            <View style={[styles.halfImageContainer, { width: dividerPosition }]}>
+            {/* Before — left half */}
+            <View style={[styles.halfImageContainer, { width: halfWidth, left: 0 }]}>
               <Image source={{ uri: originalPhoto }} style={styles.comparisonImage} resizeMode="cover" />
-              <View style={styles.imageLabelOverlay}>
+              <View style={[styles.imageLabelOverlay, styles.imageLabelLeft]}>
                 <Text style={styles.imageLabel}>Before</Text>
               </View>
             </View>
 
-            {/* Right side - Result */}
-            <View style={[styles.halfImageContainer, { width: SW - dividerPosition, left: dividerPosition }]}>
+            {/* After — right half */}
+            <View style={[styles.halfImageContainer, { width: halfWidth, left: halfWidth }]}>
               <Image source={{ uri: resultPhoto }} style={styles.comparisonImage} resizeMode="cover" />
-              <View style={styles.imageLabelOverlay}>
+              <View style={[styles.imageLabelOverlay, styles.imageLabelRight]}>
                 <Text style={styles.imageLabel}>After</Text>
               </View>
             </View>
 
-            {/* Draggable Divider */}
-            <View
-              style={[styles.dividerLine, { left: dividerPosition - 2 }]}
-              {...panResponder.panHandlers}
-            >
-              <View style={styles.dividerHandle}>
+            {/* Centered 2px gold divider with swap icon */}
+            <View style={[styles.dividerLine, { left: halfWidth - 1 }]} pointerEvents="box-none">
+              <TouchableOpacity
+                style={styles.dividerHandle}
+                onPress={() => setShowAfterFullscreen(true)}
+                accessibilityRole="button"
+                accessibilityLabel="View after fullscreen"
+              >
                 <Ionicons name="swap-horizontal" size={20} color={colors.gold} />
-              </View>
+              </TouchableOpacity>
             </View>
           </View>
 
-          <View style={styles.modalButtons}>
+          {/* Stacked action buttons */}
+          <View style={[styles.modalButtons, { paddingBottom: insets.bottom + spacing.lg }]}>
             <TouchableOpacity
-              style={styles.primaryBtn}
+              style={styles.modalPrimaryBtn}
               onPress={onBook}
-              activeOpacity={0.8}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Book this style"
             >
-              <Text style={styles.primaryBtnText}>Book this style</Text>
+              <Text style={styles.modalPrimaryBtnText}>Book this style</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.outlineBtn}
+              style={styles.modalOutlineBtn}
               onPress={onSave}
               disabled={saving}
-              activeOpacity={0.8}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Save this look"
             >
               {saving ? (
                 <ActivityIndicator color={colors.gold} size="small" />
               ) : (
-                <Text style={styles.outlineBtnText}>Save this look</Text>
+                <Text style={styles.modalOutlineBtnText}>Save this look</Text>
               )}
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalCloseTextBtn}
+              onPress={onClose}
+              accessibilityRole="button"
+              accessibilityLabel="Close"
+            >
+              <Text style={styles.modalCloseTextBtnText}>Close</Text>
+            </TouchableOpacity>
           </View>
+
+          {/* Tap-to-zoom fullscreen After image */}
+          <Modal visible={showAfterFullscreen} transparent animationType="fade">
+            <TouchableOpacity
+              activeOpacity={1}
+              style={styles.fullscreenOverlay}
+              onPress={() => setShowAfterFullscreen(false)}
+            >
+              <Image
+                source={{ uri: resultPhoto }}
+                style={styles.fullscreenImage}
+                resizeMode="contain"
+              />
+              <View style={[styles.fullscreenClose, { top: insets.top + spacing.md }]}>
+                <Ionicons name={icons.close} size={28} color={colors.white} />
+              </View>
+            </TouchableOpacity>
+          </Modal>
         </View>
       </View>
     </Modal>
@@ -383,7 +411,10 @@ export default function StyleResultsScreen({ navigation, route }: Props): React.
     });
   }
 
-  async function bookThisStyle(item: StyleRecommendation): Promise<void> {
+  async function bookThisStyle(
+    item: StyleRecommendation,
+    opts?: { clientNote?: string; beforePhotoURL?: string; afterPhotoURL?: string },
+  ): Promise<void> {
     if (!firebaseUser?.uid) {
       Alert.alert('Not signed in', 'Sign in to attach a style to your booking.');
       return;
@@ -391,15 +422,18 @@ export default function StyleResultsScreen({ navigation, route }: Props): React.
     setBookBusyStyle(item.style_name);
     try {
       const ph =
-        photos[item.style_name] && !isStylePhotoPlaceholderUrl(photos[item.style_name])
+        opts?.afterPhotoURL ||
+        (photos[item.style_name] && !isStylePhotoPlaceholderUrl(photos[item.style_name])
           ? photos[item.style_name]
-          : STYLE_PHOTO_PLACEHOLDER_URL;
+          : STYLE_PHOTO_PLACEHOLDER_URL);
       const res = await BookingService.attachRequestedStyleForClient(firebaseUser.uid, {
         name: item.style_name,
         photoURL: ph,
         description:
           item.why_it_suits_you?.trim() ||
           `The look you picked: ${item.style_name}. Your barber can fine-tune it in the chair.`,
+        ...(opts?.beforePhotoURL ? { beforePhotoURL: opts.beforePhotoURL } : {}),
+        ...(opts?.clientNote ? { clientNote: opts.clientNote } : {}),
       });
       if (!res.success) {
         Alert.alert('Could not attach', res.error);
@@ -510,20 +544,45 @@ export default function StyleResultsScreen({ navigation, route }: Props): React.
     }
   };
 
-  // Handle save this look
+  // Build the same plain-English description used elsewhere so the saved
+  // record always carries something a barber can read.
+  const buildDescriptionFor = useCallback((rec: StyleRecommendation): string => {
+    const why = rec.why_it_suits_you?.trim();
+    if (why) return why;
+    return `The look you picked: ${rec.style_name}. Your barber can fine-tune it in the chair.`;
+  }, []);
+
+  // Build concise barber-facing notes (texture, maintenance, best-for tags).
+  const buildBarberNotesFor = useCallback((rec: StyleRecommendation): string => {
+    const parts: string[] = [];
+    const maint = friendlyMaintenance(rec.maintenance_level);
+    if (maint) parts.push(maint);
+    const best = friendlyBestFor(rec.best_for);
+    if (best) parts.push(best);
+    if (typeof rec.duration_minutes === 'number') {
+      parts.push(`About ${rec.duration_minutes} min in the chair`);
+    }
+    return parts.join(' · ');
+  }, []);
+
+  // Handle save this look — FIX 2: save the rich SavedLook shape
   const handleSaveLook = async (): Promise<void> => {
-    if (!firebaseUser?.uid || !resultPhoto || !currentTryOnStyle) return;
+    if (!firebaseUser?.uid || !resultPhoto || !currentTryOnStyle || !originalPhoto) return;
 
     setSavingLook(true);
     try {
-      const lookData = {
-        photoURL: resultPhoto,
+      const look: SavedLook = {
+        id: Date.now().toString(),
         styleName: currentTryOnStyle.style_name,
-        createdAt: new Date().toISOString(),
+        beforeUrl: originalPhoto,
+        afterUrl: resultPhoto,
+        styleDescription: buildDescriptionFor(currentTryOnStyle),
+        barberNotes: buildBarberNotesFor(currentTryOnStyle),
+        savedAt: new Date().toISOString(),
       };
 
       await updateDoc(doc(db, COLLECTIONS.USERS, firebaseUser.uid), {
-        savedLooks: arrayUnion(lookData),
+        savedLooks: arrayUnion(look),
       });
 
       Alert.alert('Saved!', 'This look has been added to your saved styles.');
@@ -534,6 +593,31 @@ export default function StyleResultsScreen({ navigation, route }: Props): React.
       setSavingLook(false);
     }
   };
+
+  // FIX 5 — pre-confirmation note modal state
+  const [pendingBook, setPendingBook] = useState<{
+    rec: StyleRecommendation;
+    beforePhotoURL?: string;
+    afterPhotoURL?: string;
+  } | null>(null);
+
+  function startBookFlow(
+    rec: StyleRecommendation,
+    opts?: { beforePhotoURL?: string; afterPhotoURL?: string },
+  ): void {
+    setPendingBook({ rec, ...opts });
+  }
+
+  async function confirmBookWithNote(note: string): Promise<void> {
+    const pending = pendingBook;
+    setPendingBook(null);
+    if (!pending) return;
+    await bookThisStyle(pending.rec, {
+      clientNote: note,
+      beforePhotoURL: pending.beforePhotoURL,
+      afterPhotoURL: pending.afterPhotoURL,
+    });
+  }
 
   // Button press animation handler
   const [pressedButton, setPressedButton] = useState<string | null>(null);
@@ -622,13 +706,24 @@ export default function StyleResultsScreen({ navigation, route }: Props): React.
           onBook={() => {
             setShowBeforeAfter(false);
             if (currentTryOnStyle) {
-              void bookThisStyle(currentTryOnStyle);
+              startBookFlow(currentTryOnStyle, {
+                beforePhotoURL: originalPhoto,
+                afterPhotoURL: resultPhoto,
+              });
             }
           }}
           onSave={() => void handleSaveLook()}
           saving={savingLook}
         />
       )}
+
+      {/* FIX 5 — pre-confirmation note modal */}
+      <BookingNoteModal
+        visible={pendingBook !== null}
+        styleName={pendingBook?.rec.style_name ?? ''}
+        onConfirm={(note) => void confirmBookWithNote(note)}
+        onCancel={() => setPendingBook(null)}
+      />
 
       {/* Error Banner */}
       {errorMessage && (
@@ -741,7 +836,7 @@ export default function StyleResultsScreen({ navigation, route }: Props): React.
               )}
 
               {renderPressableButton(
-                () => void bookThisStyle(item),
+                () => startBookFlow(item),
                 bookingThis ? <ActivityIndicator color={colors.gold} size="small" /> : 'Book this style',
                 'outline',
                 photosLoading || bookingThis,
@@ -1045,10 +1140,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  // Before/After Modal Styles
+  // Before/After Modal Styles — FIX 1: full screen, 50/50 split
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(10, 10, 10, 0.95)',
+    backgroundColor: colors.background,
+    margin: 0,
   },
   modalContent: {
     flex: 1,
@@ -1059,7 +1155,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
+    paddingBottom: spacing.sm,
   },
   modalTitle: {
     fontSize: fonts.size.xl,
@@ -1074,8 +1170,10 @@ const styles = StyleSheet.create({
   },
   comparisonContainer: {
     flex: 1,
+    minHeight: 400,
     position: 'relative',
     overflow: 'hidden',
+    backgroundColor: '#000000',
   },
   halfImageContainer: {
     position: 'absolute',
@@ -1084,17 +1182,22 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   comparisonImage: {
-    width: SW,
+    width: '100%',
     height: '100%',
   },
   imageLabelOverlay: {
     position: 'absolute',
     bottom: spacing.md,
-    left: spacing.md,
     backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.sm,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  imageLabelLeft: {
+    left: spacing.md,
+  },
+  imageLabelRight: {
+    right: spacing.md,
   },
   imageLabel: {
     fontSize: fonts.size.sm,
@@ -1105,7 +1208,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     bottom: 0,
-    width: 4,
+    width: 2,
     backgroundColor: colors.gold,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1124,7 +1227,63 @@ const styles = StyleSheet.create({
   modalButtons: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
-    paddingBottom: spacing.lg,
+  },
+  modalPrimaryBtn: {
+    width: '100%',
+    paddingVertical: spacing.md,
+    borderRadius: radius['2xl'],
+    backgroundColor: colors.gold,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+  },
+  modalPrimaryBtnText: {
+    fontSize: fonts.size.md,
+    fontFamily: fonts.bodyBold,
+    color: colors.background,
+  },
+  modalOutlineBtn: {
+    width: '100%',
+    marginTop: spacing.sm,
+    paddingVertical: spacing.md,
+    borderRadius: radius['2xl'],
+    borderWidth: 1,
+    borderColor: colors.gold,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+    minHeight: 48,
+  },
+  modalOutlineBtnText: {
+    fontSize: fonts.size.md,
+    fontFamily: fonts.bodyBold,
+    color: colors.gold,
+  },
+  modalCloseTextBtn: {
+    width: '100%',
+    marginTop: spacing.sm,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCloseTextBtnText: {
+    fontSize: fonts.size.md,
+    fontFamily: fonts.bodySemiBold,
+    color: colors.grey,
+  },
+  fullscreenOverlay: {
+    flex: 1,
+    backgroundColor: '#000000EE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fullscreenImage: {
+    width: '100%',
+    height: '100%',
+  },
+  fullscreenClose: {
+    position: 'absolute',
+    right: spacing.lg,
   },
 
   // Error Banner

@@ -414,6 +414,7 @@ func styleChat(c *gin.Context) {
 type barberCutGuideRequest struct {
 	StyleName   string `json:"style_name"`
 	HairTexture string `json:"hair_texture"`
+	Question    string `json:"question"`
 }
 
 func barberCutGuide(c *gin.Context) {
@@ -431,12 +432,23 @@ func barberCutGuide(c *gin.Context) {
 	if tex == "" {
 		tex = "typical"
 	}
+	question := strings.TrimSpace(req.Question)
 
-	prompt := fmt.Sprintf(
-		`You are a senior barber instructor. Explain step by step how to do a %s on a client with %s hair. Return ONLY valid JSON, no markdown, no backticks: {"steps":[{"number":1,"title":"string","description":"plain English instruction","tools":"clippers guard 2"}]}. Keep each step practical and simple.`,
-		style,
-		tex,
-	)
+	var prompt string
+	if question != "" {
+		prompt = fmt.Sprintf(
+			`You are a senior barber instructor. A barber is preparing to do a %s on a client with %s hair. The barber asked this specific question: %q. Answer the question with clear, practical, numbered steps. Return ONLY valid JSON, no markdown, no backticks: {"steps":[{"number":1,"title":"string","description":"plain English instruction","tools":"clippers guard 2"}]}. Focus your steps directly on the question.`,
+			style,
+			tex,
+			question,
+		)
+	} else {
+		prompt = fmt.Sprintf(
+			`You are a senior barber instructor. Explain step by step how to do a %s on a client with %s hair. Return ONLY valid JSON, no markdown, no backticks: {"steps":[{"number":1,"title":"string","description":"plain English instruction","tools":"clippers guard 2"}]}. Keep each step practical and simple.`,
+			style,
+			tex,
+		)
+	}
 
 	messages := []ClaudeMessage{
 		{

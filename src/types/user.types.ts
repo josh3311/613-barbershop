@@ -11,6 +11,27 @@ export interface SavedTryOn {
 }
 
 /**
+ * Rich saved look stored in `users/{uid}.savedLooks`. Includes the original
+ * selfie (before) AND the FLUX Kontext result (after) so the client can
+ * review them later, share them in the AI chat, and book a style with the
+ * full preview attached for the barber.
+ */
+export interface SavedLook {
+  id: string;
+  styleName: string;
+  /** Base64 data URL of the original selfie */
+  beforeUrl: string;
+  /** FLUX Kontext result URL */
+  afterUrl: string;
+  /** Plain English description from the style card */
+  styleDescription: string;
+  /** Detailed barber instructions (guards, fade height, etc.) */
+  barberNotes: string;
+  /** ISO timestamp string when the look was saved (used by client UI for sorting / display) */
+  savedAt: string;
+}
+
+/**
  * Firestore collection: `users`
  * One document per authenticated user.
  */
@@ -36,6 +57,8 @@ export interface User extends WithId {
   savedStyle?: RequestedStyle & { savedAt: Timestamp };
   /** AI virtual try-on gallery (latest first in UI) */
   savedTryOns?: SavedTryOn[];
+  /** Rich before/after looks generated via FLUX Kontext, ordered newest-first in UI */
+  savedLooks?: SavedLook[];
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }

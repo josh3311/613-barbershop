@@ -10,6 +10,7 @@ import {
   ScrollView,
   Image,
   Alert,
+  Dimensions,
 } from 'react-native';
 import { Text } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,13 +18,14 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { CameraView, useCameraPermissions, CameraType } from 'expo-camera';
-import { doc, onSnapshot, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, updateDoc, serverTimestamp, arrayRemove } from 'firebase/firestore';
 import { StyleStackParamList } from '@/navigation/types';
 import { db } from '@/config/firebase';
 import { COLLECTIONS } from '@/constants/collections';
 import { useAuth } from '@/hooks/useAuth';
 import type { ProfileAnalysisResult, StyleRecommendation } from '@/services/ai.service';
 import { AIService } from '@/services/ai.service';
+import { BookingService } from '@/services/booking.service';
 import {
   UnsplashService,
   STYLE_PHOTO_PLACEHOLDER_URL,
@@ -31,7 +33,11 @@ import {
   stylePhotoHintsFromProfileRecord,
 } from '@/services/unsplash.service';
 import { readImageAsBase64, inferImageMediaType } from '@/utils/imageBase64.utils';
+import BookingNoteModal from '@/components/BookingNoteModal';
+import type { SavedLook } from '@/types/user.types';
 import { colors, fonts, spacing, radius, shadows, icons, animations } from '@/theme';
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
 
 type Props = NativeStackScreenProps<StyleStackParamList, 'StyleOnboarding'>;
 
@@ -52,6 +58,11 @@ export default function StyleOnboardingScreen({ navigation }: Props): React.JSX.
   const [savedAnalysis, setSavedAnalysis] = useState<ProfileAnalysisResult | null>(null);
   const [savedPhotos, setSavedPhotos] = useState<Record<string, string>>({});
   const [savedPhotosLoading, setSavedPhotosLoading] = useState(false);
+  const [savedLooks, setSavedLooks] = useState<SavedLook[]>([]);
+  const [openLook, setOpenLook] = useState<SavedLook | null>(null);
+  const [removingLook, setRemovingLook] = useState(false);
+  const [pendingBookLook, setPendingBookLook] = useState<SavedLook | null>(null);
+  const [bookingFromLook, setBookingFromLook] = useState(false);
   const spin = useRef(new Animated.Value(0)).current;
 
   // Animation values for card entrance
@@ -106,11 +117,13 @@ export default function StyleOnboardingScreen({ navigation }: Props): React.JSX.
   useEffect(() => {
     if (!firebaseUser?.uid) {
       setSavedAnalysis(null);
+      setSavedLooks([]);
       return;
     }
     const uref = doc(db, COLLECTIONS.USERS, firebaseUser.uid);
     return onSnapshot(uref, (snap) => {
-      const sp = snap.data()?.styleProfile as
+      const data = snap.data();
+      const sp = data?.styleProfile as
         | { profile?: ProfileAnalysisResult['profile']; styles?: ProfileAnalysisResult['styles'] }
         | undefined;
       if (sp?.profile && sp?.styles?.recommendations && Array.isArray(sp.styles.recommendations)) {
@@ -121,6 +134,24 @@ export default function StyleOnboardingScreen({ navigation }: Props): React.JSX.
         });
       } else {
         setSavedAnalysis(null);
+      }
+
+      const rawLooks = data?.savedLooks;
+      if (Array.isArray(rawLooks)) {
+        const cleaned: SavedLook[] = rawLooks
+          .filter(
+            (l): l is SavedLook =>
+              l &&
+              typeof l === 'object' &&
+              typeof l.id === 'string' &&
+              typeof l.afterUrl === 'string' &&
+              typeof l.beforeUrl === 'string' &&
+              typeof l.styleName === 'string',
+          )
+          .sort((a, b) => (b.savedAt ?? '').localeCompare(a.savedAt ?? ''));
+        setSavedLooks(cleaned);
+      } else {
+        setSavedLooks([]);
       }
     });
   }, [firebaseUser?.uid]);
@@ -387,6 +418,81 @@ export default function StyleOnboardingScreen({ navigation }: Props): React.JSX.
     navigation.navigate('StyleResults', { analysis: savedAnalysis, readOnly: true });
   }
 
+  // FIX 2 — Saved look interactions
+  function startBookFromLook(look: SavedLook): void {
+    setOpenLook(null);
+    setPendingBookLook(look);
+  }
+
+  async function confirmBookFromLook(note: string): Promise<void> {
+    const look = pendingBookLook;
+    setPendingBookLook(null);
+    if (!look || !firebaseUser?.uid) return;
+    setBookingFromLook(true);
+    try {
+      const res = await BookingService.attachRequestedStyleForClient(firebaseUser.uid, {
+        name: look.styleName,
+        photoURL: look.afterUrl,
+        description: look.styleDescription,
+        beforePhotoURL: look.beforeUrl,
+        ...(look.barberNotes ? { barberNotes: look.barberNotes } : {}),
+        ...(note ? { clientNote: note } : {}),
+      });
+      if (!res.success) {
+        Alert.alert('Could not attach', res.error);
+        return;
+      }
+      if (res.data.mode === 'booking') {
+        Alert.alert('Style added', 'Style added to your booking! Your barber will see your preview.');
+      } else {
+        Alert.alert(
+          'Style saved',
+          'Style saved! It will be attached to your next booking automatically.',
+        );
+      }
+    } catch (e) {
+      console.error('[savedLooks] book FAILED:', e);
+      Alert.alert('Could not attach', 'Try again.');
+    } finally {
+      setBookingFromLook(false);
+    }
+  }
+
+  async function removeSavedLook(look: SavedLook): Promise<void> {
+    if (!firebaseUser?.uid) return;
+    const confirmed =
+      Platform.OS === 'web'
+        ? typeof window !== 'undefined' && window.confirm('Remove this look from your saved styles?')
+        : await new Promise<boolean>((resolve) => {
+            Alert.alert('Remove look?', 'This look will be removed from your saved styles.', [
+              { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+              { text: 'Remove', style: 'destructive', onPress: () => resolve(true) },
+            ]);
+          });
+    if (!confirmed) return;
+    setRemovingLook(true);
+    try {
+      await updateDoc(doc(db, COLLECTIONS.USERS, firebaseUser.uid), {
+        savedLooks: arrayRemove(look),
+      });
+      setOpenLook(null);
+    } catch (e) {
+      console.error('[savedLooks] remove FAILED:', e);
+      Alert.alert('Could not remove', 'Try again.');
+    } finally {
+      setRemovingLook(false);
+    }
+  }
+
+  function formatLookDate(iso: string): string {
+    try {
+      const d = new Date(iso);
+      return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    } catch {
+      return '';
+    }
+  }
+
   // Button press animation
   const [pressedCard, setPressedCard] = useState<number | null>(null);
 
@@ -505,6 +611,41 @@ export default function StyleOnboardingScreen({ navigation }: Props): React.JSX.
             </ScrollView>
           </Animated.View>
         ) : null}
+
+        {/* FIX 2 — YOUR LOOKS: before/after gallery saved by the client */}
+        {savedLooks.length > 0 ? (
+          <View style={styles.looksSection}>
+            <Text style={styles.savedSectionLabel}>Your Looks</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.looksRow}
+            >
+              {savedLooks.map((look) => (
+                <TouchableOpacity
+                  key={look.id}
+                  style={styles.lookCard}
+                  onPress={() => setOpenLook(look)}
+                  activeOpacity={0.9}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open saved look ${look.styleName}`}
+                >
+                  <Image source={{ uri: look.afterUrl }} style={styles.lookCardImage} resizeMode="cover" />
+                  <View style={styles.lookCardOverlay} />
+                  <View style={styles.lookCardPill}>
+                    <Text style={styles.lookCardPillText}>Before/After</Text>
+                  </View>
+                  <View style={styles.lookCardCaption}>
+                    <Text style={styles.lookCardName} numberOfLines={1}>
+                      {look.styleName}
+                    </Text>
+                    <Text style={styles.lookCardDate}>{formatLookDate(look.savedAt)}</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
       </ScrollView>
 
       {error ? (
@@ -563,6 +704,83 @@ export default function StyleOnboardingScreen({ navigation }: Props): React.JSX.
           </View>
         </View>
       </Modal>
+
+      {/* FIX 2 — Saved Look Detail Modal */}
+      <Modal
+        visible={openLook !== null}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setOpenLook(null)}
+      >
+        {openLook ? (
+          <View style={styles.lookModalRoot}>
+            <View style={[styles.lookModalHeader, { paddingTop: insets.top + spacing.sm }]}>
+              <TouchableOpacity
+                onPress={() => setOpenLook(null)}
+                style={styles.iconBtn}
+                accessibilityRole="button"
+                accessibilityLabel="Close look"
+              >
+                <Ionicons name={icons.close} size={26} color={colors.white} />
+              </TouchableOpacity>
+              <Text style={styles.lookModalTitle} numberOfLines={1}>
+                {openLook.styleName}
+              </Text>
+              <View style={styles.iconBtn} />
+            </View>
+
+            <View style={styles.lookComparisonContainer}>
+              <View style={[styles.lookHalf, { width: SCREEN_WIDTH / 2, left: 0 }]}>
+                <Image source={{ uri: openLook.beforeUrl }} style={styles.lookHalfImage} resizeMode="cover" />
+                <View style={[styles.lookHalfLabel, styles.lookHalfLabelLeft]}>
+                  <Text style={styles.lookHalfLabelText}>Before</Text>
+                </View>
+              </View>
+              <View style={[styles.lookHalf, { width: SCREEN_WIDTH / 2, left: SCREEN_WIDTH / 2 }]}>
+                <Image source={{ uri: openLook.afterUrl }} style={styles.lookHalfImage} resizeMode="cover" />
+                <View style={[styles.lookHalfLabel, styles.lookHalfLabelRight]}>
+                  <Text style={styles.lookHalfLabelText}>After</Text>
+                </View>
+              </View>
+              <View style={[styles.lookDivider, { left: SCREEN_WIDTH / 2 - 1 }]} />
+            </View>
+
+            <View style={[styles.lookActions, { paddingBottom: insets.bottom + spacing.lg }]}>
+              {openLook.barberNotes ? (
+                <Text style={styles.lookNotes} numberOfLines={3}>
+                  Barber notes: {openLook.barberNotes}
+                </Text>
+              ) : null}
+              <TouchableOpacity
+                style={styles.lookBookBtn}
+                onPress={() => startBookFromLook(openLook)}
+                disabled={bookingFromLook}
+                accessibilityRole="button"
+                accessibilityLabel="Book this style"
+              >
+                <Text style={styles.lookBookBtnText}>Book this style</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.lookRemoveBtn}
+                onPress={() => void removeSavedLook(openLook)}
+                disabled={removingLook}
+                accessibilityRole="button"
+                accessibilityLabel="Remove this look"
+              >
+                <Text style={styles.lookRemoveBtnText}>{removingLook ? 'Removing...' : 'Remove'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
+      </Modal>
+
+      {/* FIX 5 — pre-confirmation note modal for saved looks */}
+      <BookingNoteModal
+        visible={pendingBookLook !== null}
+        styleName={pendingBookLook?.styleName ?? ''}
+        onConfirm={(note) => void confirmBookFromLook(note)}
+        onCancel={() => setPendingBookLook(null)}
+      />
 
       {/* Preview Modal */}
       <Modal visible={showPreview} animationType="fade" transparent onRequestClose={closePreview}>
@@ -850,5 +1068,160 @@ const styles = StyleSheet.create({
     color: colors.background,
     fontFamily: fonts.bodyBold,
     fontSize: fonts.size.md,
+  },
+
+  // FIX 2 — Your Looks horizontal strip
+  looksSection: { marginTop: spacing['2xl'] },
+  looksRow: { gap: spacing.md, paddingRight: spacing.sm },
+  lookCard: {
+    width: 140,
+    height: 180,
+    backgroundColor: '#111111',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.gold,
+    overflow: 'hidden',
+    ...shadows.sm,
+  },
+  lookCardImage: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  lookCardOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+  },
+  lookCardPill: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    backgroundColor: colors.gold,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  lookCardPillText: {
+    fontSize: 9,
+    fontFamily: fonts.bodyBold,
+    color: colors.background,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  lookCardCaption: {
+    position: 'absolute',
+    left: 8,
+    right: 8,
+    bottom: 8,
+  },
+  lookCardName: {
+    fontSize: 11,
+    fontFamily: fonts.bodyBold,
+    color: colors.white,
+  },
+  lookCardDate: {
+    fontSize: 10,
+    fontFamily: fonts.body,
+    color: colors.grey,
+    marginTop: 2,
+  },
+
+  // FIX 2 — Saved Look detail modal (full-screen before/after)
+  lookModalRoot: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  lookModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.sm,
+    paddingBottom: spacing.sm,
+  },
+  lookModalTitle: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: fonts.size.xl,
+    fontFamily: fonts.bodyBold,
+    color: colors.white,
+  },
+  lookComparisonContainer: {
+    flex: 1,
+    minHeight: 400,
+    position: 'relative',
+    backgroundColor: '#000000',
+    overflow: 'hidden',
+  },
+  lookHalf: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    overflow: 'hidden',
+  },
+  lookHalfImage: {
+    width: '100%',
+    height: '100%',
+  },
+  lookHalfLabel: {
+    position: 'absolute',
+    bottom: spacing.md,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  lookHalfLabelLeft: {
+    left: spacing.md,
+  },
+  lookHalfLabelRight: {
+    right: spacing.md,
+  },
+  lookHalfLabelText: {
+    fontSize: fonts.size.sm,
+    fontFamily: fonts.bodySemiBold,
+    color: colors.white,
+  },
+  lookDivider: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 2,
+    backgroundColor: colors.gold,
+  },
+  lookActions: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    backgroundColor: colors.background,
+  },
+  lookNotes: {
+    fontSize: fonts.size.sm,
+    fontFamily: fonts.body,
+    color: colors.grey,
+    marginBottom: spacing.md,
+    textAlign: 'center',
+  },
+  lookBookBtn: {
+    width: '100%',
+    paddingVertical: spacing.md,
+    borderRadius: radius['2xl'],
+    backgroundColor: colors.gold,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+  },
+  lookBookBtnText: {
+    fontSize: fonts.size.md,
+    fontFamily: fonts.bodyBold,
+    color: colors.background,
+  },
+  lookRemoveBtn: {
+    width: '100%',
+    marginTop: spacing.sm,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lookRemoveBtnText: {
+    fontSize: fonts.size.md,
+    fontFamily: fonts.bodySemiBold,
+    color: colors.red,
   },
 });
