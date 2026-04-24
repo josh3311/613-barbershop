@@ -1,54 +1,78 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+/**
+ * ClientsScreen.tsx
+ *
+ * Redesigned clients screen with:
+ * - Modern card-based layout
+ * - Search functionality
+ * - Stats row at top
+ * - React Native Animated API animations
+ */
+
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
-  View, Text, StyleSheet, FlatList,
-  TouchableOpacity, StatusBar, TextInput, RefreshControl,
+  View,
+  StyleSheet,
+  FlatList,
+  TouchableOpacity,
+  StatusBar,
+  RefreshControl,
+  Animated,
 } from 'react-native';
-import { ActivityIndicator } from 'react-native-paper';
+import { Text, TextInput, ActivityIndicator } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
-import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BarberTabParamList } from '@/navigation/types';
+
+import {
+  colors,
+  fonts,
+  spacing,
+  radius,
+  shadows,
+  icons,
+  animations,
+} from '@/theme';
 import { useAuth } from '@/hooks/useAuth';
 import { BookingService } from '@/services/booking.service';
 import { Booking } from '@/types/booking.types';
 import { safeToDate } from '@/utils/date.utils';
 
-type Props = BottomTabScreenProps<BarberTabParamList, 'Clients'>;
-
-// ─── Theme ────────────────────────────────────────────────────────────────────
+// ─── Theme Constants ──────────────────────────────────────────────────────────
 
 const C = {
-  bg:         '#0A0A0A',
-  card:       '#161616',
-  elevated:   '#1E1E1E',
-  gold:       '#D4AF37',
-  goldGlow:   '#D4AF3715',
-  goldBorder: '#D4AF3730',
-  white:      '#FFFFFF',
-  sub:        '#666666',
-  muted:      '#333333',
-  divider:    '#1A1A1A',
-  inputBg:    '#141414',
-} as const;
+  bg: colors.background,
+  surface: colors.surface,
+  surfaceRaised: colors.surfaceRaised,
+  border: colors.border,
+  gold: colors.gold,
+  green: colors.green,
+  white: colors.white,
+  grey: colors.grey,
+  greyDark: colors.greyDark,
+  goldGlow: colors.goldGlow,
+};
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface ClientSummary {
-  clientId:    string;
-  clientName:  string;
-  visits:      number;
-  totalSpent:  number;
-  lastVisit:   Date;
-  favService:  string;
+  clientId: string;
+  clientName: string;
+  visits: number;
+  totalSpent: number;
+  lastVisit: Date;
+  favService: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const SERVICE_NAMES: Record<string, string> = {
-  s1: 'Fade', s2: 'Lineup', s3: 'Beard Trim', s4: 'Haircut', s5: 'Beard + Cut',
+  s1: 'Fade',
+  s2: 'Lineup',
+  s3: 'Beard Trim',
+  s4: 'Haircut',
+  s5: 'Beard + Cut',
 };
 
-const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 function formatDate(d: Date): string {
   return `${MONTHS_SHORT[d.getMonth()]} ${d.getDate()}`;
@@ -72,201 +96,316 @@ function deriveClients(bookings: Booking[]): ClientSummary[] {
 
     if (!existing) {
       map.set(b.clientId, {
-        clientId:   b.clientId,
+        clientId: b.clientId,
         clientName: b.clientName ?? b.clientId.substring(0, 8),
-        visits:     1,
+        visits: 1,
         totalSpent: b.price,
-        lastVisit:  visitDate,
+        lastVisit: visitDate,
         favService: svcName,
       });
     } else {
-      existing.visits    += 1;
+      existing.visits += 1;
       existing.totalSpent += b.price;
       if (visitDate > existing.lastVisit) {
         existing.lastVisit = visitDate;
       }
-      // Fav service = most recently booked service (simplistic)
       existing.favService = svcName;
     }
   }
 
   // Sort by last visit (most recent first)
-  return Array.from(map.values()).sort(
-    (a, b) => b.lastVisit.getTime() - a.lastVisit.getTime(),
+  return Array.from(map.values()).sort((a, b) => b.lastVisit.getTime() - a.lastVisit.getTime());
+}
+
+// ─── Stat Card Component ──────────────────────────────────────────────────────
+
+function StatCard({
+  icon,
+  label,
+  value,
+  delay = 0,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: string;
+  delay?: number;
+}) {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+      ]).start();
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [delay]);
+
+  const handlePressIn = () => {
+    Animated.spring(scaleAnim, { toValue: animations.pressScale, useNativeDriver: true, friction: 5 }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scaleAnim, { toValue: animations.activeScale, useNativeDriver: true, friction: 5 }).start();
+  };
+
+  const animatedStyle = {
+    transform: [{ scale: scaleAnim }],
+  };
+
+  return (
+    <Animated.View style={[styles.statCardWrapper, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+      <TouchableOpacity
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        style={[styles.statCard, animatedStyle]}
+        activeOpacity={0.9}
+      >
+        <View style={styles.statIconContainer}>
+          <Ionicons name={icon} size={20} color={C.gold} />
+        </View>
+        <Text style={styles.statValue}>{value}</Text>
+        <Text style={styles.statLabel}>{label}</Text>
+      </TouchableOpacity>
+    </Animated.View>
   );
 }
 
-// ─── Main screen ─────────────────────────────────────────────────────────────
+// ─── Client Card Component ────────────────────────────────────────────────────
 
-export default function ClientsScreen(_: Props): React.JSX.Element {
+function ClientCard({
+  client,
+  index,
+}: {
+  client: ClientSummary;
+  index: number;
+}) {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+
+  useEffect(() => {
+    const delay = index * 50;
+    const timer = setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+      ]).start();
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [index]);
+
+  const handlePressIn = () => {
+    Animated.spring(scaleAnim, { toValue: animations.pressScale, useNativeDriver: true, friction: 5 }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scaleAnim, { toValue: animations.activeScale, useNativeDriver: true, friction: 5 }).start();
+  };
+
+  const animatedStyle = {
+    transform: [{ scale: scaleAnim }],
+  };
+
+  return (
+    <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+      <TouchableOpacity
+        style={[styles.clientCard, animatedStyle]}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        activeOpacity={0.9}
+      >
+        {/* Avatar */}
+        <View style={styles.avatar}>
+          <Text style={styles.avatarText}>{getInitials(client.clientName)}</Text>
+        </View>
+
+        {/* Info */}
+        <View style={styles.clientInfo}>
+          <Text style={styles.clientName} numberOfLines={1}>
+            {client.clientName}
+          </Text>
+          <Text style={styles.clientSub}>
+            Fav: {client.favService} · Last: {formatDate(client.lastVisit)}
+          </Text>
+        </View>
+
+        {/* Stats */}
+        <View style={styles.clientStats}>
+          <View style={styles.visitBadge}>
+            <Text style={styles.visitCount}>{client.visits}x</Text>
+          </View>
+          <Text style={styles.clientSpent}>${client.totalSpent}</Text>
+        </View>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
+
+export default function ClientsScreen(): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const { firebaseUser } = useAuth();
 
-  const [bookings,   setBookings]   = useState<Booking[]>([]);
-  const [loading,    setLoading]    = useState(true);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [search,     setSearch]     = useState('');
+  const [search, setSearch] = useState('');
 
-  const load = useCallback(async (isRefresh = false) => {
-    if (!firebaseUser) return;
-    if (isRefresh) setRefreshing(true);
-    const res = await BookingService.getByBarber(firebaseUser.uid);
-    if (res.success) setBookings(res.data);
-    setLoading(false);
-    setRefreshing(false);
-  }, [firebaseUser]);
+  // Animation values
+  const headerFadeAnim = useRef(new Animated.Value(0)).current;
+  const searchFadeAnim = useRef(new Animated.Value(0)).current;
+  const searchSlideAnim = useRef(new Animated.Value(20)).current;
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    Animated.timing(headerFadeAnim, { toValue: 1, duration: 300, delay: 100, useNativeDriver: true }).start();
+  }, []);
 
-  // ── Derive clients from bookings ───────────────────────────────────────────
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(searchFadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }),
+        Animated.timing(searchSlideAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+      ]).start();
+    }, 500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const load = useCallback(
+    async (isRefresh = false) => {
+      if (!firebaseUser) return;
+      if (isRefresh) setRefreshing(true);
+
+      const res = await BookingService.getByBarber(firebaseUser.uid);
+      if (res.success) setBookings(res.data);
+
+      setLoading(false);
+      setRefreshing(false);
+    },
+    [firebaseUser]
+  );
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // Derive clients from bookings
   const clients = useMemo(() => deriveClients(bookings), [bookings]);
 
-  const filtered = useMemo(() =>
-    search.trim()
-      ? clients.filter(c =>
-          c.clientName.toLowerCase().includes(search.toLowerCase()) ||
-          c.favService.toLowerCase().includes(search.toLowerCase()),
-        )
-      : clients,
-  [clients, search]);
+  const filtered = useMemo(() => {
+    if (!search.trim()) return clients;
+    return clients.filter(
+      (c) =>
+        c.clientName.toLowerCase().includes(search.toLowerCase()) ||
+        c.favService.toLowerCase().includes(search.toLowerCase())
+    );
+  }, [clients, search]);
 
-  const totalVisits  = clients.reduce((s, c) => s + c.visits,     0);
-  const totalEarned  = clients.reduce((s, c) => s + c.totalSpent, 0);
+  const totalVisits = clients.reduce((s, c) => s + c.visits, 0);
+  const totalEarned = clients.reduce((s, c) => s + c.totalSpent, 0);
 
-  // ─────────────────────────────────────────────────────────────────────────
-
+  // Loading state
   if (loading) {
     return (
-      <View style={[s.center, { paddingTop: insets.top }]}>
+      <View style={[styles.root, { paddingTop: insets.top }]}>
         <StatusBar barStyle="light-content" backgroundColor={C.bg} />
-        <ActivityIndicator size={32} color={C.gold} />
-        <Text style={s.loadingText}>Loading clients…</Text>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size={32} color={C.gold} />
+          <Text style={styles.loadingText}>Loading clients...</Text>
+        </View>
       </View>
     );
   }
 
   return (
-    <View style={[s.root, { paddingTop: insets.top }]}>
+    <View style={[styles.root, { paddingTop: insets.top }]}>
       <StatusBar barStyle="light-content" backgroundColor={C.bg} />
 
       {/* Header */}
-      <View style={s.header}>
+      <Animated.View style={[styles.header, { opacity: headerFadeAnim }]}>
         <View>
-          <Text style={s.headerEyebrow}>MY CLIENTS</Text>
-          <Text style={s.headerTitle}>Client Book</Text>
+          <Text style={styles.headerEyebrow}>MY CLIENTS</Text>
+          <Text style={styles.headerTitle}>Client Book</Text>
         </View>
         {clients.length > 0 && (
-          <View style={s.headerBadge}>
-            <Text style={s.headerBadgeText}>{clients.length} client{clients.length !== 1 ? 's' : ''}</Text>
+          <View style={styles.clientCountBadge}>
+            <Text style={styles.clientCountText}>
+              {clients.length} client{clients.length !== 1 ? 's' : ''}
+            </Text>
           </View>
         )}
-      </View>
-      <View style={s.headerLine} />
+      </Animated.View>
 
-      {/* Stats — only when there are clients */}
+      {/* Stats Row */}
       {clients.length > 0 && (
-        <View style={s.statsRow}>
-          <View style={s.statCard}>
-            <Ionicons name="people-outline" size={18} color={C.gold} />
-            <Text style={s.statValue}>{clients.length}</Text>
-            <Text style={s.statLabel}>Clients</Text>
-          </View>
-          <View style={s.statCard}>
-            <Ionicons name="repeat-outline" size={18} color={C.gold} />
-            <Text style={s.statValue}>{totalVisits}</Text>
-            <Text style={s.statLabel}>Total Visits</Text>
-          </View>
-          <View style={s.statCard}>
-            <Ionicons name="cash-outline" size={18} color={C.gold} />
-            <Text style={s.statValue}>${totalEarned}</Text>
-            <Text style={s.statLabel}>Total Earned</Text>
-          </View>
+        <View style={styles.statsRow}>
+          <StatCard icon={icons.peopleOutline} label="Clients" value={String(clients.length)} delay={200} />
+          <StatCard icon="repeat-outline" label="Total Visits" value={String(totalVisits)} delay={300} />
+          <StatCard icon="cash-outline" label="Total Earned" value={`$${totalEarned}`} delay={400} />
         </View>
       )}
 
       {/* Search */}
       {clients.length > 0 && (
-        <View style={s.searchWrap}>
-          <Ionicons name="search-outline" size={16} color={C.sub} style={{ marginRight: 8 }} />
-          <TextInput
-            style={s.searchInput}
-            placeholder="Search clients or services…"
-            placeholderTextColor={C.muted}
-            value={search}
-            onChangeText={setSearch}
-            autoCorrect={false}
-            accessibilityLabel="Search clients"
-          />
-          {search.length > 0 && (
-            <TouchableOpacity
-              onPress={() => setSearch('')}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Ionicons name="close-circle" size={16} color={C.sub} />
-            </TouchableOpacity>
-          )}
-        </View>
+        <Animated.View style={[styles.searchContainer, { opacity: searchFadeAnim, transform: [{ translateY: searchSlideAnim }] }]}>
+          <View style={styles.searchWrap}>
+            <Ionicons name={icons.search} size={18} color={C.grey} style={{ marginRight: spacing.sm }} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search clients or services..."
+              placeholderTextColor={C.greyDark}
+              value={search}
+              onChangeText={setSearch}
+              autoCorrect={false}
+              underlineColorAndroid="transparent"
+            />
+            {search.length > 0 && (
+              <TouchableOpacity
+                onPress={() => setSearch('')}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons name={icons.close} size={18} color={C.grey} />
+              </TouchableOpacity>
+            )}
+          </View>
+        </Animated.View>
       )}
 
-      {/* Client list */}
+      {/* Client List */}
       <FlatList
         data={filtered}
         keyExtractor={(c) => c.clientId}
         contentContainerStyle={[
-          s.scroll,
-          filtered.length === 0 && s.scrollEmpty,
-          { paddingBottom: insets.bottom + 90 },
+          styles.listContent,
+          filtered.length === 0 && styles.listEmpty,
+          { paddingBottom: insets.bottom + 100 },
         ]}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => load(true)}
-            tintColor={C.gold}
-            colors={[C.gold]}
-          />
+          <RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={C.gold} colors={[C.gold]} />
         }
         ListEmptyComponent={
           search.trim() ? (
-            <View style={s.emptyWrap}>
-              <Ionicons name="search-outline" size={40} color={C.muted} />
-              <Text style={s.emptyTitle}>No results</Text>
-              <Text style={s.emptySub}>No clients match "{search}"</Text>
+            <View style={styles.emptyContainer}>
+              <Ionicons name={icons.search} size={48} color={C.greyDark} />
+              <Text style={styles.emptyTitle}>No results</Text>
+              <Text style={styles.emptySubtitle}>No clients match "{search}"</Text>
             </View>
           ) : (
-            <View style={s.emptyWrap}>
-              <Ionicons name="people-outline" size={52} color={C.muted} />
-              <Text style={s.emptyTitle}>No clients yet</Text>
-              <Text style={s.emptySub}>
+            <View style={styles.emptyContainer}>
+              <Ionicons name={icons.peopleOutline} size={64} color={C.greyDark} />
+              <Text style={styles.emptyTitle}>No clients yet</Text>
+              <Text style={styles.emptySubtitle}>
                 Your client list builds automatically as bookings are confirmed and completed.
               </Text>
             </View>
           )
         }
-        renderItem={({ item: client }) => (
-          <View style={s.clientCard}>
-            {/* Avatar */}
-            <View style={s.avatar}>
-              <Text style={s.avatarText}>{getInitials(client.clientName)}</Text>
-            </View>
-
-            {/* Info */}
-            <View style={s.clientInfo}>
-              <Text style={s.clientName}>{client.clientName}</Text>
-              <Text style={s.clientSub}>
-                Fav: {client.favService}
-                {'  ·  '}
-                Last: {formatDate(client.lastVisit)}
-              </Text>
-            </View>
-
-            {/* Stats */}
-            <View style={s.clientStats}>
-              <Text style={s.clientVisits}>{client.visits}x</Text>
-              <Text style={s.clientSpent}>${client.totalSpent}</Text>
-            </View>
-          </View>
-        )}
+        renderItem={({ item, index }) => <ClientCard client={item} index={index} />}
       />
     </View>
   );
@@ -274,71 +413,222 @@ export default function ClientsScreen(_: Props): React.JSX.Element {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const s = StyleSheet.create({
-  root:   { flex: 1, backgroundColor: C.bg },
-  center: { flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center', gap: 14 },
-  scroll: { paddingHorizontal: 16, paddingTop: 4 },
-  scrollEmpty: { flexGrow: 1 },
-  loadingText: { fontSize: 13, color: C.muted },
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: C.bg,
+  },
 
+  // Loading
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.md,
+  },
+  loadingText: {
+    fontFamily: fonts.body,
+    fontSize: fonts.size.sm,
+    color: C.grey,
+  },
+
+  // Header
   header: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 18, paddingTop: 12, paddingBottom: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.md,
   },
-  headerEyebrow: { fontSize: 10, color: C.sub, fontWeight: '800', letterSpacing: 2, marginBottom: 2 },
-  headerTitle:   { fontSize: 22, fontWeight: '900', color: C.white, letterSpacing: -0.3 },
-  headerLine:    { height: 1, marginHorizontal: 18, backgroundColor: C.gold, opacity: 0.15, marginBottom: 12 },
-  headerBadge: {
-    backgroundColor: C.goldGlow, borderWidth: 1, borderColor: C.goldBorder,
-    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5,
+  headerEyebrow: {
+    fontFamily: fonts.bodyBold,
+    fontSize: fonts.size.xs,
+    color: C.greyDark,
+    letterSpacing: fonts.letterSpacing.widest,
+    textTransform: 'uppercase',
+    marginBottom: spacing.xs,
   },
-  headerBadgeText: { fontSize: 12, fontWeight: '700', color: C.gold },
+  headerTitle: {
+    fontFamily: fonts.heading,
+    fontSize: fonts.size['3xl'],
+    color: C.white,
+    letterSpacing: fonts.letterSpacing.tight,
+  },
+  clientCountBadge: {
+    backgroundColor: C.goldGlow,
+    borderWidth: 1,
+    borderColor: C.gold,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  clientCountText: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: fonts.size.sm,
+    color: C.gold,
+  },
 
   // Stats
   statsRow: {
-    flexDirection: 'row', gap: 10,
-    paddingHorizontal: 16, marginBottom: 14,
+    flexDirection: 'row',
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
+  },
+  statCardWrapper: {
+    flex: 1,
   },
   statCard: {
-    flex: 1, backgroundColor: C.card,
-    borderRadius: 12, borderWidth: 1, borderColor: C.goldBorder,
-    paddingVertical: 12, alignItems: 'center', gap: 4,
+    backgroundColor: C.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: spacing.md,
+    alignItems: 'center',
+    ...shadows.sm,
   },
-  statValue: { fontSize: 18, fontWeight: '900', color: C.white },
-  statLabel: { fontSize: 9, color: C.sub, fontWeight: '700', letterSpacing: 0.5 },
+  statIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.full,
+    backgroundColor: C.goldGlow,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.xs,
+  },
+  statValue: {
+    fontFamily: fonts.bodyBold,
+    fontSize: fonts.size.lg,
+    color: C.white,
+    marginBottom: spacing.xs,
+  },
+  statLabel: {
+    fontFamily: fonts.body,
+    fontSize: fonts.size.xs,
+    color: C.grey,
+    textTransform: 'uppercase',
+    letterSpacing: fonts.letterSpacing.wider,
+  },
 
   // Search
-  searchWrap: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: C.card,
-    marginHorizontal: 16, marginBottom: 12,
-    borderRadius: 12, borderWidth: 1, borderColor: C.divider,
-    paddingHorizontal: 14, height: 44,
+  searchContainer: {
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
   },
-  searchInput: { flex: 1, color: C.white, fontSize: 14 },
+  searchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: C.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: C.border,
+    paddingHorizontal: spacing.md,
+    height: 48,
+  },
+  searchInput: {
+    flex: 1,
+    backgroundColor: 'transparent',
+    fontFamily: fonts.body,
+    fontSize: fonts.size.md,
+    color: C.white,
+    height: 48,
+    paddingVertical: 0,
+  },
 
-  // Client card
+  // List
+  listContent: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+  },
+  listEmpty: {
+    flexGrow: 1,
+  },
+
+  // Client Card
   clientCard: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: C.card,
-    borderRadius: 12, borderWidth: 1, borderColor: C.divider,
-    padding: 14, marginBottom: 8, gap: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: C.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    ...shadows.sm,
   },
   avatar: {
-    width: 44, height: 44, borderRadius: 12,
-    backgroundColor: C.goldGlow, borderWidth: 1.5, borderColor: C.goldBorder,
-    alignItems: 'center', justifyContent: 'center',
+    width: 48,
+    height: 48,
+    borderRadius: radius.md,
+    backgroundColor: C.goldGlow,
+    borderWidth: 1.5,
+    borderColor: C.gold,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
   },
-  avatarText:   { fontSize: 14, fontWeight: '900', color: C.gold },
-  clientInfo:   { flex: 1 },
-  clientName:   { fontSize: 14, fontWeight: '800', color: C.white, marginBottom: 3 },
-  clientSub:    { fontSize: 11, color: C.sub },
-  clientStats:  { alignItems: 'flex-end', gap: 2 },
-  clientVisits: { fontSize: 12, fontWeight: '800', color: C.gold },
-  clientSpent:  { fontSize: 11, color: C.sub },
+  avatarText: {
+    fontFamily: fonts.bodyBold,
+    fontSize: fonts.size.md,
+    color: C.gold,
+  },
+  clientInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+  clientName: {
+    fontFamily: fonts.bodyBold,
+    fontSize: fonts.size.md,
+    color: C.white,
+    marginBottom: spacing.xs,
+  },
+  clientSub: {
+    fontFamily: fonts.body,
+    fontSize: fonts.size.xs,
+    color: C.grey,
+  },
+  clientStats: {
+    alignItems: 'flex-end',
+    gap: spacing.xs,
+  },
+  visitBadge: {
+    backgroundColor: C.goldGlow,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  visitCount: {
+    fontFamily: fonts.bodyBold,
+    fontSize: fonts.size.xs,
+    color: C.gold,
+  },
+  clientSpent: {
+    fontFamily: fonts.body,
+    fontSize: fonts.size.xs,
+    color: C.grey,
+  },
 
   // Empty
-  emptyWrap:  { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40, gap: 12, paddingTop: 40 },
-  emptyTitle: { fontSize: 18, fontWeight: '800', color: C.white, textAlign: 'center' },
-  emptySub:   { fontSize: 13, color: C.sub, textAlign: 'center', lineHeight: 18 },
+  emptyContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing['3xl'],
+    gap: spacing.md,
+    paddingTop: spacing['3xl'],
+  },
+  emptyTitle: {
+    fontFamily: fonts.bodyBold,
+    fontSize: fonts.size.xl,
+    color: C.white,
+    textAlign: 'center',
+  },
+  emptySubtitle: {
+    fontFamily: fonts.body,
+    fontSize: fonts.size.sm,
+    color: C.grey,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
 });

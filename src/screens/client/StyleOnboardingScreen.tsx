@@ -16,8 +16,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import { CameraView, useCameraPermissions } from 'expo-camera';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { CameraView, useCameraPermissions, CameraType } from 'expo-camera';
+import { doc, onSnapshot, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { StyleStackParamList } from '@/navigation/types';
 import { db } from '@/config/firebase';
 import { COLLECTIONS } from '@/constants/collections';
@@ -31,18 +31,7 @@ import {
   stylePhotoHintsFromProfileRecord,
 } from '@/services/unsplash.service';
 import { readImageAsBase64, inferImageMediaType } from '@/utils/imageBase64.utils';
-
-const C = {
-  bg: '#0A0A0A',
-  card: '#161616',
-  gold: '#D4AF37',
-  goldBorder: '#D4AF3740',
-  white: '#FFFFFF',
-  sub: '#888888',
-  muted: '#555555',
-  border: '#222222',
-  danger: '#CF6679',
-} as const;
+import { colors, fonts, spacing, radius, shadows, icons, animations } from '@/theme';
 
 type Props = NativeStackScreenProps<StyleStackParamList, 'StyleOnboarding'>;
 
@@ -53,12 +42,66 @@ export default function StyleOnboardingScreen({ navigation }: Props): React.JSX.
   const cameraRef = useRef<CameraView>(null);
   const [cameraReady, setCameraReady] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
+  const [cameraFacing, setCameraFacing] = useState<CameraType>('front');
+  const [capturedPhotoUri, setCapturedPhotoUri] = useState<string | null>(null);
+  const [capturedPhotoMime, setCapturedPhotoMime] = useState<string | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewSource, setPreviewSource] = useState<'camera' | 'gallery'>('camera');
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAnalysis, setSavedAnalysis] = useState<ProfileAnalysisResult | null>(null);
   const [savedPhotos, setSavedPhotos] = useState<Record<string, string>>({});
   const [savedPhotosLoading, setSavedPhotosLoading] = useState(false);
   const spin = useRef(new Animated.Value(0)).current;
+
+  // Animation values for card entrance
+  const card1Anim = useRef(new Animated.Value(0)).current;
+  const card2Anim = useRef(new Animated.Value(0)).current;
+  const card3Anim = useRef(new Animated.Value(0)).current;
+  const savedSectionAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    // Staggered entrance animations
+    Animated.sequence([
+      Animated.timing(card1Anim, {
+        toValue: 1,
+        duration: animations.normal,
+        useNativeDriver: true,
+      }),
+      Animated.timing(card2Anim, {
+        toValue: 1,
+        duration: animations.normal,
+        useNativeDriver: true,
+      }),
+      Animated.timing(card3Anim, {
+        toValue: 1,
+        duration: animations.normal,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+
+  useEffect(() => {
+    if (savedAnalysis) {
+      Animated.timing(savedSectionAnim, {
+        toValue: 1,
+        duration: animations.normal,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [savedAnalysis]);
+
+  const getCardStyle = (animValue: Animated.Value) => ({
+    opacity: animValue,
+    transform: [
+      {
+        translateY: animValue.interpolate({
+          inputRange: [0, 1],
+          outputRange: [animations.slideUp.from, animations.slideUp.to],
+        }),
+      },
+    ],
+  });
 
   useEffect(() => {
     if (!firebaseUser?.uid) {
@@ -142,8 +185,26 @@ export default function StyleOnboardingScreen({ navigation }: Props): React.JSX.
     outputRange: ['0deg', '360deg'],
   });
 
+  const saveStyleProfileToFirestore = useCallback(
+    async (uid: string, analysis: ProfileAnalysisResult, selfieDataUrl: string): Promise<void> => {
+      try {
+        const userRef = doc(db, COLLECTIONS.USERS, uid);
+        const styleProfile = {
+          profile: analysis.profile,
+          styles: analysis.styles,
+          photoURL: selfieDataUrl,
+          updatedAt: serverTimestamp(),
+        };
+        await setDoc(userRef, { styleProfile }, { merge: true });
+      } catch (e) {
+        throw new Error(e instanceof Error ? e.message : 'Failed to save style profile');
+      }
+    },
+    [],
+  );
+
   const runAnalysis = useCallback(
-    async (uri: string, mime?: string | null): Promise<void> => {
+    async (uri: string, mime?: string | null, source: 'camera' | 'gallery' = 'camera'): Promise<void> => {
       setError(null);
       setAnalyzing(true);
       try {
@@ -151,6 +212,12 @@ export default function StyleOnboardingScreen({ navigation }: Props): React.JSX.
         const mediaType = inferImageMediaType(uri, mime);
         const result = await AIService.analyzeProfileFromBase64(base64, mediaType);
         const selfieDataUrl = `data:${mediaType};base64,${base64}`;
+
+        // Save to Firestore if user is authenticated
+        if (firebaseUser?.uid) {
+          await saveStyleProfileToFirestore(firebaseUser.uid, result, selfieDataUrl);
+        }
+
         setAnalyzing(false);
         navigation.replace('StyleResults', {
           analysis: result,
@@ -160,10 +227,12 @@ export default function StyleOnboardingScreen({ navigation }: Props): React.JSX.
         });
       } catch (e) {
         setAnalyzing(false);
-        setError(e instanceof Error ? e.message : 'Something went wrong');
+        const message = e instanceof Error ? e.message : 'Something went wrong';
+        setError(message);
+        Alert.alert('Analysis Error', message);
       }
     },
-    [navigation],
+    [navigation, firebaseUser?.uid, saveStyleProfileToFirestore],
   );
 
   function openChat(): void {
@@ -176,62 +245,141 @@ export default function StyleOnboardingScreen({ navigation }: Props): React.JSX.
 
   async function openLibrary(): Promise<void> {
     setError(null);
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) {
-      setError('Photo library access is required to upload a photo.');
-      return;
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        setError('Photo library access is required to upload a photo.');
+        Alert.alert('Permission Required', 'Photo library access is required to upload a photo.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+      if (result.canceled) return;
+      const asset = result.assets[0];
+      setCapturedPhotoUri(asset.uri);
+      setCapturedPhotoMime(asset.mimeType ?? null);
+      setPreviewSource('gallery');
+      setShowPreview(true);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Failed to open photo library';
+      setError(message);
+      Alert.alert('Error', message);
     }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [3, 4],
-      quality: 0.85,
-    });
-    if (result.canceled) return;
-    const asset = result.assets[0];
-    await runAnalysis(asset.uri, asset.mimeType);
   }
 
   async function openCameraFlow(): Promise<void> {
     setError(null);
+
+    // Web fallback - use image picker with message
     if (Platform.OS === 'web') {
-      const perm = await ImagePicker.requestCameraPermissionsAsync();
-      if (!perm.granted) {
-        setError('Camera access is required to take a photo.');
-        return;
+      try {
+        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!perm.granted) {
+          setError('Photo library access is required to upload a photo.');
+          Alert.alert('Permission Required', 'Photo library access is required to upload a photo.');
+          return;
+        }
+        const result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images'],
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.8,
+        });
+        if (result.canceled) return;
+        const asset = result.assets[0];
+        Alert.alert(
+          'Photo Selected',
+          'On mobile you can take a live photo',
+          [
+            {
+              text: 'Continue',
+              onPress: () => {
+                setCapturedPhotoUri(asset.uri);
+                setCapturedPhotoMime(asset.mimeType ?? null);
+                setPreviewSource('camera');
+                setShowPreview(true);
+              },
+            },
+          ],
+        );
+      } catch (e) {
+        const message = e instanceof Error ? e.message : 'Failed to select photo';
+        setError(message);
+        Alert.alert('Error', message);
       }
-      const result = await ImagePicker.launchCameraAsync({
-        allowsEditing: true,
-        aspect: [3, 4],
-        quality: 0.85,
-      });
-      if (result.canceled) return;
-      const asset = result.assets[0];
-      await runAnalysis(asset.uri, asset.mimeType);
       return;
     }
 
-    if (!permission?.granted) {
-      const res = await requestPermission();
-      if (!res.granted) {
-        setError('Camera access is required to take a photo.');
-        return;
+    // Native - use expo-camera
+    try {
+      if (!permission?.granted) {
+        const res = await requestPermission();
+        if (!res.granted) {
+          setError('Camera access is required to take a photo.');
+          Alert.alert('Permission Required', 'Camera access is required to take a photo.');
+          return;
+        }
       }
+      setCameraReady(false);
+      setCameraFacing('front');
+      setShowCamera(true);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Failed to open camera';
+      setError(message);
+      Alert.alert('Error', message);
     }
-    setCameraReady(false);
-    setShowCamera(true);
   }
 
   async function captureFromCamera(): Promise<void> {
     if (!cameraRef.current || !cameraReady) return;
     try {
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.85 });
+      setCapturedPhotoUri(photo.uri);
+      setCapturedPhotoMime('image/jpeg');
+      setPreviewSource('camera');
       setShowCamera(false);
-      await runAnalysis(photo.uri, 'image/jpeg');
-    } catch {
-      setError('Could not capture photo. Try again.');
-      setShowCamera(false);
+      setShowPreview(true);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Could not capture photo. Try again.';
+      setError(message);
+      Alert.alert('Camera Error', message);
     }
+  }
+
+  function flipCamera(): void {
+    setCameraFacing((current) => (current === 'front' ? 'back' : 'front'));
+  }
+
+  function closeCamera(): void {
+    setShowCamera(false);
+    setCameraReady(false);
+  }
+
+  function closePreview(): void {
+    setShowPreview(false);
+    setCapturedPhotoUri(null);
+    setCapturedPhotoMime(null);
+  }
+
+  function tryAgain(): void {
+    setShowPreview(false);
+    setCapturedPhotoUri(null);
+    setCapturedPhotoMime(null);
+    // Reopen camera if it was from camera flow
+    if (previewSource === 'camera' && Platform.OS !== 'web') {
+      setCameraReady(false);
+      setShowCamera(true);
+    }
+  }
+
+  async function useThisPhoto(): Promise<void> {
+    if (!capturedPhotoUri) return;
+    setShowPreview(false);
+    await runAnalysis(capturedPhotoUri, capturedPhotoMime, previewSource);
   }
 
   function openSavedStyleResults(): void {
@@ -239,80 +387,92 @@ export default function StyleOnboardingScreen({ navigation }: Props): React.JSX.
     navigation.navigate('StyleResults', { analysis: savedAnalysis, readOnly: true });
   }
 
+  // Button press animation
+  const [pressedCard, setPressedCard] = useState<number | null>(null);
+
+  const renderOptionCard = (
+    animValue: Animated.Value,
+    index: number,
+    iconName: keyof typeof Ionicons.glyphMap,
+    title: string,
+    hint: string,
+    onPress: () => void,
+  ) => (
+    <Animated.View style={getCardStyle(animValue)}>
+      <TouchableOpacity
+        style={[
+          styles.optionCard,
+          pressedCard === index && { transform: [{ scale: animations.pressScale }] },
+        ]}
+        onPress={onPress}
+        onPressIn={() => setPressedCard(index)}
+        onPressOut={() => setPressedCard(null)}
+        activeOpacity={1}
+        accessibilityRole="button"
+        accessibilityLabel={title}
+      >
+        <View style={styles.optionIconWrap}>
+          <Ionicons name={iconName} size={32} color={colors.gold} />
+        </View>
+        <View style={styles.optionTextCol}>
+          <Text style={styles.optionTitle}>{title}</Text>
+          <Text style={styles.optionHint}>{hint}</Text>
+        </View>
+        <Ionicons name={icons.forward} size={22} color={colors.grey} />
+      </TouchableOpacity>
+    </Animated.View>
+  );
+
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 32 }]}
       >
-        <View style={styles.hero}>
-          <Ionicons name="cut-outline" size={64} color={C.gold} style={styles.heroIcon} />
+        <Animated.View style={[styles.hero, getCardStyle(card1Anim)]}>
+          <View style={styles.heroIconWrap}>
+            <Ionicons name={icons.tabStyleOutline} size={48} color={colors.gold} />
+          </View>
           <Text style={styles.heroTitle}>Your Style Profile</Text>
           <Text style={styles.heroSubtitle}>
             Get AI-powered haircut recommendations personalized to you
           </Text>
-        </View>
+        </Animated.View>
 
-        <TouchableOpacity
-          style={styles.optionCard}
-          onPress={openCameraFlow}
-          activeOpacity={0.88}
-          accessibilityRole="button"
-          accessibilityLabel="Analyze my hair with the camera"
-        >
-          <View style={styles.optionIconWrap}>
-            <Ionicons name="camera-outline" size={32} color={C.gold} />
-          </View>
-          <View style={styles.optionTextCol}>
-            <Text style={styles.optionTitle}>Analyze My Hair</Text>
-            <Text style={styles.optionHint}>Take a selfie-style photo for AI analysis</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={22} color={C.muted} />
-        </TouchableOpacity>
+        {renderOptionCard(
+          card1Anim,
+          1,
+          icons.camera,
+          'Analyze My Hair',
+          'Take a selfie-style photo for AI analysis',
+          openCameraFlow,
+        )}
 
-        <TouchableOpacity
-          style={styles.optionCard}
-          onPress={openLibrary}
-          activeOpacity={0.88}
-          accessibilityRole="button"
-          accessibilityLabel="Upload photo from gallery for analysis"
-        >
-          <View style={styles.optionIconWrap}>
-            <Ionicons name="images-outline" size={32} color={C.gold} />
-          </View>
-          <View style={styles.optionTextCol}>
-            <Text style={styles.optionTitle}>Upload Photo</Text>
-            <Text style={styles.optionHint}>Choose an existing photo from your library</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={22} color={C.muted} />
-        </TouchableOpacity>
+        {renderOptionCard(
+          card2Anim,
+          2,
+          icons.image,
+          'Upload Photo',
+          'Choose an existing photo from your library',
+          openLibrary,
+        )}
 
-        <TouchableOpacity
-          style={styles.optionCard}
-          onPress={openChat}
-          activeOpacity={0.88}
-          accessibilityRole="button"
-          accessibilityLabel="Chat with AI stylist"
-        >
-          <View style={styles.optionIconWrap}>
-            <Ionicons name="chatbubbles-outline" size={30} color={C.gold} />
-          </View>
-          <View style={styles.optionTextCol}>
-            <Text style={styles.optionTitle}>Chat with AI Stylist</Text>
-            <Text style={styles.optionHint}>
-              {savedAnalysis
-                ? 'Continue with your saved profile or explore new ideas'
-                : 'Ask questions and get personalized advice'}
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={22} color={C.muted} />
-        </TouchableOpacity>
+        {renderOptionCard(
+          card3Anim,
+          3,
+          icons.chatOutline,
+          'Chat with AI Stylist',
+          savedAnalysis
+            ? 'Continue with your saved profile or explore new ideas'
+            : 'Ask questions and get personalized advice',
+          openChat,
+        )}
 
         {savedRecs.length > 0 ? (
-          <View style={styles.savedSection}>
+          <Animated.View style={[styles.savedSection, getCardStyle(savedSectionAnim)]}>
             <Text style={styles.savedSectionLabel}>Your Recommendations</Text>
             {savedPhotosLoading ? (
-              <Text style={styles.savedLoading}>Loading photos…</Text>
+              <Text style={styles.savedLoading}>Loading photos...</Text>
             ) : null}
             <ScrollView
               horizontal
@@ -343,7 +503,7 @@ export default function StyleOnboardingScreen({ navigation }: Props): React.JSX.
                 );
               })}
             </ScrollView>
-          </View>
+          </Animated.View>
         ) : null}
       </ScrollView>
 
@@ -363,6 +523,7 @@ export default function StyleOnboardingScreen({ navigation }: Props): React.JSX.
         </View>
       ) : null}
 
+      {/* Loading Overlay */}
       <Modal visible={analyzing} transparent animationType="fade">
         <View style={styles.overlay}>
           <Animated.View style={[styles.spinnerWrap, { transform: [{ rotate: spinInterpolate }] }]}>
@@ -373,19 +534,22 @@ export default function StyleOnboardingScreen({ navigation }: Props): React.JSX.
         </View>
       </Modal>
 
-      <Modal visible={showCamera} animationType="slide" onRequestClose={() => setShowCamera(false)}>
+      {/* Camera Modal - Native Only */}
+      <Modal visible={showCamera} animationType="slide" onRequestClose={closeCamera}>
         <View style={[styles.cameraRoot, { paddingTop: insets.top }]}>
           <View style={styles.cameraHeader}>
-            <TouchableOpacity onPress={() => setShowCamera(false)} style={styles.iconBtn}>
-              <Ionicons name="close" size={26} color={C.white} />
+            <TouchableOpacity onPress={closeCamera} style={styles.iconBtn} accessibilityRole="button" accessibilityLabel="Close camera">
+              <Ionicons name={icons.close} size={26} color={colors.white} />
             </TouchableOpacity>
             <Text style={styles.cameraTitle}>Take a Photo</Text>
-            <View style={styles.headerSpacer} />
+            <TouchableOpacity onPress={flipCamera} style={styles.iconBtn} accessibilityRole="button" accessibilityLabel="Flip camera">
+              <Ionicons name="camera-reverse-outline" size={26} color={colors.white} />
+            </TouchableOpacity>
           </View>
           <CameraView
             ref={cameraRef}
             style={styles.cameraPreview}
-            facing="front"
+            facing={cameraFacing}
             onCameraReady={() => setCameraReady(true)}
           />
           <View style={[styles.cameraFooter, { paddingBottom: insets.bottom + 16 }]}>
@@ -399,137 +563,292 @@ export default function StyleOnboardingScreen({ navigation }: Props): React.JSX.
           </View>
         </View>
       </Modal>
+
+      {/* Preview Modal */}
+      <Modal visible={showPreview} animationType="fade" transparent onRequestClose={closePreview}>
+        <View style={styles.previewOverlay}>
+          <View style={[styles.previewHeader, { paddingTop: insets.top }]}>
+            <TouchableOpacity onPress={closePreview} style={styles.iconBtn} accessibilityRole="button" accessibilityLabel="Close preview">
+              <Ionicons name={icons.close} size={26} color={colors.white} />
+            </TouchableOpacity>
+            <Text style={styles.previewTitle}>Preview</Text>
+            <View style={styles.iconBtn} />
+          </View>
+
+          {capturedPhotoUri && (
+            <Image source={{ uri: capturedPhotoUri }} style={styles.previewImage} resizeMode="cover" />
+          )}
+
+          <View style={[styles.previewFooter, { paddingBottom: insets.bottom + 24 }]}>
+            <TouchableOpacity
+              style={styles.tryAgainBtn}
+              onPress={tryAgain}
+              accessibilityRole="button"
+              accessibilityLabel="Try again"
+            >
+              <Text style={styles.tryAgainBtnText}>Try again</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.usePhotoBtn}
+              onPress={useThisPhoto}
+              accessibilityRole="button"
+              accessibilityLabel="Use this photo"
+            >
+              <Text style={styles.usePhotoBtnText}>Use this photo</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: C.bg, paddingHorizontal: 20 },
-  scrollContent: { paddingTop: 8 },
-  hero: { alignItems: 'center', marginBottom: 28, paddingHorizontal: 8 },
-  heroIcon: { marginBottom: 16 },
+  root: { flex: 1, backgroundColor: colors.background, paddingHorizontal: spacing.lg },
+  scrollContent: { paddingTop: spacing.sm },
+  hero: { alignItems: 'center', marginBottom: spacing.xl, paddingHorizontal: spacing.sm },
+  heroIconWrap: {
+    width: 96,
+    height: 96,
+    borderRadius: radius.xl,
+    backgroundColor: colors.surfaceRaised,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.lg,
+  },
   heroTitle: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: C.white,
+    fontSize: fonts.size['3xl'],
+    fontFamily: fonts.heading,
+    color: colors.white,
     textAlign: 'center',
-    letterSpacing: 0.3,
-    marginBottom: 10,
+    letterSpacing: fonts.letterSpacing.wide,
+    marginBottom: spacing.sm,
   },
   heroSubtitle: {
-    fontSize: 14,
-    color: C.sub,
+    fontSize: fonts.size.md,
+    fontFamily: fonts.body,
+    color: colors.grey,
     textAlign: 'center',
-    lineHeight: 21,
+    lineHeight: fonts.lineHeight.relaxed * fonts.size.md,
     maxWidth: 320,
   },
 
   optionCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: C.card,
-    borderRadius: 16,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: C.goldBorder,
-    paddingVertical: 16,
-    paddingHorizontal: 14,
-    marginBottom: 12,
+    borderColor: colors.border,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.md,
+    ...shadows.sm,
   },
   optionIconWrap: {
     width: 56,
     height: 56,
-    borderRadius: 28,
-    backgroundColor: '#1A1A1A',
+    borderRadius: radius.full,
+    backgroundColor: colors.surfaceRaised,
     borderWidth: 1,
-    borderColor: C.goldBorder,
+    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 14,
+    marginRight: spacing.md,
   },
   optionTextCol: { flex: 1, minWidth: 0 },
-  optionTitle: { fontSize: 16, fontWeight: '800', color: C.white, marginBottom: 4 },
-  optionHint: { fontSize: 12, color: C.sub, lineHeight: 17 },
-
-  savedSection: { marginTop: 28 },
-  savedSectionLabel: {
-    fontSize: 11,
-    color: C.gold,
-    fontWeight: '800',
-    letterSpacing: 2,
-    marginBottom: 12,
+  optionTitle: {
+    fontSize: fonts.size.lg,
+    fontFamily: fonts.bodyBold,
+    color: colors.white,
+    marginBottom: spacing.xs,
   },
-  savedLoading: { fontSize: 12, color: C.sub, marginBottom: 8 },
-  savedRow: { gap: 12, paddingRight: 8 },
+  optionHint: {
+    fontSize: fonts.size.sm,
+    fontFamily: fonts.body,
+    color: colors.grey,
+    lineHeight: fonts.lineHeight.normal * fonts.size.sm,
+  },
+
+  savedSection: { marginTop: spacing['2xl'] },
+  savedSectionLabel: {
+    fontSize: fonts.size.xs,
+    color: colors.gold,
+    fontFamily: fonts.bodyBold,
+    letterSpacing: fonts.letterSpacing.wider,
+    marginBottom: spacing.md,
+    textTransform: 'uppercase',
+  },
+  savedLoading: { fontSize: fonts.size.sm, color: colors.grey, marginBottom: spacing.sm },
+  savedRow: { gap: spacing.md, paddingRight: spacing.sm },
   savedCard: {
     width: 112,
-    borderRadius: 14,
-    backgroundColor: C.card,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: C.border,
+    borderColor: colors.border,
     overflow: 'hidden',
-    paddingBottom: 8,
+    paddingBottom: spacing.sm,
+    ...shadows.sm,
   },
-  savedThumb: { width: '100%', aspectRatio: 3 / 4, backgroundColor: C.bg },
+  savedThumb: { width: '100%', aspectRatio: 3 / 4, backgroundColor: colors.background },
   savedThumbMuted: { opacity: 0.45 },
-  savedThumbPlaceholder: { width: '100%', aspectRatio: 3 / 4, backgroundColor: '#141414' },
+  savedThumbPlaceholder: { width: '100%', aspectRatio: 3 / 4, backgroundColor: colors.surfaceRaised },
   savedCardTitle: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: C.white,
-    paddingHorizontal: 8,
-    marginTop: 8,
-    lineHeight: 14,
+    fontSize: fonts.size.xs,
+    fontFamily: fonts.bodyBold,
+    color: colors.white,
+    paddingHorizontal: spacing.sm,
+    marginTop: spacing.sm,
+    lineHeight: fonts.lineHeight.tight * fonts.size.xs,
   },
 
   errorBox: {
     position: 'absolute',
-    left: 20,
-    right: 20,
+    left: spacing.lg,
+    right: spacing.lg,
     bottom: 24,
-    padding: 14,
-    borderRadius: 12,
-    backgroundColor: '#1A1010',
+    padding: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceRaised,
     borderWidth: 1,
-    borderColor: '#CF667944',
+    borderColor: colors.red,
+    ...shadows.md,
   },
-  errorText: { color: C.danger, fontSize: 13, marginBottom: 10 },
-  errorActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  retryBtn: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8, borderWidth: 1, borderColor: C.gold },
-  retryBtnText: { color: C.gold, fontWeight: '700', fontSize: 13 },
+  errorText: { color: colors.red, fontSize: fonts.size.md, marginBottom: spacing.sm },
+  errorActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  retryBtn: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.gold,
+  },
+  retryBtnText: { color: colors.gold, fontFamily: fonts.bodyBold, fontSize: fonts.size.md },
 
   overlay: {
     flex: 1,
-    backgroundColor: '#000000DD',
+    backgroundColor: 'rgba(0,0,0,0.85)',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
+    padding: spacing.xl,
   },
   spinnerWrap: { width: 56, height: 56, justifyContent: 'center', alignItems: 'center' },
   spinnerRing: {
     width: 56,
     height: 56,
-    borderRadius: 28,
+    borderRadius: radius.full,
     borderWidth: 3,
     borderColor: 'transparent',
-    borderTopColor: C.gold,
+    borderTopColor: colors.gold,
   },
-  overlayTitle: { marginTop: 20, fontSize: 17, fontWeight: '800', color: C.white, textAlign: 'center' },
-  overlayHint: { marginTop: 8, fontSize: 12, color: C.muted, textAlign: 'center' },
+  overlayTitle: {
+    marginTop: spacing.lg,
+    fontSize: fonts.size.xl,
+    fontFamily: fonts.bodyBold,
+    color: colors.white,
+    textAlign: 'center',
+  },
+  overlayHint: { marginTop: spacing.sm, fontSize: fonts.size.sm, color: colors.grey, textAlign: 'center' },
 
-  cameraRoot: { flex: 1, backgroundColor: C.bg },
-  cameraHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8 },
+  cameraRoot: { flex: 1, backgroundColor: colors.background },
+  cameraHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
   iconBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  headerSpacer: { width: 44 },
-  cameraTitle: { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '700', color: C.white },
+  cameraTitle: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: fonts.size.lg,
+    fontFamily: fonts.bodyBold,
+    color: colors.white,
+  },
   cameraPreview: { flex: 1 },
-  cameraFooter: { alignItems: 'center', paddingTop: 16, backgroundColor: C.bg },
+  cameraFooter: { alignItems: 'center', paddingTop: spacing.md, backgroundColor: colors.background },
   shutter: {
     width: 72,
     height: 72,
-    borderRadius: 36,
+    borderRadius: radius.full,
     borderWidth: 4,
-    borderColor: C.gold,
-    backgroundColor: '#2A2A2A',
+    borderColor: colors.gold,
+    backgroundColor: colors.surfaceRaised,
   },
   shutterDisabled: { opacity: 0.4 },
+
+  previewOverlay: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  previewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.background,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+  },
+  previewTitle: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: fonts.size.lg,
+    fontFamily: fonts.bodyBold,
+    color: colors.white,
+  },
+  previewImage: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  previewFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    backgroundColor: colors.background,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+  },
+  tryAgainBtn: {
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
+    borderRadius: radius['2xl'],
+    borderWidth: 1,
+    borderColor: colors.gold,
+    backgroundColor: 'transparent',
+    minWidth: 140,
+    alignItems: 'center',
+  },
+  tryAgainBtnText: {
+    color: colors.gold,
+    fontFamily: fonts.bodySemiBold,
+    fontSize: fonts.size.md,
+  },
+  usePhotoBtn: {
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
+    borderRadius: radius['2xl'],
+    backgroundColor: colors.gold,
+    minWidth: 140,
+    alignItems: 'center',
+  },
+  usePhotoBtnText: {
+    color: colors.background,
+    fontFamily: fonts.bodyBold,
+    fontSize: fonts.size.md,
+  },
 });

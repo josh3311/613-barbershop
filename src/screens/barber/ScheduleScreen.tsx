@@ -1,96 +1,98 @@
-import React, { useState, useEffect } from 'react';
+/**
+ * ScheduleScreen.tsx
+ *
+ * Redesigned schedule screen with:
+ * - Date strip: horizontal scroll, selected=gold pill bg
+ * - Booking slots with status badges and action buttons
+ */
+
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, StatusBar, Alert, Platform,
-  Modal, Image, Pressable,
+  View,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  StatusBar,
+  Platform,
+  Alert,
+  Modal,
+  Image,
+  Pressable,
+  Animated,
 } from 'react-native';
-import { ActivityIndicator, Snackbar, Text as PaperText } from 'react-native-paper';
+import { Text, ActivityIndicator, Snackbar } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
-import { CompositeScreenProps } from '@react-navigation/native';
-import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
-import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BarberTabParamList, ScheduleStackParamList } from '@/navigation/types';
-import { useAuth } from '@/hooks/useAuth';
 import { doc, getDoc } from 'firebase/firestore';
+
+import {
+  colors,
+  fonts,
+  spacing,
+  radius,
+  shadows,
+  icons,
+  animations,
+} from '@/theme';
 import { BookingService } from '@/services/booking.service';
 import { AIBarberGuideService, type BarberCutStep } from '@/services/aiBarberGuide.service';
 import { db } from '@/config/firebase';
 import { COLLECTIONS } from '@/constants/collections';
 import { Booking, BookingStatus } from '@/types/booking.types';
 import { safeToDate } from '@/utils/date.utils';
+import { useAuth } from '@/hooks/useAuth';
 
-type Props = CompositeScreenProps<
-  NativeStackScreenProps<ScheduleStackParamList, 'ScheduleList'>,
-  BottomTabScreenProps<BarberTabParamList>
->;
-
-// ─── Theme ────────────────────────────────────────────────────────────────────
+// ─── Theme Constants ──────────────────────────────────────────────────────────
 
 const C = {
-  bg:          '#0A0A0A',
-  card:        '#161616',
-  cardBorder:  '#222222',
-  gold:        '#D4AF37',
-  goldDark:    '#A8861A',
-  goldGlow:    '#D4AF3715',
-  goldBorder:  '#D4AF3730',
-  amber:       '#FF9800',
-  amberBg:     '#1A1000',
-  amberBdr:    '#FF980040',
-  green:       '#4CAF50',
-  greenBg:     '#0D200D',
-  greenBdr:    '#4CAF5040',
-  blue:        '#4FC3F7',
-  blueBg:      '#071520',
-  blueBdr:     '#4FC3F740',
-  red:         '#FF4444',
-  redBg:       '#2A0A0A',
-  redBdr:      '#FF444440',
-  grey:        '#888888',
-  greyBg:      '#1A1A1A',
-  greyBdr:     '#33333340',
-  white:       '#FFFFFF',
-  sub:         '#666666',
-  muted:       '#333333',
-  divider:     '#1E1E1E',
-} as const;
+  bg: colors.background,
+  surface: colors.surface,
+  surfaceRaised: colors.surfaceRaised,
+  border: colors.border,
+  gold: colors.gold,
+  goldDim: colors.goldDim,
+  green: colors.green,
+  red: colors.red,
+  white: colors.white,
+  grey: colors.grey,
+  greyDark: colors.greyDark,
+  goldGlow: colors.goldGlow,
+};
 
-// ─── Status config ────────────────────────────────────────────────────────────
+const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-const STATUS_CFG: Record<BookingStatus, {
-  label: string; color: string; bg: string; border: string;
-  iconName: keyof typeof Ionicons.glyphMap;
-}> = {
-  pending:     { label: 'Pending Approval', color: C.amber, bg: C.amberBg, border: C.amberBdr, iconName: 'time-outline' },
-  confirmed:   { label: 'Confirmed',        color: C.green, bg: C.greenBg, border: C.greenBdr, iconName: 'checkmark-circle-outline' },
-  declined:    { label: 'Declined',         color: C.red,   bg: C.redBg,   border: C.redBdr,   iconName: 'close-circle-outline' },
-  in_progress: { label: 'In Chair',         color: C.blue,  bg: C.blueBg,  border: C.blueBdr,  iconName: 'cut-outline' },
-  completed:   { label: 'Completed',        color: C.grey,  bg: C.greyBg,  border: C.greyBdr,  iconName: 'checkmark-done-outline' },
-  cancelled:   { label: 'Cancelled',        color: C.red,   bg: C.redBg,   border: C.redBdr,   iconName: 'close-circle-outline' },
-  no_show:     { label: 'No Show',          color: C.red,   bg: C.redBg,   border: C.redBdr,   iconName: 'alert-circle-outline' },
+const STATUS_CFG: Record<BookingStatus, { label: string; color: string; bg: string }> = {
+  pending: { label: 'Pending', color: C.gold, bg: `${C.gold}20` },
+  confirmed: { label: 'Confirmed', color: C.green, bg: `${C.green}20` },
+  in_progress: { label: 'In Chair', color: '#2196F3', bg: '#2196F320' },
+  completed: { label: 'Completed', color: C.greyDark, bg: `${C.greyDark}20` },
+  declined: { label: 'Declined', color: C.red, bg: `${C.red}20` },
+  cancelled: { label: 'Cancelled', color: C.red, bg: `${C.red}20` },
+  no_show: { label: 'No Show', color: C.red, bg: `${C.red}20` },
 };
 
 const SERVICE_NAMES: Record<string, string> = {
-  s1: 'Fade', s2: 'Lineup', s3: 'Beard Trim', s4: 'Haircut', s5: 'Beard + Cut',
+  s1: 'Fade',
+  s2: 'Lineup',
+  s3: 'Beard Trim',
+  s4: 'Haircut',
+  s5: 'Beard + Cut',
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const DAYS_SHORT = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-const MONTHS     = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-
 function buildWeek(): Date[] {
   const today = new Date();
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(today); d.setDate(today.getDate() + i); return d;
+  return Array.from({ length: 14 }, (_, i) => {
+    const d = new Date(today);
+    d.setDate(today.getDate() + i);
+    return d;
   });
 }
 
 function isSameDay(a: Date, b: Date): boolean {
-  return a.getFullYear() === b.getFullYear() &&
-         a.getMonth()    === b.getMonth()    &&
-         a.getDate()     === b.getDate();
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
 function formatTime(date: Date): string {
@@ -101,38 +103,138 @@ function formatTime(date: Date): string {
   return `${dh}:${m === 0 ? '00' : m < 10 ? '0' + m : m} ${period}`;
 }
 
-// ─── Booking card subcomponent ────────────────────────────────────────────────
+// ─── Date Strip Component ───────────────────────────────────────────────────
+
+function DateStrip({
+  week,
+  selectedIndex,
+  onSelect,
+  bookings,
+}: {
+  week: Date[];
+  selectedIndex: number;
+  onSelect: (index: number) => void;
+  bookings: Booking[];
+}) {
+  const today = new Date();
+
+  return (
+    <View style={styles.dateStripContainer}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.dateStrip}
+      >
+        {week.map((date, index) => {
+          const isSelected = index === selectedIndex;
+          const isToday = isSameDay(date, today);
+          const dayBookings = bookings.filter((b) => isSameDay(safeToDate(b.scheduledAt), date));
+          const hasBookings = dayBookings.length > 0;
+
+          return (
+            <DateStripButton
+              key={index}
+              date={date}
+              index={index}
+              isSelected={isSelected}
+              isToday={isToday}
+              hasBookings={hasBookings}
+              onSelect={onSelect}
+            />
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
+}
+
+function DateStripButton({
+  date,
+  index,
+  isSelected,
+  isToday,
+  hasBookings,
+  onSelect,
+}: {
+  date: Date;
+  index: number;
+  isSelected: boolean;
+  isToday: boolean;
+  hasBookings: boolean;
+  onSelect: (index: number) => void;
+}) {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Animated.spring(scaleAnim, { toValue: animations.pressScale, useNativeDriver: true, friction: 5 }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scaleAnim, { toValue: animations.activeScale, useNativeDriver: true, friction: 5 }).start();
+  };
+
+  const animatedStyle = {
+    transform: [{ scale: scaleAnim }],
+  };
+
+  return (
+    <TouchableOpacity
+      onPress={() => onSelect(index)}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      style={[
+        styles.dateButton,
+        isSelected && styles.dateButtonSelected,
+        animatedStyle,
+      ]}
+    >
+      <Text style={[styles.dayName, isSelected && styles.dayNameSelected]}>
+        {isToday ? 'Today' : DAYS_SHORT[date.getDay()]}
+      </Text>
+      <Text style={[styles.dayNumber, isSelected && styles.dayNumberSelected]}>
+        {date.getDate()}
+      </Text>
+      <View style={styles.pipContainer}>
+        {hasBookings ? (
+          <View style={[styles.pip, isSelected && styles.pipSelected]} />
+        ) : (
+          <View style={styles.pipEmpty} />
+        )}
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+// ─── Booking Card Component ───────────────────────────────────────────────────
 
 function BookingCard({
   booking,
-  onMessage,
   onPatchStatus,
   onCompleteToast,
+  index,
 }: {
   booking: Booking;
-  onMessage: () => void;
-  onPatchStatus: (bookingId: string, status: BookingStatus) => void;
+  onPatchStatus: (id: string, status: BookingStatus) => void;
   onCompleteToast: () => void;
-}): React.JSX.Element {
+  index: number;
+}) {
   const [styleModal, setStyleModal] = useState(false);
   const [guideModal, setGuideModal] = useState(false);
   const [guideSteps, setGuideSteps] = useState<BarberCutStep[] | null>(null);
   const [guideBusy, setGuideBusy] = useState(false);
   const [guideErr, setGuideErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  const [busy,    setBusy]    = useState(false);
-  const cfg        = STATUS_CFG[booking.status] ?? STATUS_CFG.pending;
-  const time       = formatTime(safeToDate(booking.scheduledAt));
-  const svcName    = SERVICE_NAMES[booking.serviceId] ?? booking.serviceId;
+  const cfg = STATUS_CFG[booking.status] ?? STATUS_CFG.pending;
+  const time = formatTime(safeToDate(booking.scheduledAt));
+  const svcName = SERVICE_NAMES[booking.serviceId] ?? booking.serviceId;
   const clientName = booking.clientName ?? booking.clientId.substring(0, 8);
 
-  // Advance flow for confirmed → in_progress → completed
-  const advanceLabel = booking.status === 'confirmed'   ? 'Mark In Chair'
-                     : booking.status === 'in_progress' ? 'Complete'
-                     : null;
-  const advanceNext: BookingStatus | null =
-    booking.status === 'confirmed'   ? 'in_progress' :
-    booking.status === 'in_progress' ? 'completed'   : null;
+  const isTerminal =
+    booking.status === 'completed' ||
+    booking.status === 'declined' ||
+    booking.status === 'cancelled' ||
+    booking.status === 'no_show';
 
   async function handleConfirm(): Promise<void> {
     const prev = booking.status;
@@ -172,18 +274,11 @@ function BookingCard({
     setBusy(false);
   }
 
-  async function handleAdvance(): Promise<void> {
-    if (!advanceNext) return;
-    if (advanceNext === 'completed') {
-      // No intermediate Alert — `Alert.alert` cancel-style buttons do not
-      // reliably fire onPress on web. Complete the visit directly.
-      await completeVisit(false);
-      return;
-    }
+  async function handleInChair(): Promise<void> {
     const prev = booking.status;
     setBusy(true);
-    onPatchStatus(booking.id, advanceNext);
-    const res = await BookingService.updateStatus(booking.id, { status: advanceNext });
+    onPatchStatus(booking.id, 'in_progress');
+    const res = await BookingService.updateStatus(booking.id, { status: 'in_progress' });
     if (!res.success) {
       onPatchStatus(booking.id, prev);
       Alert.alert('Could not update', res.error ?? 'Try again.');
@@ -191,14 +286,11 @@ function BookingCard({
     setBusy(false);
   }
 
-  async function completeVisit(rewardClaimed: boolean): Promise<void> {
+  async function handleComplete(): Promise<void> {
     const prev = booking.status;
     setBusy(true);
     onPatchStatus(booking.id, 'completed');
-    const res = await BookingService.updateStatus(booking.id, {
-      status: 'completed',
-      ...(rewardClaimed ? { rewardClaimed: true } : {}),
-    });
+    const res = await BookingService.updateStatus(booking.id, { status: 'completed' });
     if (!res.success) {
       onPatchStatus(booking.id, prev);
       Alert.alert('Could not update', res.error ?? 'Try again.');
@@ -207,11 +299,6 @@ function BookingCard({
     }
     setBusy(false);
   }
-
-  const isTerminal = booking.status === 'completed' ||
-                     booking.status === 'declined'   ||
-                     booking.status === 'cancelled'  ||
-                     booking.status === 'no_show';
 
   async function openCutGuide(): Promise<void> {
     const rs = booking.requestedStyle;
@@ -240,379 +327,403 @@ function BookingCard({
     }
   }
 
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+
+  useEffect(() => {
+    const delay = index * 80;
+    const timer = setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+      ]).start();
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [index]);
+
+  const cardAnimatedStyle = {
+    transform: [{ scale: scaleAnim }],
+  };
+
   return (
-    <View style={s.cardWrap}>
-    <View style={[
-      s.card,
-      booking.status === 'declined' && s.cardDeclined,
-      booking.status === 'completed' && s.cardCompleted,
-    ]}>
-      {/* Left accent bar */}
-      <View style={[s.cardAccent, { backgroundColor: cfg.color }]} />
+    <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+      <TouchableOpacity
+        style={[styles.bookingCard, isTerminal && styles.bookingCardTerminal, cardAnimatedStyle]}
+        onPressIn={() => {
+          Animated.spring(scaleAnim, { toValue: animations.pressScale, useNativeDriver: true, friction: 5 }).start();
+        }}
+        onPressOut={() => {
+          Animated.spring(scaleAnim, { toValue: animations.activeScale, useNativeDriver: true, friction: 5 }).start();
+        }}
+        activeOpacity={1}
+      >
+        {/* Left accent bar */}
+        <View style={[styles.cardAccent, { backgroundColor: cfg.color }]} />
 
-      <View style={s.cardBody}>
-        {/* Top row: time + status badge */}
-        <View style={s.cardTopRow}>
-          <Text style={[s.cardTime, isTerminal && { color: C.sub }]}>{time}</Text>
-          <View style={[s.statusBadge, { backgroundColor: cfg.bg, borderColor: cfg.border }]}>
-            <Ionicons name={cfg.iconName} size={12} color={cfg.color} style={{ marginRight: 4 }} />
-            <Text style={[s.statusText, { color: cfg.color }]}>{cfg.label}</Text>
-          </View>
-        </View>
-
-        {/* Client + service */}
-        <Text style={[s.cardClient, isTerminal && { color: C.sub }]}>{clientName}</Text>
-
-        {booking.requestedStyle && (
-          <TouchableOpacity
-            style={s.requestedRow}
-            onPress={() => setStyleModal(true)}
-            activeOpacity={0.85}
-            accessibilityRole="button"
-            accessibilityLabel={`Client wants ${booking.requestedStyle.name}`}
-          >
-            <Image
-              source={{ uri: booking.requestedStyle.photoURL }}
-              style={s.requestedThumb}
-            />
-            <View style={s.requestedTextCol}>
-              <Text style={s.requestedWantsLine} numberOfLines={2}>
-                Client wants: {booking.requestedStyle.name}
-              </Text>
-              {booking.requestedStyle.barberNotes ? (
-                <Text style={s.requestedBarberNotes} numberOfLines={4}>
-                  {booking.requestedStyle.barberNotes}
-                </Text>
-              ) : null}
+        <View style={styles.cardBody}>
+          {/* Header: Time + Status */}
+          <View style={styles.cardHeader}>
+            <Text style={[styles.timeText, isTerminal && { color: C.greyDark }]}>{time}</Text>
+            <View style={[styles.statusBadge, { backgroundColor: cfg.bg, borderColor: cfg.color }]}>
+              <Text style={[styles.statusText, { color: cfg.color }]}>{cfg.label}</Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color={C.gold} />
-          </TouchableOpacity>
-        )}
-
-        <View style={s.cardMeta}>
-          <Ionicons name="cut-outline" size={12} color={C.sub} style={{ marginRight: 4 }} />
-          <Text style={s.cardMetaText}>{svcName}</Text>
-          <Text style={s.cardDot}>·</Text>
-          <Ionicons name="timer-outline" size={12} color={C.sub} style={{ marginRight: 3 }} />
-          <Text style={s.cardMetaText}>{booking.durationMinutes} min</Text>
-          <Text style={s.cardDot}>·</Text>
-          <Text style={[s.cardMetaText, { color: C.gold, fontWeight: '700' }]}>${booking.price}</Text>
-        </View>
-
-        <TouchableOpacity
-          style={s.msgRow}
-          onPress={onMessage}
-          activeOpacity={0.85}
-          accessibilityRole="button"
-          accessibilityLabel={`Message ${clientName}`}
-        >
-          <Ionicons name="chatbubble-ellipses-outline" size={15} color={C.gold} style={{ marginRight: 8 }} />
-          <Text style={s.msgRowText}>Message {clientName}</Text>
-          <Ionicons name="chevron-forward" size={16} color={C.sub} style={{ marginLeft: 'auto' }} />
-        </TouchableOpacity>
-
-        {/* ── Action buttons ── */}
-        {busy ? (
-          <View style={s.busyRow}>
-            <ActivityIndicator size={18} color={C.gold} />
-            <Text style={s.busyText}>Updating…</Text>
           </View>
-        ) : booking.status === 'pending' ? (
-          <View style={s.actionRow}>
-            {/* Confirm */}
-            <TouchableOpacity
-              style={s.confirmBtn}
-              onPress={handleConfirm}
-              accessibilityRole="button"
-              accessibilityLabel="Confirm appointment"
-              activeOpacity={0.8}
-            >
-              <Ionicons name="checkmark-circle-outline" size={16} color={C.bg} style={{ marginRight: 6 }} />
-              <Text style={s.confirmBtnText}>Confirm</Text>
-            </TouchableOpacity>
 
-            {/* Decline */}
-            <TouchableOpacity
-              style={s.declineBtn}
-              onPress={handleDecline}
-              accessibilityRole="button"
-              accessibilityLabel="Decline appointment"
-              activeOpacity={0.8}
-            >
-              <Ionicons name="close-circle-outline" size={16} color={C.red} style={{ marginRight: 6 }} />
-              <Text style={s.declineBtnText}>Decline</Text>
-            </TouchableOpacity>
-          </View>
-        ) : advanceLabel && advanceNext ? (
-          /* Advance flow: In Chair → Complete */
-          <TouchableOpacity
-            style={s.advanceBtn}
-            onPress={handleAdvance}
-            accessibilityRole="button"
-            accessibilityLabel={advanceLabel}
-            activeOpacity={0.8}
-          >
-            <Text style={s.advanceBtnText}>{advanceLabel}  →</Text>
-          </TouchableOpacity>
-        ) : null}
+          {/* Client */}
+          <Text style={[styles.clientName, isTerminal && { color: C.greyDark }]}>{clientName}</Text>
 
-        {/* Declined reason note */}
-        {booking.status === 'declined' && (
-          <View style={s.declinedNote}>
-            <Ionicons name="information-circle-outline" size={13} color={C.red} style={{ marginRight: 6 }} />
-            <Text style={s.declinedNoteText}>
-              Booking declined — client has been notified.
-            </Text>
-          </View>
-        )}
-      </View>
-    </View>
-
-    <Modal
-      visible={styleModal}
-      transparent
-      animationType="fade"
-      onRequestClose={() => { setStyleModal(false); setGuideErr(null); }}
-    >
-      <Pressable style={s.modalBackdrop} onPress={() => { setStyleModal(false); setGuideErr(null); }}>
-        <Pressable style={s.modalCard} onPress={(e) => e.stopPropagation()}>
-          <Text style={s.modalTitle}>{booking.requestedStyle?.name}</Text>
+          {/* Requested Style */}
           {booking.requestedStyle && (
-            <Image source={{ uri: booking.requestedStyle.photoURL }} style={s.modalPhoto} resizeMode="cover" />
-          )}
-          <Text style={s.modalDesc}>{booking.requestedStyle?.description}</Text>
-          {booking.requestedStyle?.barberNotes ? (
-            <View style={s.modalNotesBlock}>
-              <Text style={s.modalNotesLabel}>Barber notes</Text>
-              <Text style={s.modalNotesBody}>{booking.requestedStyle.barberNotes}</Text>
-            </View>
-          ) : null}
-          <TouchableOpacity
-            style={s.guideBtn}
-            onPress={() => void openCutGuide()}
-            disabled={guideBusy}
-            accessibilityRole="button"
-            accessibilityLabel="How do I do this cut"
-          >
-            {guideBusy ? (
-              <ActivityIndicator color={C.bg} size="small" />
-            ) : (
-              <Text style={s.guideBtnText}>How do I do this cut?</Text>
-            )}
-          </TouchableOpacity>
-          {guideErr ? <Text style={s.guideErr}>{guideErr}</Text> : null}
-          <TouchableOpacity style={s.modalClose} onPress={() => { setStyleModal(false); setGuideErr(null); }}>
-            <Text style={s.modalCloseText}>Close</Text>
-          </TouchableOpacity>
-        </Pressable>
-      </Pressable>
-    </Modal>
-
-    <Modal
-      visible={guideModal}
-      transparent
-      animationType="slide"
-      onRequestClose={() => { setGuideModal(false); setGuideSteps(null); }}
-    >
-      <View style={s.guideModalRoot}>
-        <View style={s.guideModalHeader}>
-          <Text style={s.guideModalTitle}>Step-by-step</Text>
-          <TouchableOpacity onPress={() => { setGuideModal(false); setGuideSteps(null); }}>
-            <Ionicons name="close" size={26} color={C.white} />
-          </TouchableOpacity>
-        </View>
-        <ScrollView contentContainerStyle={s.guideScroll} showsVerticalScrollIndicator={false}>
-          {guideSteps && guideSteps.length === 0 && (
-            <Text style={s.guideEmpty}>No steps came back. Try again in a moment.</Text>
-          )}
-          {(guideSteps ?? []).map((step) => (
-            <View key={step.number} style={s.stepCard}>
-              <View style={s.stepNum}>
-                <Text style={s.stepNumText}>{step.number}</Text>
-              </View>
-              <View style={s.stepBody}>
-                <Text style={s.stepTitle}>{step.title}</Text>
-                <Text style={s.stepDesc}>{step.description}</Text>
-                {step.tools ? (
-                  <Text style={s.stepTools}>Tools: {step.tools}</Text>
+            <TouchableOpacity
+              style={styles.styleRow}
+              onPress={() => setStyleModal(true)}
+              activeOpacity={0.85}
+            >
+              <Image source={{ uri: booking.requestedStyle.photoURL }} style={styles.styleThumb} />
+              <View style={styles.styleTextCol}>
+                <Text style={styles.styleWantsText} numberOfLines={2}>
+                  Client wants: {booking.requestedStyle.name}
+                </Text>
+                {booking.requestedStyle.barberNotes ? (
+                  <Text style={styles.styleNotes} numberOfLines={3}>
+                    {booking.requestedStyle.barberNotes}
+                  </Text>
                 ) : null}
               </View>
+              <Ionicons name={icons.forward} size={18} color={C.gold} />
+            </TouchableOpacity>
+          )}
+
+          {/* Service Info */}
+          <View style={styles.serviceRow}>
+            <Ionicons name="cut-outline" size={12} color={C.grey} style={{ marginRight: 4 }} />
+            <Text style={styles.serviceText}>{svcName}</Text>
+            <Text style={styles.dot}>·</Text>
+            <Ionicons name="time-outline" size={12} color={C.grey} style={{ marginRight: 3 }} />
+            <Text style={styles.serviceText}>{booking.durationMinutes} min</Text>
+            <Text style={styles.dot}>·</Text>
+            <Text style={[styles.serviceText, styles.priceText]}>${booking.price}</Text>
+          </View>
+
+          {/* Action Buttons */}
+          {busy ? (
+            <View style={styles.busyRow}>
+              <ActivityIndicator size={18} color={C.gold} />
+              <Text style={styles.busyText}>Updating...</Text>
             </View>
-          ))}
-        </ScrollView>
-      </View>
-    </Modal>
-    </View>
+          ) : booking.status === 'pending' ? (
+            <View style={styles.actionRow}>
+              {/* Confirm: green outline */}
+              <TouchableOpacity style={[styles.actionBtn, styles.confirmOutline]} onPress={handleConfirm}>
+                <Ionicons name={icons.checkOutline} size={16} color={C.green} style={{ marginRight: 6 }} />
+                <Text style={[styles.actionBtnText, { color: C.green }]}>Confirm</Text>
+              </TouchableOpacity>
+
+              {/* Decline: red outline */}
+              <TouchableOpacity style={[styles.actionBtn, styles.declineOutline]} onPress={handleDecline}>
+                <Ionicons name={icons.close} size={16} color={C.red} style={{ marginRight: 6 }} />
+                <Text style={[styles.actionBtnText, { color: C.red }]}>Decline</Text>
+              </TouchableOpacity>
+            </View>
+          ) : booking.status === 'confirmed' ? (
+            <View style={styles.actionRow}>
+              {/* In Chair: gold filled */}
+              <TouchableOpacity style={[styles.actionBtn, styles.inChairBtn]} onPress={handleInChair}>
+                <Text style={styles.inChairText}>In Chair</Text>
+              </TouchableOpacity>
+
+              {/* Complete: green filled */}
+              <TouchableOpacity style={[styles.actionBtn, styles.completeBtn]} onPress={handleComplete}>
+                <Ionicons name={icons.checkOutline} size={16} color={C.bg} style={{ marginRight: 6 }} />
+                <Text style={styles.completeText}>Complete</Text>
+              </TouchableOpacity>
+            </View>
+          ) : booking.status === 'in_progress' ? (
+            <TouchableOpacity style={[styles.fullWidthBtn, styles.completeBtn]} onPress={handleComplete}>
+              <Ionicons name={icons.checkOutline} size={18} color={C.bg} style={{ marginRight: 8 }} />
+              <Text style={styles.fullWidthBtnText}>Complete</Text>
+            </TouchableOpacity>
+          ) : null}
+
+          {/* Declined Note */}
+          {booking.status === 'declined' && (
+            <View style={styles.declinedNote}>
+              <Ionicons name={icons.information} size={13} color={C.red} style={{ marginRight: 6 }} />
+              <Text style={styles.declinedNoteText}>Booking declined - client has been notified.</Text>
+            </View>
+          )}
+        </View>
+      </TouchableOpacity>
+
+      {/* Style Modal */}
+      <Modal
+        visible={styleModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setStyleModal(false);
+          setGuideErr(null);
+        }}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => {
+            setStyleModal(false);
+            setGuideErr(null);
+          }}
+        >
+          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.modalTitle}>{booking.requestedStyle?.name}</Text>
+            {booking.requestedStyle && (
+              <Image
+                source={{ uri: booking.requestedStyle.photoURL }}
+                style={styles.modalPhoto}
+                resizeMode="cover"
+              />
+            )}
+            <Text style={styles.modalDesc}>{booking.requestedStyle?.description}</Text>
+            {booking.requestedStyle?.barberNotes ? (
+              <View style={styles.modalNotesBlock}>
+                <Text style={styles.modalNotesLabel}>Barber notes</Text>
+                <Text style={styles.modalNotesBody}>{booking.requestedStyle.barberNotes}</Text>
+              </View>
+            ) : null}
+            <TouchableOpacity style={styles.guideBtn} onPress={() => void openCutGuide()} disabled={guideBusy}>
+              {guideBusy ? (
+                <ActivityIndicator color={C.bg} size="small" />
+              ) : (
+                <Text style={styles.guideBtnText}>How do I do this cut?</Text>
+              )}
+            </TouchableOpacity>
+            {guideErr ? <Text style={styles.guideErr}>{guideErr}</Text> : null}
+            <TouchableOpacity
+              style={styles.modalClose}
+              onPress={() => {
+                setStyleModal(false);
+                setGuideErr(null);
+              }}
+            >
+              <Text style={styles.modalCloseText}>Close</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Guide Modal */}
+      <Modal
+        visible={guideModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          setGuideModal(false);
+          setGuideSteps(null);
+        }}
+      >
+        <View style={styles.guideModalRoot}>
+          <View style={styles.guideModalHeader}>
+            <Text style={styles.guideModalTitle}>Step-by-step</Text>
+            <TouchableOpacity
+              onPress={() => {
+                setGuideModal(false);
+                setGuideSteps(null);
+              }}
+            >
+              <Ionicons name={icons.close} size={26} color={C.white} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView contentContainerStyle={styles.guideScroll} showsVerticalScrollIndicator={false}>
+            {guideSteps && guideSteps.length === 0 && (
+              <Text style={styles.guideEmpty}>No steps came back. Try again in a moment.</Text>
+            )}
+            {(guideSteps ?? []).map((step) => (
+              <View key={step.number} style={styles.stepCard}>
+                <View style={styles.stepNum}>
+                  <Text style={styles.stepNumText}>{step.number}</Text>
+                </View>
+                <View style={styles.stepBody}>
+                  <Text style={styles.stepTitle}>{step.title}</Text>
+                  <Text style={styles.stepDesc}>{step.description}</Text>
+                  {step.tools ? <Text style={styles.stepTools}>Tools: {step.tools}</Text> : null}
+                </View>
+              </View>
+            ))}
+          </ScrollView>
+        </View>
+      </Modal>
+    </Animated.View>
   );
 }
 
-// ─── Main screen ─────────────────────────────────────────────────────────────
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 
-export default function ScheduleScreen({ navigation }: Props): React.JSX.Element {
-  const insets    = useSafeAreaInsets();
+export default function ScheduleScreen(): React.JSX.Element {
+  const insets = useSafeAreaInsets();
   const { appUser, firebaseUser } = useAuth();
-  const firstName = (appUser?.displayName ?? 'Barber').split(' ')[0];
 
   const week = buildWeek();
-  const [selIdx,      setSelIdx]      = useState(0);
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const [allBookings, setAllBookings] = useState<Booking[]>([]);
-  const [loading,     setLoading]     = useState(true);
+  const [loading, setLoading] = useState(true);
   const [completeSnack, setCompleteSnack] = useState(false);
 
+  const firstName = (appUser?.displayName ?? 'Barber').split(' ')[0];
+
+  // Animation values
+  const headerFadeAnim = useRef(new Animated.Value(0)).current;
+  const dateLabelFadeAnim = useRef(new Animated.Value(0)).current;
+  const earningsFadeAnim = useRef(new Animated.Value(0)).current;
+  const earningsSlideAnim = useRef(new Animated.Value(20)).current;
+  const emptyFadeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(headerFadeAnim, { toValue: 1, duration: 300, delay: 100, useNativeDriver: true }).start();
+  }, []);
+
+  useEffect(() => {
+    Animated.timing(dateLabelFadeAnim, { toValue: 1, duration: 300, delay: 200, useNativeDriver: true }).start();
+  }, []);
+
   function patchBookingStatus(bookingId: string, status: BookingStatus): void {
-    setAllBookings((prev) =>
-      prev.map((b) => (b.id === bookingId ? { ...b, status } : b)),
-    );
+    setAllBookings((prev) => prev.map((b) => (b.id === bookingId ? { ...b, status } : b)));
   }
 
-  // ── Real-time listener ─────────────────────────────────────────────────────
+  // Real-time listener
   useEffect(() => {
     if (!firebaseUser) return;
     setLoading(true);
     const unsubscribe = BookingService.onSnapshotByBarber(
       firebaseUser.uid,
-      (bookings) => { setAllBookings(bookings); setLoading(false); },
-      ()         => setLoading(false),
+      (bookings) => {
+        setAllBookings(bookings);
+        setLoading(false);
+      },
+      () => setLoading(false)
     );
     return unsubscribe;
   }, [firebaseUser]);
 
-  const selDay = week[selIdx];
+  const selectedDay = week[selectedIndex];
   const dayBookings = allBookings
-    .filter(b => isSameDay(safeToDate(b.scheduledAt), selDay))
+    .filter((b) => isSameDay(safeToDate(b.scheduledAt), selectedDay))
     .sort((a, b) => safeToDate(a.scheduledAt).getTime() - safeToDate(b.scheduledAt).getTime());
 
-  const confirmed = dayBookings.filter(b => ['confirmed','in_progress','completed'].includes(b.status)).length;
-  const pending   = dayBookings.filter(b => b.status === 'pending').length;
-  const earnings  = dayBookings
-    .filter(b => ['confirmed','in_progress','completed'].includes(b.status))
+  const confirmed = dayBookings.filter((b) => ['confirmed', 'in_progress', 'completed'].includes(b.status)).length;
+  const pending = dayBookings.filter((b) => b.status === 'pending').length;
+  const earnings = dayBookings
+    .filter((b) => ['confirmed', 'in_progress', 'completed'].includes(b.status))
     .reduce((sum, b) => sum + b.price, 0);
 
+  // Animate earnings bar when day bookings change
+  useEffect(() => {
+    if (dayBookings.length > 0) {
+      const timer = setTimeout(() => {
+        Animated.parallel([
+          Animated.timing(earningsFadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }),
+          Animated.timing(earningsSlideAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+        ]).start();
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [dayBookings.length]);
+
+  // Animate empty state
+  useEffect(() => {
+    if (!loading && dayBookings.length === 0) {
+      const timer = setTimeout(() => {
+        Animated.timing(emptyFadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
+      }, 200);
+      return () => clearTimeout(timer);
+    }
+  }, [loading, dayBookings.length]);
+
   return (
-    <View style={[s.root, { paddingTop: insets.top }]}>
+    <View style={[styles.root, { paddingTop: insets.top }]}>
       <StatusBar barStyle="light-content" backgroundColor={C.bg} />
 
-      {/* ── Header ── */}
-      <View style={s.header}>
+      {/* Header */}
+      <Animated.View style={[styles.header, { opacity: headerFadeAnim }]}>
         <View>
-          <Text style={s.headerEyebrow}>MY SCHEDULE</Text>
-          <Text style={s.headerTitle}>{firstName}'s Day</Text>
+          <Text style={styles.headerEyebrow}>MY SCHEDULE</Text>
+          <Text style={styles.headerTitle}>{firstName}'s Schedule</Text>
         </View>
-        <View style={s.statPills}>
+        <View style={styles.headerBadges}>
           {confirmed > 0 && (
-            <View style={[s.pill, { backgroundColor: C.greenBg, borderColor: C.greenBdr }]}>
-              <Text style={[s.pillText, { color: C.green }]}>{confirmed} booked</Text>
+            <View style={[styles.headerBadge, { backgroundColor: `${C.green}20`, borderColor: C.green }]}>
+              <Text style={[styles.headerBadgeText, { color: C.green }]}>{confirmed} confirmed</Text>
             </View>
           )}
           {pending > 0 && (
-            <View style={[s.pill, { backgroundColor: C.amberBg, borderColor: C.amberBdr }]}>
-              <Text style={[s.pillText, { color: C.amber }]}>{pending} pending</Text>
+            <View style={[styles.headerBadge, { backgroundColor: `${C.gold}20`, borderColor: C.gold }]}>
+              <Text style={[styles.headerBadgeText, { color: C.gold }]}>{pending} pending</Text>
             </View>
           )}
         </View>
-      </View>
-      <View style={s.headerLine} />
+      </Animated.View>
 
-      {/* ── Week strip ── */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={s.weekStrip}
-      >
-        {week.map((d, i) => {
-          const sel     = i === selIdx;
-          const isToday = i === 0;
-          const cnt     = allBookings.filter(b => isSameDay(safeToDate(b.scheduledAt), d)).length;
-          return (
-            <TouchableOpacity
-              key={i}
-              style={[s.dayBtn, sel && s.dayBtnSel]}
-              onPress={() => setSelIdx(i)}
-              activeOpacity={0.8}
-              accessibilityRole="button"
-              accessibilityLabel={`${isToday ? 'Today' : DAYS_SHORT[d.getDay()]} ${d.getDate()}${cnt > 0 ? `, ${cnt} bookings` : ''}`}
-              accessibilityState={{ selected: sel }}
-            >
-              <Text style={[s.dayName, sel && s.dayNameSel]}>
-                {isToday ? 'Today' : DAYS_SHORT[d.getDay()]}
-              </Text>
-              <Text style={[s.dayNum, sel && s.dayNumSel]}>{d.getDate()}</Text>
-              <View style={s.dayPipWrap}>
-                {cnt > 0
-                  ? <View style={[s.dayPip, sel ? s.dayPipSel : s.dayPipDefault]} />
-                  : <View style={s.dayPipEmpty} />
-                }
-              </View>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+      {/* Date Strip */}
+      <DateStrip week={week} selectedIndex={selectedIndex} onSelect={setSelectedIndex} bookings={allBookings} />
 
-      {/* ── Date label ── */}
-      <Text style={s.dateLabel}>
-        {DAYS_SHORT[selDay.getDay()]}, {MONTHS[selDay.getMonth()]} {selDay.getDate()}
-        {selIdx === 0 ? ' — Today' : ''}
-      </Text>
+      {/* Date Label */}
+      <Animated.View style={{ opacity: dateLabelFadeAnim }}>
+        <Text style={styles.dateLabel}>
+          {DAYS_SHORT[selectedDay.getDay()]}, {MONTHS[selectedDay.getMonth()]} {selectedDay.getDate()}
+          {selectedIndex === 0 ? ' — Today' : ''}
+        </Text>
+      </Animated.View>
 
-      {/* ── Earnings bar ── */}
+      {/* Earnings Bar */}
       {dayBookings.length > 0 && (
-        <View style={s.earningsBar}>
-          <Ionicons name="cash-outline" size={15} color={C.gold} />
-          <Text style={s.earningsText}>
-            Est. earnings: <Text style={s.earningsValue}>${earnings}</Text>
+        <Animated.View style={[styles.earningsBar, { opacity: earningsFadeAnim, transform: [{ translateY: earningsSlideAnim }] }]}>
+          <Ionicons name="cash-outline" size={18} color={C.gold} />
+          <Text style={styles.earningsText}>
+            Estimated earnings: <Text style={styles.earningsValue}>${earnings}</Text>
           </Text>
-        </View>
+        </Animated.View>
       )}
 
-      {/* ── Content ── */}
+      {/* Content */}
       {loading ? (
-        <View style={s.centerWrap}>
+        <View style={styles.loadingContainer}>
           <ActivityIndicator size={28} color={C.gold} />
-          <Text style={s.centerText}>Loading schedule…</Text>
+          <Text style={styles.loadingText}>Loading schedule...</Text>
         </View>
       ) : dayBookings.length === 0 ? (
-        <View style={s.centerWrap}>
-          <Ionicons name="calendar-outline" size={52} color={C.muted} />
-          <Text style={s.emptyTitle}>No appointments</Text>
-          <Text style={s.emptySub}>
-            {selIdx === 0
+        <Animated.View style={[styles.emptyContainer, { opacity: emptyFadeAnim }]}>
+          <Ionicons name={icons.tabBookOutline} size={56} color={C.greyDark} />
+          <Text style={styles.emptyTitle}>No appointments</Text>
+          <Text style={styles.emptySubtitle}>
+            {selectedIndex === 0
               ? 'You have no bookings today. Clients can book you from the app.'
               : 'No bookings on this day yet.'}
           </Text>
-        </View>
+        </Animated.View>
       ) : (
         <ScrollView
-          contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 100 }]}
+          contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 100 }]}
           showsVerticalScrollIndicator={false}
         >
-          {dayBookings.map((b) => (
+          {dayBookings.map((booking, index) => (
             <BookingCard
-              key={b.id}
-              booking={b}
+              key={booking.id}
+              booking={booking}
               onPatchStatus={patchBookingStatus}
               onCompleteToast={() => setCompleteSnack(true)}
-              onMessage={() =>
-                navigation.navigate('Chat', {
-                  clientId: b.clientId,
-                  clientName: b.clientName ?? 'Client',
-                  barberId: b.barberId,
-                  barberName: appUser?.displayName ?? 'Barber',
-                  bookingId: b.id,
-                })
-              }
+              index={index}
             />
           ))}
         </ScrollView>
       )}
 
+      {/* Snackbar */}
       <Snackbar
         visible={completeSnack}
         onDismiss={() => setCompleteSnack(false)}
         duration={2200}
-        style={{ backgroundColor: C.gold }}
-        wrapperStyle={{ paddingHorizontal: 16 }}
+        style={styles.snackbar}
+        wrapperStyle={{ paddingHorizontal: spacing.lg }}
       >
-        <PaperText style={{ color: C.bg, fontWeight: '800' }}>Booking completed</PaperText>
+        <Text style={styles.snackbarText}>Booking completed successfully</Text>
       </Snackbar>
     </View>
   );
@@ -620,174 +731,470 @@ export default function ScheduleScreen({ navigation }: Props): React.JSX.Element
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const s = StyleSheet.create({
-  root:  { flex: 1, backgroundColor: C.bg },
-  scroll: { paddingHorizontal: 16, paddingTop: 8 },
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: C.bg,
+  },
+  scroll: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+  },
 
   // Header
   header: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 18, paddingTop: 12, paddingBottom: 10,
-  },
-  headerEyebrow: { fontSize: 10, color: C.sub, fontWeight: '800', letterSpacing: 2, marginBottom: 2 },
-  headerTitle:   { fontSize: 22, fontWeight: '900', color: C.white, letterSpacing: -0.3 },
-  headerLine:    { height: 1, marginHorizontal: 18, backgroundColor: C.gold, opacity: 0.15, marginBottom: 4 },
-
-  statPills: { gap: 6 },
-  pill:      { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 1 },
-  pillText:  { fontSize: 11, fontWeight: '700' },
-
-  // Week strip
-  weekStrip: { paddingHorizontal: 14, paddingVertical: 12, gap: 8, alignItems: 'center' },
-  dayBtn: {
-    width: 56, height: 76, borderRadius: 14,
-    alignItems: 'center', justifyContent: 'space-between',
-    paddingVertical: 11, backgroundColor: C.card,
-    borderWidth: 1, borderColor: C.divider,
-  },
-  dayBtnSel: {
-    backgroundColor: C.gold, borderColor: C.gold,
-    shadowColor: C.gold, shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35, shadowRadius: 8, elevation: 6,
-  },
-  dayName:    { fontSize: 10, fontWeight: '700', color: C.sub, letterSpacing: 0.5, textTransform: 'uppercase' },
-  dayNameSel: { color: '#0A0A0ACC' },
-  dayNum:     { fontSize: 22, fontWeight: '900', color: C.white, letterSpacing: -0.5 },
-  dayNumSel:  { color: C.bg },
-  dayPipWrap:    { height: 6, justifyContent: 'center', alignItems: 'center' },
-  dayPip:        { width: 5, height: 5, borderRadius: 3 },
-  dayPipDefault: { backgroundColor: C.gold },
-  dayPipSel:     { backgroundColor: '#0A0A0A88' },
-  dayPipEmpty:   { width: 5, height: 5 },
-
-  dateLabel: { fontSize: 12, color: C.sub, paddingHorizontal: 18, marginBottom: 8, fontWeight: '600' },
-
-  earningsBar: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    marginHorizontal: 16, marginBottom: 10,
-    backgroundColor: C.goldGlow, borderWidth: 1, borderColor: C.goldBorder,
-    borderRadius: 10, paddingVertical: 9, paddingHorizontal: 14,
-  },
-  earningsText:  { fontSize: 13, color: C.sub },
-  earningsValue: { color: C.gold, fontWeight: '800' },
-
-  centerWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40, gap: 12 },
-  centerText: { fontSize: 13, color: C.sub },
-  emptyTitle: { fontSize: 18, fontWeight: '800', color: C.white },
-  emptySub:   { fontSize: 13, color: C.sub, textAlign: 'center', lineHeight: 18 },
-
-  cardWrap: { marginBottom: 12 },
-
-  // ── Booking card ────────────────────────────────────────────────────────────
-  card: {
     flexDirection: 'row',
-    backgroundColor: C.card, borderRadius: 14,
-    borderWidth: 1, borderColor: C.cardBorder,
-    overflow: 'hidden',
-    ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.25, shadowRadius: 6 },
-      android: { elevation: 4 },
-    }),
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.md,
   },
-  cardDeclined: { opacity: 0.6 },
-  cardCompleted: { opacity: 0.75 },
-  cardAccent:   { width: 4 },
-  cardBody:     { flex: 1, padding: 14 },
-
-  cardTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  cardTime:   { fontSize: 14, fontWeight: '800', color: C.white },
-
-  statusBadge: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 9, paddingVertical: 4,
-    borderRadius: 20, borderWidth: 1,
+  headerEyebrow: {
+    fontFamily: fonts.bodyBold,
+    fontSize: fonts.size.xs,
+    color: C.greyDark,
+    letterSpacing: fonts.letterSpacing.widest,
+    textTransform: 'uppercase',
+    marginBottom: spacing.xs,
   },
-  statusText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.3 },
-
-  cardClient:   { fontSize: 16, fontWeight: '800', color: C.white, marginBottom: 5 },
-  cardMeta:     { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 3, marginBottom: 10 },
-  cardMetaText: { fontSize: 12, color: C.sub },
-  cardDot:      { fontSize: 12, color: C.muted, marginHorizontal: 2 },
-
-  msgRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    backgroundColor: '#141414',
-    borderRadius: 10,
+  headerTitle: {
+    fontFamily: fonts.heading,
+    fontSize: fonts.size['3xl'],
+    color: C.white,
+    letterSpacing: fonts.letterSpacing.tight,
+  },
+  headerBadges: {
+    gap: spacing.xs,
+    alignItems: 'flex-end',
+  },
+  headerBadge: {
+    borderRadius: radius.full,
     borderWidth: 1,
-    borderColor: C.goldBorder,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
   },
-  msgRowText: { fontSize: 13, fontWeight: '700', color: C.white, flex: 1 },
+  headerBadgeText: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: fonts.size.xs,
+  },
 
-  requestedRow: {
+  // Date Strip
+  dateStripContainer: {
+    marginBottom: spacing.md,
+  },
+  dateStrip: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    gap: spacing.sm,
+  },
+  dateButton: {
+    width: 56,
+    height: 76,
+    borderRadius: radius.md,
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.border,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+  },
+  dateButtonSelected: {
+    backgroundColor: C.gold,
+    borderColor: C.gold,
+    ...shadows.gold,
+  },
+  dayName: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: fonts.size.xs,
+    color: C.greyDark,
+    textTransform: 'uppercase',
+    letterSpacing: fonts.letterSpacing.wide,
+  },
+  dayNameSelected: {
+    color: C.bg,
+  },
+  dayNumber: {
+    fontFamily: fonts.heading,
+    fontSize: fonts.size['2xl'],
+    color: C.white,
+    letterSpacing: fonts.letterSpacing.tight,
+  },
+  dayNumberSelected: {
+    color: C.bg,
+  },
+  pipContainer: {
+    height: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  pip: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: C.gold,
+  },
+  pipSelected: {
+    backgroundColor: C.bg,
+    opacity: 0.5,
+  },
+  pipEmpty: {
+    width: 5,
+    height: 5,
+  },
+
+  // Date Label
+  dateLabel: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: fonts.size.sm,
+    color: C.grey,
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+  },
+
+  // Earnings Bar
+  earningsBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 10,
+    gap: spacing.sm,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    backgroundColor: C.goldGlow,
+    borderRadius: radius.md,
     borderWidth: 1,
     borderColor: C.gold,
-    backgroundColor: '#1A1708',
-    gap: 10,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
   },
-  requestedThumb: { width: 50, height: 50, borderRadius: 8, backgroundColor: C.greyBg },
-  requestedTextCol: { flex: 1, minWidth: 0 },
-  requestedWantsLine: { fontSize: 14, fontWeight: '800', color: C.white },
-  requestedBarberNotes: {
-    marginTop: 6,
-    fontSize: 12,
-    color: C.sub,
-    lineHeight: 17,
-    fontWeight: '500',
+  earningsText: {
+    fontFamily: fonts.body,
+    fontSize: fonts.size.sm,
+    color: C.grey,
+  },
+  earningsValue: {
+    fontFamily: fonts.bodyBold,
+    color: C.gold,
   },
 
+  // Loading
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing['2xl'],
+    gap: spacing.md,
+  },
+  loadingText: {
+    fontFamily: fonts.body,
+    fontSize: fonts.size.sm,
+    color: C.grey,
+  },
+
+  // Empty
+  emptyContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing['2xl'],
+    gap: spacing.md,
+    paddingTop: spacing['3xl'],
+  },
+  emptyTitle: {
+    fontFamily: fonts.bodyBold,
+    fontSize: fonts.size.xl,
+    color: C.white,
+  },
+  emptySubtitle: {
+    fontFamily: fonts.body,
+    fontSize: fonts.size.sm,
+    color: C.grey,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+
+  // Booking Card
+  bookingCard: {
+    flexDirection: 'row',
+    backgroundColor: C.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: C.border,
+    overflow: 'hidden',
+    marginBottom: spacing.md,
+    ...shadows.sm,
+  },
+  bookingCardTerminal: {
+    opacity: 0.7,
+  },
+  cardAccent: {
+    width: 3,
+  },
+  cardBody: {
+    flex: 1,
+    padding: spacing.lg,
+  },
+
+  // Card Header
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  timeText: {
+    fontFamily: fonts.bodyBold,
+    fontSize: fonts.size.md,
+    color: C.white,
+  },
+  statusBadge: {
+    borderRadius: radius.full,
+    borderWidth: 1,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  statusText: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: fonts.size.xs,
+    textTransform: 'uppercase',
+    letterSpacing: fonts.letterSpacing.wide,
+  },
+
+  // Card Body
+  clientName: {
+    fontFamily: fonts.bodyBold,
+    fontSize: fonts.size.lg,
+    color: C.white,
+    marginBottom: spacing.sm,
+  },
+
+  // Style Row
+  styleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: C.goldGlow,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: C.gold,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+    gap: spacing.sm,
+  },
+  styleThumb: {
+    width: 50,
+    height: 50,
+    borderRadius: radius.sm,
+    backgroundColor: C.surfaceRaised,
+  },
+  styleTextCol: {
+    flex: 1,
+    minWidth: 0,
+  },
+  styleWantsText: {
+    fontFamily: fonts.bodyBold,
+    fontSize: fonts.size.sm,
+    color: C.white,
+  },
+  styleNotes: {
+    fontFamily: fonts.body,
+    fontSize: fonts.size.xs,
+    color: C.grey,
+    marginTop: spacing.xs,
+    lineHeight: 16,
+  },
+
+  // Service Row
+  serviceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 3,
+    marginBottom: spacing.md,
+  },
+  serviceText: {
+    fontFamily: fonts.body,
+    fontSize: fonts.size.sm,
+    color: C.grey,
+  },
+  dot: {
+    fontFamily: fonts.body,
+    fontSize: fonts.size.sm,
+    color: C.greyDark,
+    marginHorizontal: 2,
+  },
+  priceText: {
+    fontFamily: fonts.bodyBold,
+    color: C.gold,
+  },
+
+  // Actions
+  busyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  busyText: {
+    fontFamily: fonts.body,
+    fontSize: fonts.size.sm,
+    color: C.grey,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  actionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 44,
+    borderRadius: radius['2xl'],
+  },
+  actionBtnText: {
+    fontFamily: fonts.bodyBold,
+    fontSize: fonts.size.sm,
+  },
+
+  // Button Variants
+  confirmOutline: {
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: C.green,
+  },
+  declineOutline: {
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: C.red,
+  },
+  inChairBtn: {
+    backgroundColor: C.gold,
+    borderWidth: 0,
+  },
+  inChairText: {
+    fontFamily: fonts.bodyBold,
+    fontSize: fonts.size.sm,
+    color: C.bg,
+  },
+  completeBtn: {
+    backgroundColor: C.green,
+    borderWidth: 0,
+  },
+  completeText: {
+    fontFamily: fonts.bodyBold,
+    fontSize: fonts.size.sm,
+    color: C.bg,
+  },
+
+  fullWidthBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 48,
+    borderRadius: radius['2xl'],
+  },
+  fullWidthBtnText: {
+    fontFamily: fonts.bodyBold,
+    fontSize: fonts.size.md,
+    color: C.bg,
+  },
+
+  // Declined Note
+  declinedNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: `${C.red}15`,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    marginTop: spacing.sm,
+  },
+  declinedNoteText: {
+    fontFamily: fonts.body,
+    fontSize: fonts.size.xs,
+    color: C.red,
+    flex: 1,
+  },
+
+  // Modal
   modalBackdrop: {
     flex: 1,
     backgroundColor: '#000000CC',
     justifyContent: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: spacing.lg,
   },
   modalCard: {
-    backgroundColor: C.card,
-    borderRadius: 16,
+    backgroundColor: C.surface,
+    borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: C.goldBorder,
-    padding: 18,
+    borderColor: C.gold,
+    padding: spacing.lg,
   },
-  modalTitle: { fontSize: 18, fontWeight: '800', color: C.white, marginBottom: 12 },
+  modalTitle: {
+    fontFamily: fonts.heading,
+    fontSize: fonts.size.xl,
+    color: C.white,
+    marginBottom: spacing.md,
+  },
   modalPhoto: {
     width: '100%',
     aspectRatio: 16 / 9,
-    borderRadius: 12,
-    backgroundColor: C.greyBg,
-    marginBottom: 12,
+    borderRadius: radius.md,
+    backgroundColor: C.surfaceRaised,
+    marginBottom: spacing.md,
   },
-  modalDesc: { fontSize: 14, color: C.sub, lineHeight: 21, marginBottom: 16 },
-  modalNotesBlock: { marginBottom: 16, width: '100%' },
+  modalDesc: {
+    fontFamily: fonts.body,
+    fontSize: fonts.size.sm,
+    color: C.grey,
+    lineHeight: 20,
+    marginBottom: spacing.md,
+  },
+  modalNotesBlock: {
+    marginBottom: spacing.md,
+    width: '100%',
+  },
   modalNotesLabel: {
-    fontSize: 11,
-    fontWeight: '800',
+    fontFamily: fonts.bodyBold,
+    fontSize: fonts.size.xs,
     color: C.gold,
-    letterSpacing: 1,
-    marginBottom: 6,
+    letterSpacing: fonts.letterSpacing.wide,
+    marginBottom: spacing.xs,
   },
-  modalNotesBody: { fontSize: 13, color: C.white, lineHeight: 20 },
+  modalNotesBody: {
+    fontFamily: fonts.body,
+    fontSize: fonts.size.sm,
+    color: C.white,
+    lineHeight: 20,
+  },
   guideBtn: {
     backgroundColor: C.gold,
-    borderRadius: 12,
-    paddingVertical: 14,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: spacing.sm,
   },
-  guideBtnText: { fontSize: 15, fontWeight: '800', color: C.bg },
-  guideErr: { fontSize: 13, color: C.red, marginBottom: 8 },
-  modalClose: { alignItems: 'center', paddingVertical: 8 },
-  modalCloseText: { fontSize: 14, fontWeight: '700', color: C.gold },
+  guideBtnText: {
+    fontFamily: fonts.bodyBold,
+    fontSize: fonts.size.md,
+    color: C.bg,
+  },
+  guideErr: {
+    fontFamily: fonts.body,
+    fontSize: fonts.size.sm,
+    color: C.red,
+    marginBottom: spacing.sm,
+  },
+  modalClose: {
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+  },
+  modalCloseText: {
+    fontFamily: fonts.bodyBold,
+    fontSize: fonts.size.sm,
+    color: C.gold,
+  },
 
+  // Guide Modal
   guideModalRoot: {
     flex: 1,
     backgroundColor: C.bg,
@@ -797,75 +1204,83 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 18,
-    paddingBottom: 14,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: C.divider,
+    borderBottomColor: C.border,
   },
-  guideModalTitle: { fontSize: 18, fontWeight: '800', color: C.gold },
-  guideScroll: { padding: 16, paddingBottom: 40 },
-  guideEmpty: { fontSize: 14, color: C.sub, textAlign: 'center', marginTop: 24 },
+  guideModalTitle: {
+    fontFamily: fonts.heading,
+    fontSize: fonts.size.xl,
+    color: C.gold,
+  },
+  guideScroll: {
+    padding: spacing.lg,
+    paddingBottom: spacing['4xl'],
+  },
+  guideEmpty: {
+    fontFamily: fonts.body,
+    fontSize: fonts.size.sm,
+    color: C.grey,
+    textAlign: 'center',
+    marginTop: spacing.xl,
+  },
   stepCard: {
     flexDirection: 'row',
-    backgroundColor: C.card,
-    borderRadius: 14,
+    backgroundColor: C.surface,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: C.goldBorder,
-    padding: 14,
-    marginBottom: 12,
-    gap: 12,
+    borderColor: C.gold,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    gap: spacing.md,
   },
   stepNum: {
     width: 36,
     height: 36,
-    borderRadius: 10,
-    backgroundColor: '#1A1708',
+    borderRadius: radius.sm,
+    backgroundColor: C.goldGlow,
     borderWidth: 1,
-    borderColor: C.goldBorder,
+    borderColor: C.gold,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  stepNumText: { fontSize: 16, fontWeight: '900', color: C.gold },
-  stepBody: { flex: 1, minWidth: 0 },
-  stepTitle: { fontSize: 15, fontWeight: '800', color: C.white, marginBottom: 6 },
-  stepDesc: { fontSize: 14, color: C.sub, lineHeight: 20, marginBottom: 6 },
-  stepTools: { fontSize: 12, color: C.gold, fontWeight: '600' },
-
-  // Action buttons
-  actionRow: { flexDirection: 'row', gap: 10 },
-
-  confirmBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: C.gold, borderRadius: 10, height: 42,
-    ...Platform.select({
-      ios: { shadowColor: C.gold, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 8 },
-      android: { elevation: 6 },
-    }),
+  stepNumText: {
+    fontFamily: fonts.bodyBold,
+    fontSize: fonts.size.md,
+    color: C.gold,
   },
-  confirmBtnText: { fontSize: 13, fontWeight: '800', color: C.bg },
-
-  declineBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: C.redBg, borderRadius: 10, height: 42,
-    borderWidth: 1, borderColor: C.redBdr,
+  stepBody: {
+    flex: 1,
+    minWidth: 0,
   },
-  declineBtnText: { fontSize: 13, fontWeight: '800', color: C.red },
-
-  advanceBtn: {
-    backgroundColor: C.card, borderRadius: 10, height: 40,
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: C.goldBorder,
+  stepTitle: {
+    fontFamily: fonts.bodyBold,
+    fontSize: fonts.size.md,
+    color: C.white,
+    marginBottom: spacing.xs,
   },
-  advanceBtnText: { fontSize: 13, fontWeight: '700', color: C.gold },
-
-  busyRow:  { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 },
-  busyText: { fontSize: 13, color: C.sub },
-
-  declinedNote: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: C.redBg, borderRadius: 8,
-    borderWidth: 1, borderColor: C.redBdr,
-    paddingHorizontal: 10, paddingVertical: 8, marginTop: 2,
+  stepDesc: {
+    fontFamily: fonts.body,
+    fontSize: fonts.size.sm,
+    color: C.grey,
+    lineHeight: 20,
+    marginBottom: spacing.xs,
   },
-  declinedNoteText: { flex: 1, fontSize: 11, color: C.red, lineHeight: 15 },
+  stepTools: {
+    fontFamily: fonts.bodySemiBold,
+    fontSize: fonts.size.xs,
+    color: C.gold,
+  },
+
+  // Snackbar
+  snackbar: {
+    backgroundColor: C.gold,
+    borderRadius: radius.md,
+  },
+  snackbarText: {
+    fontFamily: fonts.bodyBold,
+    fontSize: fonts.size.sm,
+    color: C.bg,
+  },
 });

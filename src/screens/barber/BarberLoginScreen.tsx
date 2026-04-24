@@ -20,6 +20,7 @@ import { AuthService } from '@/services/auth.service';
 import { UserService } from '@/services/user.service';
 import { BarberService } from '@/services/barber.service';
 import { useAuth } from '@/hooks/useAuth';
+import { colors, fonts, spacing, radius, icons } from '@/theme';
 
 // Default 9 AM – 7 PM Mon–Sat schedule for new barbers
 const DEFAULT_WORKING_HOURS = {
@@ -31,35 +32,6 @@ const DEFAULT_WORKING_HOURS = {
   saturday:  { isWorking: true,  startTime: '09:00', endTime: '17:00' },
   sunday:    { isWorking: false, startTime: '10:00', endTime: '15:00' },
 };
-
-// ─── Theme ────────────────────────────────────────────────────────────────────
-
-const C = {
-  bg:          '#0A0A0A',
-  surface:     '#121212',
-  card:        '#161616',
-  elevated:    '#1E1E1E',
-  gold:        '#D4AF37',
-  goldGlow:    '#D4AF3715',
-  goldBorder:  '#D4AF3730',
-  steel:       '#9E9E9E',
-  steelDark:   '#616161',
-  steelLight:  '#BDBDBD',
-  steelGlow:   '#9E9E9E12',
-  steelBorder: '#9E9E9E35',
-  steelSolid:  '#9E9E9E18',
-  green:       '#4CAF50',
-  greenBg:     '#0D1A0D',
-  greenBdr:    '#4CAF5040',
-  danger:      '#CF6679',
-  dangerBg:    '#1A0A0A',
-  dangerBdr:   '#CF667940',
-  white:       '#FFFFFF',
-  sub:         '#666666',
-  muted:       '#333333',
-  placeholder: '#444444',
-  border:      '#242424',
-} as const;
 
 const { width: SW } = Dimensions.get('window');
 
@@ -104,13 +76,13 @@ function Field({
         <Ionicons
           name={iconName}
           size={18}
-          color={focused ? C.steel : C.steelDark}
+          color={focused ? colors.gold : colors.greyDark}
         />
       </View>
       <TextInput
         style={f.input}
         placeholder={placeholder}
-        placeholderTextColor={C.placeholder}
+        placeholderTextColor={colors.greyDark}
         value={value}
         onChangeText={onChangeText}
         secureTextEntry={secureTextEntry}
@@ -128,20 +100,20 @@ function Field({
 const f = StyleSheet.create({
   wrap: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: C.card, borderRadius: 14,
-    borderWidth: 1.5, borderColor: C.border, overflow: 'hidden',
+    backgroundColor: colors.surface, borderRadius: radius.sm,
+    borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3, shadowRadius: 4, elevation: 3,
   },
-  focused:         { borderColor: C.steel },
+  focused:         { borderColor: colors.gold },
   iconBox: {
     width: 50, height: 56, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: C.elevated, borderRightWidth: 1, borderRightColor: C.border,
+    backgroundColor: colors.surfaceRaised, borderRightWidth: 1, borderRightColor: colors.border,
   },
-  iconBoxFocused:  { backgroundColor: C.steelSolid, borderRightColor: C.steelBorder },
+  iconBoxFocused:  { backgroundColor: colors.gold + '15', borderRightColor: colors.gold + '40' },
   input: {
-    flex: 1, height: 56, paddingHorizontal: 16,
-    color: C.white, fontSize: 15, fontWeight: '500',
+    flex: 1, height: 56, paddingHorizontal: spacing.lg,
+    color: colors.white, fontSize: fonts.size.md, fontFamily: fonts.body,
   },
 });
 
@@ -187,7 +159,6 @@ export default function BarberLoginScreen({ navigation }: Props): React.JSX.Elem
       setError(mapError(result.error));
       setLoading(false);
     }
-    // On success: onAuthStateChanged fires → RootNavigator routes to BarberApp
   }
 
   // ── Sign up ───────────────────────────────────────────────────────────────
@@ -228,7 +199,7 @@ export default function BarberLoginScreen({ navigation }: Props): React.JSX.Elem
       fcmToken:    null,
     });
 
-    // 3. Create a barbers profile doc (publicly readable — clients can discover this barber)
+    // 3. Create a barbers profile doc
     await BarberService.create(uid, {
       userId:       uid,
       displayName:  name,
@@ -240,7 +211,6 @@ export default function BarberLoginScreen({ navigation }: Props): React.JSX.Elem
     });
 
     // 4. Force-refresh the profile so RootNavigator routes to BarberApp immediately
-    //    (avoids race condition where onAuthStateChanged fires before the doc exists)
     await refreshUser();
 
     setLoading(false);
@@ -265,7 +235,7 @@ export default function BarberLoginScreen({ navigation }: Props): React.JSX.Elem
       style={s.root}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+      <StatusBar barStyle="light-content" backgroundColor={colors.background} />
 
       {/* ── Back button ── */}
       <View style={[s.topBar, { paddingTop: insets.top + 8 }]}>
@@ -276,7 +246,7 @@ export default function BarberLoginScreen({ navigation }: Props): React.JSX.Elem
           accessibilityLabel="Back to role selection"
           hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
         >
-          <Ionicons name="chevron-back" size={20} color={C.steel} />
+          <Ionicons name={icons.back} size={20} color={colors.grey} />
           <Text style={s.backText}>Back</Text>
         </TouchableOpacity>
       </View>
@@ -295,7 +265,7 @@ export default function BarberLoginScreen({ navigation }: Props): React.JSX.Elem
             </View>
           </View>
           <View style={s.poleCircle}>
-            <Ionicons name="cut-outline" size={34} color={C.steel} />
+            <Ionicons name={icons.cutOutline} size={34} color={colors.grey} />
           </View>
           <Text style={s.title}>
             {tab === 'signin' ? 'Welcome Back,\nPro.' : 'Join the Team.'}
@@ -340,7 +310,7 @@ export default function BarberLoginScreen({ navigation }: Props): React.JSX.Elem
             {tab === 'signin' && (
               <>
                 <Field
-                  iconName="mail-outline"
+                  iconName={icons.mail}
                   placeholder="Work email address"
                   value={siEmail}
                   onChangeText={t => { setSiEmail(t); clearError(); }}
@@ -350,7 +320,7 @@ export default function BarberLoginScreen({ navigation }: Props): React.JSX.Elem
                   onBlur={() => setFocused(null)}
                 />
                 <Field
-                  iconName="lock-closed-outline"
+                  iconName={icons.lock}
                   placeholder="Password"
                   value={siPassword}
                   onChangeText={t => { setSiPassword(t); clearError(); }}
@@ -375,7 +345,7 @@ export default function BarberLoginScreen({ navigation }: Props): React.JSX.Elem
             {tab === 'signup' && (
               <>
                 <Field
-                  iconName="person-outline"
+                  iconName={icons.person}
                   placeholder="Full name"
                   value={suName}
                   onChangeText={t => { setSuName(t); clearError(); }}
@@ -385,7 +355,7 @@ export default function BarberLoginScreen({ navigation }: Props): React.JSX.Elem
                   onBlur={() => setFocused(null)}
                 />
                 <Field
-                  iconName="mail-outline"
+                  iconName={icons.mail}
                   placeholder="Email address"
                   value={suEmail}
                   onChangeText={t => { setSuEmail(t); clearError(); }}
@@ -395,7 +365,7 @@ export default function BarberLoginScreen({ navigation }: Props): React.JSX.Elem
                   onBlur={() => setFocused(null)}
                 />
                 <Field
-                  iconName="lock-closed-outline"
+                  iconName={icons.lock}
                   placeholder="Create a password (min. 6 chars)"
                   value={suPassword}
                   onChangeText={t => { setSuPassword(t); clearError(); }}
@@ -405,7 +375,7 @@ export default function BarberLoginScreen({ navigation }: Props): React.JSX.Elem
                   onBlur={() => setFocused(null)}
                 />
                 <Field
-                  iconName="checkmark-outline"
+                  iconName={icons.checkOutline}
                   placeholder="Confirm password"
                   value={suConfirm}
                   onChangeText={t => { setSuConfirm(t); clearError(); }}
@@ -417,7 +387,7 @@ export default function BarberLoginScreen({ navigation }: Props): React.JSX.Elem
 
                 {/* Future approval notice */}
                 <View style={s.noticeBox}>
-                  <Ionicons name="information-circle-outline" size={16} color={C.steel} style={{ marginTop: 1 }} />
+                  <Ionicons name={icons.information} size={16} color={colors.grey} style={{ marginTop: 1 }} />
                   <Text style={s.noticeText}>
                     In the future, new accounts will require manager approval before access is granted. For now, accounts are activated immediately.
                   </Text>
@@ -428,7 +398,7 @@ export default function BarberLoginScreen({ navigation }: Props): React.JSX.Elem
             {/* ── Error banner ── */}
             {error && (
               <View style={s.errorBox} accessibilityRole="alert" accessibilityLiveRegion="polite">
-                <Ionicons name="warning-outline" size={16} color={C.danger} style={{ marginTop: 1 }} />
+                <Ionicons name={icons.warning} size={16} color={colors.red} style={{ marginTop: 1 }} />
                 <Text style={s.errorText}>{error}</Text>
               </View>
             )}
@@ -436,10 +406,10 @@ export default function BarberLoginScreen({ navigation }: Props): React.JSX.Elem
             {/* ── Success banner (sign up) ── */}
             {success && (
               <View style={s.successBox} accessibilityRole="alert" accessibilityLiveRegion="polite">
-                <Ionicons name="checkmark-circle" size={22} color={C.green} style={{ marginTop: 1 }} />
+                <Ionicons name={icons.check} size={22} color={colors.green} style={{ marginTop: 1 }} />
                 <View style={{ flex: 1 }}>
                   <Text style={s.successTitle}>Account Created!</Text>
-                  <Text style={s.successText}>Welcome to 613 Barbershop. Logging you in…</Text>
+                  <Text style={s.successText}>Welcome to 613 Barbershop. Logging you in...</Text>
                 </View>
               </View>
             )}
@@ -447,7 +417,6 @@ export default function BarberLoginScreen({ navigation }: Props): React.JSX.Elem
             {/* ── Primary button ── */}
             {!success && (
               <Animated.View style={[s.btnWrap, { transform: [{ scale: btnScale }] }]}>
-                <View style={s.btnGlow} />
                 <TouchableOpacity
                   onPress={tab === 'signin' ? handleSignIn : handleSignUp}
                   onPressIn={btnIn}
@@ -461,17 +430,16 @@ export default function BarberLoginScreen({ navigation }: Props): React.JSX.Elem
                 >
                   {loading ? (
                     <View style={s.btnLoadRow}>
-                      <ActivityIndicator size={18} color={C.bg} />
+                      <ActivityIndicator size={18} color={colors.background} />
                       <Text style={s.btnText}>
-                        {tab === 'signin' ? 'Signing In…' : 'Creating Account…'}
+                        {tab === 'signin' ? 'Signing In...' : 'Creating Account...'}
                       </Text>
                     </View>
                   ) : (
                     <Text style={s.btnText}>
-                      {tab === 'signin' ? 'Sign In as Barber  →' : 'Create Account  →'}
+                      {tab === 'signin' ? 'Sign In as Barber' : 'Create Account'}
                     </Text>
                   )}
-                  {!loading && <View style={s.btnDepth} />}
                 </TouchableOpacity>
               </Animated.View>
             )}
@@ -509,115 +477,104 @@ export default function BarberLoginScreen({ navigation }: Props): React.JSX.Elem
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
-  root:  { flex: 1, backgroundColor: C.bg },
-  scroll: { paddingHorizontal: 24 },
+  root:  { flex: 1, backgroundColor: colors.background },
+  scroll: { paddingHorizontal: spacing['2xl'] },
 
   // Back
-  topBar:     { paddingHorizontal: 20, paddingBottom: 4 },
+  topBar:     { paddingHorizontal: spacing.lg, paddingBottom: spacing.xs },
   backBtn:    { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start' },
-  backText:   { fontSize: 14, color: C.steel, fontWeight: '600' },
+  backText:   { fontSize: fonts.size.md, color: colors.grey, fontFamily: fonts.bodySemiBold },
 
   // Header
-  header:    { marginTop: 8, marginBottom: 20, alignItems: 'flex-start' },
-  badgeRow:  { flexDirection: 'row', marginBottom: 14 },
+  header:    { marginTop: 8, marginBottom: spacing.lg, alignItems: 'flex-start' },
+  badgeRow:  { flexDirection: 'row', marginBottom: spacing.md },
   badge: {
-    backgroundColor: C.steelSolid, borderRadius: 20,
-    borderWidth: 1, borderColor: C.steelBorder,
-    paddingHorizontal: 12, paddingVertical: 5,
+    backgroundColor: colors.gold + '15', borderRadius: radius['2xl'],
+    borderWidth: 1, borderColor: colors.gold + '40',
+    paddingHorizontal: spacing.md, paddingVertical: 5,
   },
-  badgeText: { fontSize: 9, fontWeight: '800', color: C.steel, letterSpacing: 2.5 },
+  badgeText: { fontSize: 9, fontFamily: fonts.bodyBold, color: colors.gold, letterSpacing: 2.5 },
   poleCircle: {
-    width: 68, height: 68, borderRadius: 34,
-    backgroundColor: C.steelSolid, borderWidth: 2, borderColor: C.steelBorder,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 14,
-    shadowColor: C.steel, shadowOffset: { width: 0, height: 4 },
+    width: 68, height: 68, borderRadius: radius.full,
+    backgroundColor: colors.gold + '15', borderWidth: 2, borderColor: colors.gold + '40',
+    alignItems: 'center', justifyContent: 'center', marginBottom: spacing.md,
+    shadowColor: colors.gold, shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2, shadowRadius: 12, elevation: 8,
   },
   title: {
-    fontSize: 32, fontWeight: '900', color: C.white,
-    lineHeight: 38, letterSpacing: -0.5, marginBottom: 8,
+    fontSize: 32, fontFamily: fonts.heading, color: colors.white,
+    lineHeight: 38, letterSpacing: -0.5, marginBottom: spacing.sm,
   },
-  subtitle: { fontSize: 14, color: C.sub, lineHeight: 20 },
+  subtitle: { fontSize: fonts.size.md, color: colors.greyDark, lineHeight: 20 },
 
   // Tab switcher
   tabRow: {
     flexDirection: 'row', gap: 8,
-    backgroundColor: C.elevated, borderRadius: 14,
-    padding: 5, marginBottom: 20,
+    backgroundColor: colors.surfaceRaised, borderRadius: radius.sm,
+    padding: 5, marginBottom: spacing.lg,
   },
   tabBtn: {
-    flex: 1, paddingVertical: 10, borderRadius: 10,
+    flex: 1, paddingVertical: 10, borderRadius: radius.sm - 2,
     alignItems: 'center',
   },
-  tabBtnActive:     { backgroundColor: C.surface, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.4, shadowRadius: 4, elevation: 4 },
-  tabBtnText:       { fontSize: 13, fontWeight: '700', color: C.sub },
-  tabBtnTextActive: { color: C.steel },
+  tabBtnActive:     { backgroundColor: colors.surface, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.4, shadowRadius: 4, elevation: 4 },
+  tabBtnText:       { fontSize: fonts.size.md, fontFamily: fonts.bodyBold, color: colors.greyDark },
+  tabBtnTextActive: { color: colors.gold },
 
   // Form card
   formCard: {
-    backgroundColor: C.card, borderRadius: 20,
-    borderWidth: 1, borderColor: C.border, overflow: 'hidden',
-    marginBottom: 20,
+    backgroundColor: colors.surface, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
+    marginBottom: spacing.lg,
     shadowColor: '#000', shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.4, shadowRadius: 12, elevation: 8,
   },
-  formCardAccent: { height: 3, backgroundColor: C.steel },
-  form:           { padding: 20, gap: 14 },
+  formCardAccent: { height: 3, backgroundColor: colors.gold },
+  form:           { padding: spacing.lg, gap: spacing.md },
 
   forgotRow: { alignSelf: 'flex-end', paddingVertical: 2 },
-  forgotText:{ fontSize: 13, color: C.steel, fontWeight: '600' },
+  forgotText:{ fontSize: fonts.size.md, color: colors.gold, fontFamily: fonts.bodySemiBold },
 
   // Notice box
   noticeBox: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 10,
-    backgroundColor: C.steelGlow, borderWidth: 1, borderColor: C.steelBorder,
-    borderRadius: 12, padding: 12,
+    backgroundColor: colors.gold + '10', borderWidth: 1, borderColor: colors.gold + '35',
+    borderRadius: radius.sm, padding: spacing.md,
   },
-  noticeText: { flex: 1, fontSize: 12, color: C.sub, lineHeight: 17 },
+  noticeText: { flex: 1, fontSize: fonts.size.sm, color: colors.grey, lineHeight: 17 },
 
   // Error
   errorBox: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 10,
-    backgroundColor: C.dangerBg, borderWidth: 1, borderColor: C.dangerBdr,
-    borderRadius: 12, padding: 14,
+    backgroundColor: colors.red + '15', borderWidth: 1, borderColor: colors.red + '40',
+    borderRadius: radius.sm, padding: spacing.md,
   },
-  errorText: { flex: 1, fontSize: 13, color: C.danger, lineHeight: 18 },
+  errorText: { flex: 1, fontSize: fonts.size.md, color: colors.red, lineHeight: 18 },
 
   // Success
   successBox: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 12,
-    backgroundColor: C.greenBg, borderWidth: 1, borderColor: C.greenBdr,
-    borderRadius: 12, padding: 14,
+    backgroundColor: colors.green + '15', borderWidth: 1, borderColor: colors.green + '40',
+    borderRadius: radius.sm, padding: spacing.md,
   },
-  successTitle: { fontSize: 15, fontWeight: '800', color: C.green, marginBottom: 2 },
-  successText:  { fontSize: 12, color: C.sub, lineHeight: 16 },
+  successTitle: { fontSize: fonts.size.lg, fontFamily: fonts.bodyBold, color: colors.green, marginBottom: 2 },
+  successText:  { fontSize: fonts.size.sm, color: colors.grey, lineHeight: 16 },
 
   // Button
-  btnWrap: { position: 'relative', marginTop: 4 },
-  btnGlow: {
-    position: 'absolute', top: 4, left: 10, right: 10, bottom: -4,
-    backgroundColor: C.steel, borderRadius: 14, opacity: 0.15,
-    shadowColor: C.steel, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.4, shadowRadius: 12,
-  },
+  btnWrap: { position: 'relative', marginTop: spacing.xs },
   btn: {
-    height: 56, borderRadius: 14, backgroundColor: C.steel,
+    height: 56, borderRadius: radius['2xl'], backgroundColor: colors.gold,
     alignItems: 'center', justifyContent: 'center',
-    borderTopWidth: 1, borderTopColor: C.steelLight + '50',
-    shadowColor: C.steelDark, shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.8, shadowRadius: 10, elevation: 10, overflow: 'hidden',
+    shadowColor: colors.gold, shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4, shadowRadius: 12, elevation: 10,
   },
-  btnDisabled: { backgroundColor: C.elevated, borderTopColor: 'transparent' },
-  btnText:     { fontSize: 16, fontWeight: '800', color: C.bg, letterSpacing: 0.8 },
+  btnDisabled: { backgroundColor: colors.surfaceRaised, shadowColor: 'transparent' },
+  btnText:     { fontSize: fonts.size.lg, fontFamily: fonts.bodyBold, color: colors.background, letterSpacing: 0.8 },
   btnLoadRow:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  btnDepth: {
-    position: 'absolute', bottom: 0, left: 0, right: 0, height: 4,
-    backgroundColor: C.steelDark, opacity: 0.6,
-    borderBottomLeftRadius: 14, borderBottomRightRadius: 14,
-  },
 
   // Footer
   footerNote:      { alignItems: 'center', gap: 6 },
-  footerNoteText:  { fontSize: 13, color: C.sub, textAlign: 'center' },
-  footerNoteLink:  { color: C.steel, fontWeight: '700' },
-  footerNoteSub:   { fontSize: 11, color: C.muted, textAlign: 'center' },
+  footerNoteText:  { fontSize: fonts.size.md, color: colors.grey, textAlign: 'center' },
+  footerNoteLink:  { color: colors.gold, fontFamily: fonts.bodyBold },
+  footerNoteSub:   { fontSize: fonts.size.sm, color: colors.greyDark, textAlign: 'center' },
 });

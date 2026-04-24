@@ -13,6 +13,7 @@ import {
   Modal,
   FlatList,
   Alert,
+  Animated,
 } from 'react-native';
 import { Text, Snackbar, Portal } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
@@ -56,21 +57,7 @@ import {
 } from '@/utils/styleDisplay.utils';
 import type { StyleChatSessionDoc } from '@/types/chat.types';
 import { safeToDate } from '@/utils/date.utils';
-
-const C = {
-  bg: '#0A0A0A',
-  card: '#161616',
-  assistantBubble: '#1A1A1A',
-  gold: '#D4AF37',
-  goldBorder: '#D4AF3740',
-  white: '#FFFFFF',
-  sub: '#888888',
-  border: '#222222',
-  errText: '#FF4444',
-  errBg: '#2A0A0A',
-  errBorder: '#D4AF37',
-  green: '#4CAF50',
-} as const;
+import { colors, fonts, spacing, radius, shadows, icons, animations } from '@/theme';
 
 const EMPTY_ANALYSIS: ProfileAnalysisResult = {
   success: true,
@@ -80,6 +67,11 @@ const EMPTY_ANALYSIS: ProfileAnalysisResult = {
 
 const PHOTO_ANALYSIS_REPLY_INTRO =
   "I've analyzed your photo! Here's what I see working for you based on your features...\n\n";
+
+// Error colors from spec
+const ERROR_TEXT_COLOR = '#FF4444';
+const ERROR_BG_COLOR = '#2A0A0A';
+const ERROR_BORDER_COLOR = colors.gold;
 
 type Props = NativeStackScreenProps<StyleStackParamList, 'StyleChat'>;
 
@@ -156,6 +148,7 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
   const [chatId, setChatId] = useState<string | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
   const [input, setInput] = useState('');
+  const [inputFocused, setInputFocused] = useState(false);
   const [sending, setSending] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -167,6 +160,9 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
   const [historyRows, setHistoryRows] = useState<Array<{ id: string; data: StyleChatSessionDoc }>>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
+  // Animation values for message bubbles
+  const messageAnims = useRef<Map<number, Animated.Value>>(new Map()).current;
+
   const messagesRef = useRef<StyleChatTurn[]>([]);
   useEffect(() => {
     messagesRef.current = messages;
@@ -176,6 +172,34 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
     requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
   }, []);
 
+  // Initialize animation values for new messages
+  useEffect(() => {
+    messages.forEach((_, idx) => {
+      if (!messageAnims.has(idx)) {
+        const anim = new Animated.Value(0);
+        messageAnims.set(idx, anim);
+        Animated.timing(anim, {
+          toValue: 1,
+          duration: animations.normal,
+          useNativeDriver: true,
+        }).start();
+      }
+    });
+  }, [messages.length]);
+
+  const getMessageStyle = (animValue: Animated.Value) => ({
+    opacity: animValue,
+    transform: [
+      {
+        translateY: animValue.interpolate({
+          inputRange: [0, 1],
+          outputRange: [animations.slideUp.from, animations.slideUp.to],
+        }),
+      },
+    ],
+  });
+
+  // Load saved style profile when chat opens
   useEffect(() => {
     if (routeAnalysis) {
       setLiveAnalysis(routeAnalysis);
@@ -201,6 +225,8 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
             styles: sp.styles,
           });
         }
+      } catch {
+        // Silently fail - profile not required
       } finally {
         if (!cancelled) setHydratingStyleProfile(false);
       }
@@ -236,6 +262,7 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
     };
   }, [recs, photoHints]);
 
+  // Initialize or load chat session
   useEffect(() => {
     if (!firebaseUser?.uid) {
       setSessionReady(true);
@@ -275,8 +302,12 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
 
   async function persistChat(msgs: StyleChatTurn[]): Promise<void> {
     if (!firebaseUser?.uid || !chatId) return;
-    const title = nextChatTitle(msgs);
-    await updateStyleChatSession(firebaseUser.uid, chatId, toPersistableMessages(msgs), title);
+    try {
+      const title = nextChatTitle(msgs);
+      await updateStyleChatSession(firebaseUser.uid, chatId, toPersistableMessages(msgs), title);
+    } catch {
+      // Silently fail - chat will retry on next message
+    }
   }
 
   async function openHistory(): Promise<void> {
@@ -373,23 +404,28 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
 
     setErrorBanner(null);
     setBookingBusy(true);
-    const res = await BookingService.attachRequestedStyleForClient(firebaseUser.uid, {
-      name: reco?.style_name ?? styleName,
-      photoURL,
-      description,
-      ...(barberNotes ? { barberNotes } : {}),
-    });
-    setBookingBusy(false);
+    try {
+      const res = await BookingService.attachRequestedStyleForClient(firebaseUser.uid, {
+        name: reco?.style_name ?? styleName,
+        photoURL,
+        description,
+        ...(barberNotes ? { barberNotes } : {}),
+      });
 
-    if (!res.success) {
-      setErrorBanner(res.error);
-      return;
-    }
-    setToastSuccess(true);
-    if (res.data.mode === 'booking') {
-      setToast('Style added to your booking! Your barber will see it.');
-    } else {
-      setToast('Style saved! It will be attached to your next booking automatically');
+      if (!res.success) {
+        setErrorBanner(res.error);
+        return;
+      }
+      setToastSuccess(true);
+      if (res.data.mode === 'booking') {
+        setToast('Style added to your booking! Your barber will see it.');
+      } else {
+        setToast('Style saved! It will be attached to your next booking automatically');
+      }
+    } catch {
+      setErrorBanner('Could not save style. Try again.');
+    } finally {
+      setBookingBusy(false);
     }
   }
 
@@ -466,19 +502,23 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
     setErrorBanner(null);
     const mime =
       file.type && file.type.startsWith('image/') ? file.type : 'image/jpeg';
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const r = reader.result;
-        if (typeof r !== 'string') reject(new Error('Failed to read image'));
-        else resolve(r);
-      };
-      reader.onerror = () => reject(new Error('Failed to read image'));
-      reader.readAsDataURL(file);
-    });
-    const comma = dataUrl.indexOf(',');
-    const base64 = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
-    await processPhotoAfterPick(dataUrl, mime, base64);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const r = reader.result;
+          if (typeof r !== 'string') reject(new Error('Failed to read image'));
+          else resolve(r);
+        };
+        reader.onerror = () => reject(new Error('Failed to read image'));
+        reader.readAsDataURL(file);
+      });
+      const comma = dataUrl.indexOf(',');
+      const base64 = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
+      await processPhotoAfterPick(dataUrl, mime, base64);
+    } catch {
+      setErrorBanner('Failed to read image. Try again.');
+    }
   }
 
   async function pickAndAnalyzePhoto(fromCamera: boolean): Promise<void> {
@@ -499,26 +539,30 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
       }
     }
 
-    const picker = fromCamera
-      ? ImagePicker.launchCameraAsync({
-          allowsEditing: true,
-          aspect: [3, 4],
-          quality: 0.85,
-        })
-      : ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ['images'],
-          allowsEditing: true,
-          aspect: [3, 4],
-          quality: 0.85,
-        });
+    try {
+      const picker = fromCamera
+        ? ImagePicker.launchCameraAsync({
+            allowsEditing: true,
+            aspect: [3, 4],
+            quality: 0.85,
+          })
+        : ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'],
+            allowsEditing: true,
+            aspect: [3, 4],
+            quality: 0.85,
+          });
 
-    const result = await picker;
-    if (result.canceled) return;
-    const asset = result.assets[0];
-    const uri = asset.uri;
-    const mime = asset.mimeType ?? 'image/jpeg';
+      const result = await picker;
+      if (result.canceled) return;
+      const asset = result.assets[0];
+      const uri = asset.uri;
+      const mime = asset.mimeType ?? 'image/jpeg';
 
-    await processPhotoAfterPick(uri, mime);
+      await processPhotoAfterPick(uri, mime);
+    } catch {
+      setErrorBanner('Failed to pick image. Try again.');
+    }
   }
 
   function openPhotoPicker(): void {
@@ -540,6 +584,11 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
     if (input) input.value = '';
     if (file) void handleWebFilePicked(file);
   }
+
+  // Button press animation
+  const [pressedButton, setPressedButton] = useState<string | null>(null);
+
+  const isSendDisabled = !input.trim() || sending || photoBusy || !sessionReady;
 
   return (
     <KeyboardAvoidingView
@@ -563,6 +612,8 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
             onChange: onWebFileInputChange,
           })
         : null}
+
+      {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top }]}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
@@ -570,29 +621,32 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Ionicons name="chevron-back" size={24} color={C.white} />
+          <Ionicons name="chevron-back" size={28} color={colors.white} />
         </TouchableOpacity>
+
         <Text style={styles.headerTitle}>AI Stylist</Text>
+
         <View style={styles.headerActions}>
-          <TouchableOpacity
-            onPress={() => void startNewChat()}
-            style={styles.headerIconBtn}
-            accessibilityRole="button"
-            accessibilityLabel="New chat"
-          >
-            <Ionicons name="add-circle-outline" size={26} color={C.gold} />
-          </TouchableOpacity>
           <TouchableOpacity
             onPress={() => void openHistory()}
             style={styles.headerIconBtn}
             accessibilityRole="button"
             accessibilityLabel="Chat history"
           >
-            <Ionicons name="time-outline" size={24} color={C.gold} />
+            <Ionicons name="time-outline" size={24} color={colors.gold} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => void startNewChat()}
+            style={styles.headerIconBtn}
+            accessibilityRole="button"
+            accessibilityLabel="New chat"
+          >
+            <Ionicons name="add-circle-outline" size={26} color={colors.gold} />
           </TouchableOpacity>
         </View>
       </View>
 
+      {/* Messages */}
       <ScrollView
         ref={scrollRef}
         style={styles.scroll}
@@ -602,22 +656,25 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
       >
         {!sessionReady ? (
           <View style={styles.loadingRow}>
-            <ActivityIndicator color={C.gold} />
-            <Text style={styles.loadingText}>Loading your chat…</Text>
+            <ActivityIndicator color={colors.gold} />
+            <Text style={styles.loadingText}>Loading your chat...</Text>
           </View>
         ) : null}
 
         {messages.length === 0 && sessionReady ? (
-          <View style={styles.hintCard}>
-            <Text style={styles.hintTitle}>Ask anything</Text>
-            <Text style={styles.hintBody}>
+          <Animated.View style={[styles.welcomeCard, getMessageStyle(new Animated.Value(1))]}>
+            <Text style={styles.welcomeTitle}>Ask anything</Text>
+            <Text style={styles.welcomeBody}>
               Wondering which cut fits your routine, your face shape, or a special night out? Type
               below — plain language is perfect.
             </Text>
-            <Text style={styles.tipText}>
-              Tip: Upload more photos from different angles for better recommendations
-            </Text>
-          </View>
+            <View style={styles.tipRow}>
+              <Ionicons name="information-circle-outline" size={16} color={colors.gold} />
+              <Text style={styles.tipText}>
+                Upload more photos from different angles for better recommendations
+              </Text>
+            </View>
+          </Animated.View>
         ) : null}
 
         {errorBanner ? (
@@ -636,138 +693,169 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
 
         {messages.map((msg, idx) => {
           if (msg.hidden) return null;
+          const animValue = messageAnims.get(idx) || new Animated.Value(1);
+          const isUser = msg.role === 'user';
+
           return (
-          <View
-            key={`${msg.role}-${idx}-${msg.imageUrl ?? ''}`}
-            style={[styles.bubbleWrap, msg.role === 'user' ? styles.bubbleUser : styles.bubbleAssistant]}
-          >
-            <View
+            <Animated.View
+              key={`${msg.role}-${idx}-${msg.imageUrl ?? ''}`}
               style={[
-                styles.bubble,
-                msg.role === 'user' ? styles.bubbleUserInner : styles.bubbleAssistantInner,
+                styles.bubbleWrap,
+                isUser ? styles.bubbleWrapUser : styles.bubbleWrapAssistant,
+                getMessageStyle(animValue),
               ]}
             >
-              {msg.imageUrl ? (
-                <Image source={{ uri: msg.imageUrl }} style={styles.msgImage} resizeMode="cover" />
-              ) : null}
-              {msg.role === 'assistant' ? (
-                <View style={styles.assistantMdWrap}>
-                  <SimpleMarkdownText text={stripBookStyleMarkers(msg.content)} />
-                </View>
-              ) : msg.content.trim().length > 0 ? (
-                <View style={msg.content.length > 240 ? styles.userTextLongWrap : undefined}>
-                  <RNText
-                    style={msg.content.length > 240 ? styles.bubbleUserTextLong : styles.bubbleUserText}
-                  >
-                    {msg.content}
-                  </RNText>
-                </View>
-              ) : null}
-            </View>
-            {msg.role === 'assistant' && (
-              <>
-                {(() => {
-                  const display = stripBookStyleMarkers(msg.content);
-                  const thumbs = mentionedRecommendationPhotos(
-                    display,
-                    recs,
-                    recommendationPhotos,
-                  );
-                  if (thumbs.length === 0) return null;
-                  return (
-                    <View style={styles.thumbRow}>
-                      {thumbs.map((t) => (
-                        <Image key={t.name} source={{ uri: t.url }} style={styles.thumb} />
-                      ))}
-                    </View>
-                  );
-                })()}
-                {(() => {
-                  const raw = msg.content;
-                  const bookName = firstBookStyleName(raw);
-                  if (!bookName) return null;
-                  return (
-                    <TouchableOpacity
-                      style={styles.bookBtn}
-                      onPress={() => void addStyleToBooking(bookName, raw)}
-                      disabled={bookingBusy}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Add ${bookName} to my next booking`}
-                    >
-                      {bookingBusy ? (
-                        <ActivityIndicator color={C.bg} size="small" />
-                      ) : (
-                        <Text style={styles.bookBtnText}>Add {bookName} to my next booking</Text>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })()}
-              </>
-            )}
-          </View>
+              <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAssistant]}>
+                {msg.imageUrl ? (
+                  <Image
+                    source={{ uri: msg.imageUrl }}
+                    style={styles.msgImage}
+                    resizeMode="cover"
+                  />
+                ) : null}
+
+                {msg.role === 'assistant' ? (
+                  <View style={styles.assistantContent}>
+                    <SimpleMarkdownText text={stripBookStyleMarkers(msg.content)} />
+                  </View>
+                ) : msg.content.trim().length > 0 ? (
+                  <RNText style={styles.bubbleUserText}>{msg.content}</RNText>
+                ) : null}
+              </View>
+
+              {/* Action buttons for assistant messages */}
+              {msg.role === 'assistant' && (
+                <>
+                  {(() => {
+                    const display = stripBookStyleMarkers(msg.content);
+                    const thumbs = mentionedRecommendationPhotos(
+                      display,
+                      recs,
+                      recommendationPhotos,
+                    );
+                    if (thumbs.length === 0) return null;
+                    return (
+                      <View style={styles.thumbRow}>
+                        {thumbs.map((t) => (
+                          <Image key={t.name} source={{ uri: t.url }} style={styles.thumb} />
+                        ))}
+                      </View>
+                    );
+                  })()}
+                  {(() => {
+                    const raw = msg.content;
+                    const bookName = firstBookStyleName(raw);
+                    if (!bookName) return null;
+                    return (
+                      <TouchableOpacity
+                        style={[
+                          styles.bookBtn,
+                          pressedButton === `book-${idx}` && { transform: [{ scale: 0.97 }] },
+                        ]}
+                        onPress={() => void addStyleToBooking(bookName, raw)}
+                        onPressIn={() => setPressedButton(`book-${idx}`)}
+                        onPressOut={() => setPressedButton(null)}
+                        disabled={bookingBusy}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Add ${bookName} to my next booking`}
+                      >
+                        {bookingBusy ? (
+                          <ActivityIndicator color={colors.background} size="small" />
+                        ) : (
+                          <Text style={styles.bookBtnText}>Add {bookName} to my next booking</Text>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })()}
+                </>
+              )}
+            </Animated.View>
           );
         })}
+
         {(sending || photoBusy) && (
           <View style={styles.typingRow}>
-            <ActivityIndicator size="small" color={C.gold} />
+            <ActivityIndicator size="small" color={colors.gold} />
             <Text style={styles.typingText}>
-              {photoBusy ? 'Analyzing your photo…' : 'Stylist is typing…'}
+              {photoBusy ? 'Analyzing your photo...' : 'Stylist is typing...'}
             </Text>
           </View>
         )}
       </ScrollView>
 
-      <View style={[styles.inputRow, { paddingBottom: insets.bottom + 10 }]}>
-        <TouchableOpacity
-          style={styles.attachBtn}
-          onPress={openPhotoPicker}
-          disabled={!sessionReady || sending || photoBusy}
-          accessibilityRole="button"
-          accessibilityLabel="Attach photo"
+      {/* Input Bar */}
+      <View style={[styles.inputBarContainer, { paddingBottom: insets.bottom + spacing.sm }]}>
+        <View
+          style={[
+            styles.inputBar,
+            inputFocused && styles.inputBarFocused,
+          ]}
         >
-          <Ionicons name="image-outline" size={22} color={C.gold} />
-        </TouchableOpacity>
-        <TextInput
-          style={styles.input}
-          placeholder="Ask the stylist…"
-          placeholderTextColor={C.sub}
-          value={input}
-          onChangeText={setInput}
-          editable={!sending && !photoBusy && sessionReady}
-          multiline
-          maxLength={2000}
-        />
-        <TouchableOpacity
-          style={[styles.sendBtn, (!input.trim() || sending || photoBusy || !sessionReady) && styles.sendBtnOff]}
-          onPress={() => void sendUserMessage(input)}
-          disabled={!input.trim() || sending || photoBusy || !sessionReady}
-          accessibilityRole="button"
-          accessibilityLabel="Send message"
-        >
-          <Ionicons
-            name="send"
-            size={20}
-            color={input.trim() && !sending && !photoBusy && sessionReady ? C.bg : C.sub}
+          <TouchableOpacity
+            style={styles.attachBtn}
+            onPress={openPhotoPicker}
+            disabled={!sessionReady || sending || photoBusy}
+            accessibilityRole="button"
+            accessibilityLabel="Attach photo"
+          >
+            <Ionicons name="image-outline" size={22} color={colors.gold} />
+          </TouchableOpacity>
+
+          <TextInput
+            style={styles.input}
+            placeholder="Ask about styles..."
+            placeholderTextColor={colors.grey}
+            value={input}
+            onChangeText={setInput}
+            onFocus={() => setInputFocused(true)}
+            onBlur={() => setInputFocused(false)}
+            editable={!sending && !photoBusy && sessionReady}
+            multiline
+            maxLength={2000}
           />
-        </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.sendBtn, isSendDisabled && styles.sendBtnDisabled]}
+            onPress={() => void sendUserMessage(input)}
+            disabled={isSendDisabled}
+            accessibilityRole="button"
+            accessibilityLabel="Send message"
+          >
+            <Ionicons
+              name="send"
+              size={18}
+              color={isSendDisabled ? colors.grey : colors.background}
+            />
+          </TouchableOpacity>
+        </View>
       </View>
 
-      <Modal visible={historyOpen} animationType="slide" transparent onRequestClose={() => setHistoryOpen(false)}>
+      {/* History Modal */}
+      <Modal
+        visible={historyOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setHistoryOpen(false)}
+      >
         <View style={styles.modalBackdrop}>
-          <View style={[styles.historySheet, { paddingBottom: insets.bottom + 16 }]}>
+          <View style={[styles.historySheet, { paddingBottom: insets.bottom + spacing.md }]}>
             <View style={styles.historyHeader}>
-              <Text style={styles.historyTitle}>Chat history</Text>
-              <TouchableOpacity onPress={() => setHistoryOpen(false)} accessibilityLabel="Close">
-                <Ionicons name="close" size={26} color={C.white} />
+              <Text style={styles.historyTitle}>Chat History</Text>
+              <TouchableOpacity
+                onPress={() => setHistoryOpen(false)}
+                accessibilityLabel="Close"
+              >
+                <Ionicons name="close" size={26} color={colors.white} />
               </TouchableOpacity>
             </View>
+
             {historyLoading ? (
-              <ActivityIndicator color={C.gold} style={{ marginTop: 24 }} />
+              <ActivityIndicator color={colors.gold} style={{ marginTop: spacing.xl }} />
             ) : (
               <FlatList
                 data={historyRows}
                 keyExtractor={(item) => item.id}
-                contentContainerStyle={{ paddingBottom: 24 }}
+                contentContainerStyle={{ paddingBottom: spacing.xl }}
                 ListEmptyComponent={
                   <Text style={styles.historyEmpty}>No past sessions yet.</Text>
                 }
@@ -801,6 +889,7 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
         </View>
       </Modal>
 
+      {/* Toast */}
       <Portal>
         <Snackbar
           visible={!!toast}
@@ -812,7 +901,7 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
           style={toastSuccess ? styles.snackbarSuccess : styles.snackbar}
           action={{
             label: 'OK',
-            textColor: toastSuccess ? C.green : C.gold,
+            textColor: toastSuccess ? colors.green : colors.gold,
             onPress: () => {
               setToast(null);
               setToastSuccess(false);
@@ -827,181 +916,225 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: C.bg },
+  root: { flex: 1, backgroundColor: colors.background },
+
+  // Header
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.sm,
+    paddingBottom: spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: C.border,
+    borderBottomColor: colors.border,
   },
   backBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: {
+    fontSize: fonts.size['2xl'],
+    fontFamily: fonts.heading,
+    color: colors.white,
+    letterSpacing: fonts.letterSpacing.wide,
+    textAlign: 'center',
+  },
   headerActions: { flexDirection: 'row', alignItems: 'center' },
   headerIconBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: 18,
-    fontWeight: '800',
-    color: C.white,
-    letterSpacing: 0.3,
-  },
+
+  // Scroll
   scroll: { flex: 1 },
-  scrollContent: { padding: 16, paddingBottom: 24 },
-  loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
-  loadingText: { fontSize: 14, color: C.sub },
-  hintCard: {
-    backgroundColor: C.card,
-    borderRadius: 14,
+  scrollContent: { padding: spacing.lg, paddingBottom: spacing.xl },
+
+  // Loading
+  loadingRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
+  loadingText: { fontSize: fonts.size.md, color: colors.grey },
+
+  // Welcome Card
+  welcomeCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: C.border,
-    padding: 16,
-    marginBottom: 16,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+    ...shadows.sm,
   },
-  hintTitle: { fontSize: 16, fontWeight: '800', color: C.gold, marginBottom: 8 },
-  hintBody: { fontSize: 14, color: C.sub, lineHeight: 20, marginBottom: 10 },
-  tipText: { fontSize: 13, color: C.gold, lineHeight: 18, fontStyle: 'italic' },
-  bubbleWrap: { marginBottom: 14, maxWidth: '100%' },
-  bubbleUser: { alignItems: 'flex-end' },
-  bubbleAssistant: { alignItems: 'flex-start' },
-  bubble: { maxWidth: '92%', borderRadius: 14, paddingVertical: 10, paddingHorizontal: 14 },
-  bubbleUserInner: { backgroundColor: C.gold },
-  bubbleAssistantInner: {
-    backgroundColor: C.assistantBubble,
-    borderWidth: 1,
-    borderColor: '#333333',
-  },
-  msgImage: {
-    width: 200,
-    height: 200,
-    borderRadius: 10,
-    marginBottom: 8,
-    backgroundColor: C.card,
-    alignSelf: 'center',
-  },
-  assistantMdWrap: { alignSelf: 'stretch' },
-  userTextLongWrap: {
-    marginTop: 6,
-    padding: 10,
-    borderRadius: 10,
-    backgroundColor: C.card,
-    borderWidth: 1,
-    borderColor: C.border,
-    alignSelf: 'stretch',
-  },
-  bubbleUserText: { fontSize: 15, color: C.bg, lineHeight: 21 },
-  bubbleUserTextLong: { fontSize: 13, color: C.white, lineHeight: 19 },
+  welcomeTitle: { fontSize: fonts.size.lg, fontFamily: fonts.bodyBold, color: colors.gold, marginBottom: spacing.sm },
+  welcomeBody: { fontSize: fonts.size.md, color: colors.grey, lineHeight: fonts.lineHeight.relaxed * fonts.size.md, marginBottom: spacing.sm },
+  tipRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.xs },
+  tipText: { fontSize: fonts.size.sm, color: colors.gold, lineHeight: fonts.lineHeight.normal * fonts.size.sm, flex: 1 },
+
+  // Error Banner - Spec: red #FF4444 text on #2A0A0A background with gold border
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    marginBottom: 14,
-    borderRadius: 12,
-    backgroundColor: C.errBg,
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: ERROR_BG_COLOR,
     borderWidth: 1,
-    borderColor: C.errBorder,
+    borderColor: ERROR_BORDER_COLOR,
   },
   errorBannerText: {
     flex: 1,
-    fontSize: 14,
-    fontWeight: '600',
-    color: C.errText,
-    lineHeight: 20,
+    fontSize: fonts.size.md,
+    fontFamily: fonts.bodySemiBold,
+    color: ERROR_TEXT_COLOR,
+    lineHeight: fonts.lineHeight.normal * fonts.size.md,
   },
-  errorDismiss: { paddingVertical: 4, paddingHorizontal: 8 },
-  errorDismissText: { fontSize: 13, fontWeight: '700', color: C.gold },
-  thumbRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8, marginLeft: 2 },
-  thumb: { width: 96, height: 54, borderRadius: 8, backgroundColor: C.card, borderWidth: 1, borderColor: C.goldBorder },
+  errorDismiss: { paddingVertical: spacing.xs, paddingHorizontal: spacing.sm },
+  errorDismissText: { fontSize: fonts.size.md, fontFamily: fonts.bodyBold, color: colors.gold },
+
+  // Chat Bubbles
+  bubbleWrap: { marginBottom: spacing.md, maxWidth: '100%' },
+  bubbleWrapUser: { alignItems: 'flex-end' },
+  bubbleWrapAssistant: { alignItems: 'flex-start' },
+
+  bubble: { maxWidth: '85%', paddingVertical: spacing.sm, paddingHorizontal: spacing.md },
+
+  // User bubble: gold #D4AF37 background, dark text, right-aligned, border-radius: 18px 18px 4px 18px
+  bubbleUser: {
+    backgroundColor: colors.gold,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    borderBottomLeftRadius: 18,
+    borderBottomRightRadius: 4,
+  },
+  bubbleUserText: {
+    fontSize: fonts.size.md,
+    color: colors.background,
+    lineHeight: fonts.lineHeight.normal * fonts.size.md,
+    fontFamily: fonts.body,
+  },
+
+  // AI bubble: #1A1A1A background, white text, gold left border 2px, left-aligned, border-radius: 4px 18px 18px 18px
+  bubbleAssistant: {
+    backgroundColor: colors.surfaceRaised,
+    borderLeftWidth: 2,
+    borderLeftColor: colors.gold,
+    borderTopLeftRadius: 4,
+    borderTopRightRadius: 18,
+    borderBottomLeftRadius: 18,
+    borderBottomRightRadius: 18,
+  },
+  assistantContent: { alignSelf: 'stretch' },
+
+  // Photo in chat
+  msgImage: {
+    width: '100%',
+    maxHeight: 200,
+    borderRadius: radius.sm,
+    marginBottom: spacing.xs,
+    backgroundColor: colors.surface,
+    alignSelf: 'center',
+  },
+
+  // Recommendation thumbnails
+  thumbRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm, marginLeft: 2 },
+  thumb: { width: 96, height: 54, borderRadius: radius.sm, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+
+  // Book button
   bookBtn: {
-    marginTop: 10,
+    marginTop: spacing.sm,
     alignSelf: 'stretch',
-    backgroundColor: C.gold,
-    borderRadius: 12,
-    paddingVertical: 12,
+    backgroundColor: colors.gold,
+    borderRadius: radius['2xl'],
+    paddingVertical: spacing.md,
     alignItems: 'center',
   },
-  bookBtnText: { fontSize: 14, fontWeight: '800', color: C.bg },
-  typingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  typingText: { fontSize: 13, color: C.sub },
-  inputRow: {
+  bookBtnText: { fontSize: fonts.size.md, fontFamily: fonts.bodyBold, color: colors.background },
+
+  // Typing indicator
+  typingRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
+  typingText: { fontSize: fonts.size.sm, color: colors.grey },
+
+  // Input Bar
+  inputBarContainer: {
+    paddingHorizontal: spacing.sm,
+    paddingTop: spacing.sm,
+    backgroundColor: colors.background,
+  },
+  inputBar: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    paddingHorizontal: 8,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: C.border,
-    gap: 6,
-    backgroundColor: C.bg,
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  inputBarFocused: {
+    borderColor: colors.gold,
   },
   attachBtn: {
-    width: 44,
-    height: 46,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: C.goldBorder,
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: C.card,
   },
   input: {
     flex: 1,
     minHeight: 44,
     maxHeight: 120,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: C.border,
-    backgroundColor: C.card,
-    color: C.white,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 15,
+    color: colors.white,
+    fontSize: fonts.size.md,
+    fontFamily: fonts.body,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
   },
   sendBtn: {
-    width: 46,
-    height: 46,
-    borderRadius: 12,
-    backgroundColor: C.gold,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.gold,
     alignItems: 'center',
     justifyContent: 'center',
+    transform: [{ rotate: '-45deg' }],
   },
-  sendBtnOff: { opacity: 0.35 },
-  snackbar: { backgroundColor: '#2A2A2A', borderWidth: 1, borderColor: C.goldBorder },
+  sendBtnDisabled: {
+    backgroundColor: colors.surfaceRaised,
+  },
+
+  // Snackbar
+  snackbar: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   snackbarSuccess: {
-    backgroundColor: '#0D200D',
+    backgroundColor: 'rgba(46, 125, 50, 0.15)',
     borderWidth: 1,
-    borderColor: '#4CAF5040',
+    borderColor: 'rgba(76, 175, 80, 0.25)',
   },
+
+  // History Modal
   modalBackdrop: {
     flex: 1,
-    backgroundColor: '#000000AA',
+    backgroundColor: 'rgba(0,0,0,0.67)',
     justifyContent: 'flex-end',
   },
   historySheet: {
-    backgroundColor: C.bg,
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
+    backgroundColor: colors.background,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
     borderWidth: 1,
-    borderColor: C.goldBorder,
+    borderColor: colors.border,
     maxHeight: '70%',
-    paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
   },
   historyHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: spacing.sm,
+    paddingTop: spacing.sm,
   },
-  historyTitle: { fontSize: 18, fontWeight: '800', color: C.gold },
-  historyEmpty: { color: C.sub, textAlign: 'center', marginTop: 24 },
+  historyTitle: { fontSize: fonts.size.xl, fontFamily: fonts.bodyBold, color: colors.gold },
+  historyEmpty: { color: colors.grey, textAlign: 'center', marginTop: spacing.xl },
   historyRow: {
-    paddingVertical: 14,
+    paddingVertical: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: C.border,
+    borderBottomColor: colors.border,
   },
-  historyDate: { fontSize: 12, color: C.gold, fontWeight: '700', marginBottom: 4 },
-  historyPreview: { fontSize: 15, color: C.white, marginBottom: 4 },
-  historyMeta: { fontSize: 12, color: C.sub, fontWeight: '600' },
+  historyDate: { fontSize: fonts.size.xs, color: colors.gold, fontFamily: fonts.bodyBold, marginBottom: spacing.xs },
+  historyPreview: { fontSize: fonts.size.md, color: colors.white, marginBottom: spacing.xs },
+  historyMeta: { fontSize: fonts.size.xs, color: colors.grey, fontFamily: fonts.bodySemiBold },
 });

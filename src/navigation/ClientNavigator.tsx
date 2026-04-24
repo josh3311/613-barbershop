@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { TouchableOpacity, StyleSheet, View, ActivityIndicator } from 'react-native';
+import { TouchableOpacity, StyleSheet, View, ActivityIndicator, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { ClientTabParamList } from './types';
 import { AuthService } from '@/services/auth.service';
+import { colors, fonts, spacing, radius, shadows, tabBar, icons } from '@/theme';
 
-import HomeScreen    from '@/screens/client/HomeScreen';
+import HomeScreen from '@/screens/client/HomeScreen';
 import BookNavigator from '@/navigation/BookNavigator';
 import StyleNavigator from '@/navigation/StyleNavigator';
 import HistoryNavigator from '@/navigation/HistoryNavigator';
@@ -13,19 +14,56 @@ import ProfileNavigator from '@/navigation/ProfileNavigator';
 
 const Tab = createBottomTabNavigator<ClientTabParamList>();
 
-const C = {
-  bg:       '#0A0A0A',
-  surface:  '#111111',
-  gold:     '#D4AF37',
-  inactive: '#3A3A3A',
-  border:   '#1E1E1E',
-  white:    '#FFFFFF',
-  danger:   '#CF6679',
-  dangerBg: '#2A1010',
-  dangerBdr:'#CF667944',
-} as const;
+// ─── Animated Tab Icon with press scale ──────────────────────────────────────
 
-// ─── Persistent logout button ─────────────────────────────────────────────────
+interface TabIconProps {
+  focused: boolean;
+  iconName: keyof typeof Ionicons.glyphMap;
+  iconNameOutline: keyof typeof Ionicons.glyphMap;
+  color: string;
+}
+
+function AnimatedTabIcon({ focused, iconName, iconNameOutline, color }: TabIconProps): React.JSX.Element {
+  const scale = React.useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Animated.spring(scale, {
+      toValue: 0.9,
+      useNativeDriver: true,
+      friction: 5,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scale, {
+      toValue: 1,
+      useNativeDriver: true,
+      friction: 5,
+    }).start();
+  };
+
+  return (
+    <Animated.View style={{ transform: [{ scale }] }}>
+      <TouchableOpacity
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        activeOpacity={1}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      >
+        <Ionicons
+          name={focused ? iconName : iconNameOutline}
+          size={24}
+          color={color}
+        />
+        {focused && (
+          <View style={styles.activeIndicator} />
+        )}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
+// ─── Persistent logout button ────────────────────────────────────────────────
 
 function LogoutButton(): React.JSX.Element {
   const [busy, setBusy] = useState(false);
@@ -41,93 +79,101 @@ function LogoutButton(): React.JSX.Element {
     <TouchableOpacity
       onPress={handleLogout}
       disabled={busy}
-      style={st.logoutBtn}
+      style={styles.logoutBtn}
       accessibilityRole="button"
       accessibilityLabel="Log out"
       accessibilityHint="Signs you out of your account"
       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
     >
-      <View style={st.logoutIconWrap}>
-        {busy
-          ? <ActivityIndicator size={14} color={C.danger} />
-          : <Ionicons name="log-out-outline" size={18} color={C.danger} />
-        }
+      <View style={styles.logoutIconWrap}>
+        {busy ? (
+          <ActivityIndicator size={14} color={colors.red} />
+        ) : (
+          <Ionicons name={icons.logOut} size={18} color={colors.red} />
+        )}
       </View>
     </TouchableOpacity>
   );
 }
 
-// ─── Navigator ────────────────────────────────────────────────────────────────
+// ─── Navigator ─────────────────────────────────────────────────────────────────
 
 export default function ClientNavigator(): React.JSX.Element {
   return (
     <Tab.Navigator
-      screenOptions={{
+      screenOptions={({ route }) => ({
         headerShown: true,
-        headerStyle:      st.header,
-        headerTitleStyle: st.headerTitle,
-        headerTintColor:  C.white,
+        headerStyle: styles.header,
+        headerTitleStyle: styles.headerTitle,
+        headerTintColor: colors.white,
         headerShadowVisible: false,
         headerRight: () => <LogoutButton />,
-        tabBarStyle:              st.tabBar,
-        tabBarActiveTintColor:    C.gold,
-        tabBarInactiveTintColor:  C.inactive,
-        tabBarLabelStyle:         st.tabLabel,
-      }}
+        tabBarStyle: styles.tabBar,
+        tabBarActiveTintColor: colors.gold,
+        tabBarInactiveTintColor: colors.grey,
+        tabBarLabelStyle: styles.tabLabel,
+        tabBarIcon: ({ focused, color }) => {
+          let iconName: keyof typeof Ionicons.glyphMap = icons.tabHome;
+          let iconNameOutline: keyof typeof Ionicons.glyphMap = icons.tabHomeOutline;
+
+          switch (route.name) {
+            case 'Home':
+              iconName = icons.tabHome;
+              iconNameOutline = icons.tabHomeOutline;
+              break;
+            case 'Book':
+              iconName = icons.tabBook;
+              iconNameOutline = icons.tabBookOutline;
+              break;
+            case 'Style':
+              iconName = icons.tabStyle;
+              iconNameOutline = icons.tabStyleOutline;
+              break;
+            case 'History':
+              iconName = icons.tabHistory;
+              iconNameOutline = icons.tabHistoryOutline;
+              break;
+            case 'Profile':
+              iconName = icons.tabProfile;
+              iconNameOutline = icons.tabProfileOutline;
+              break;
+          }
+
+          return (
+            <AnimatedTabIcon
+              focused={focused}
+              iconName={iconName}
+              iconNameOutline={iconNameOutline}
+              color={color}
+            />
+          );
+        },
+      })}
     >
       <Tab.Screen
         name="Home"
         component={HomeScreen}
-        options={{
-          title: 'Home',
-          tabBarIcon: ({ focused, color }) => (
-            <Ionicons name={focused ? 'home' : 'home-outline'} size={24} color={color} />
-          ),
-        }}
+        options={{ title: 'Home' }}
       />
       <Tab.Screen
         name="Book"
         component={BookNavigator}
-        options={{
-          title: 'Book',
-          headerShown: false,
-          tabBarIcon: ({ focused, color }) => (
-            <Ionicons name={focused ? 'calendar' : 'calendar-outline'} size={24} color={color} />
-          ),
-        }}
+        options={{ title: 'Book', headerShown: false }}
       />
       <Tab.Screen
         name="Style"
         component={StyleNavigator}
-        options={{
-          title: 'Style',
-          headerShown: false,
-          tabBarIcon: ({ focused, color }) => (
-            <Ionicons name={focused ? 'color-wand' : 'color-wand-outline'} size={24} color={color} />
-          ),
-        }}
+        options={{ title: 'Style', headerShown: false }}
       />
       <Tab.Screen
         name="History"
         component={HistoryNavigator}
-        options={{
-          title: 'History',
-          headerShown: false,
-          tabBarIcon: ({ focused, color }) => (
-            <Ionicons name={focused ? 'time' : 'time-outline'} size={24} color={color} />
-          ),
-        }}
+        options={{ title: 'History', headerShown: false }}
       />
       <Tab.Screen
         name="Profile"
         component={ProfileNavigator}
-        options={{
-          title: 'Profile',
-          headerShown: false,
-          tabBarIcon: ({ focused, color }) => (
-            <Ionicons name={focused ? 'person-circle' : 'person-circle-outline'} size={24} color={color} />
-          ),
-        }}
+        options={{ title: 'Profile', headerShown: false }}
       />
     </Tab.Navigator>
   );
@@ -135,26 +181,26 @@ export default function ClientNavigator(): React.JSX.Element {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const st = StyleSheet.create({
+const styles = StyleSheet.create({
   header: {
-    backgroundColor: '#141414',
+    backgroundColor: colors.background,
     borderBottomWidth: 1,
-    borderBottomColor: '#1E1E1E',
+    borderBottomColor: colors.border,
     elevation: 0,
   },
   headerTitle: {
-    color: C.white,
-    fontWeight: '700',
-    fontSize: 17,
-    letterSpacing: 0.5,
+    color: colors.white,
+    fontFamily: fonts.heading,
+    fontSize: fonts.size['2xl'],
+    letterSpacing: fonts.letterSpacing.wide,
   },
   tabBar: {
-    backgroundColor: C.surface,
-    borderTopWidth: 1,
-    borderTopColor: C.border,
-    height: 62,
-    paddingBottom: 8,
-    paddingTop: 6,
+    backgroundColor: tabBar.backgroundColor,
+    borderTopWidth: tabBar.borderTopWidth,
+    borderTopColor: tabBar.borderTopColor,
+    height: tabBar.height,
+    paddingBottom: tabBar.paddingBottom,
+    paddingTop: spacing.sm,
     elevation: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
@@ -162,16 +208,31 @@ const st = StyleSheet.create({
     shadowRadius: 10,
   },
   tabLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.3,
+    fontFamily: fonts.bodySemiBold,
+    fontSize: fonts.size.xs,
+    letterSpacing: fonts.letterSpacing.wide,
+    marginTop: spacing.xs,
   },
-
+  activeIndicator: {
+    position: 'absolute',
+    bottom: -8,
+    left: '50%',
+    marginLeft: -10,
+    width: tabBar.indicatorWidth,
+    height: tabBar.indicatorHeight,
+    backgroundColor: colors.gold,
+    borderRadius: 2,
+  },
   // Logout button
-  logoutBtn:      { marginRight: 14, padding: 4 },
+  logoutBtn: { marginRight: spacing.md, padding: spacing.xs },
   logoutIconWrap: {
-    width: 34, height: 34, borderRadius: 10,
-    backgroundColor: C.dangerBg, borderWidth: 1, borderColor: C.dangerBdr,
-    alignItems: 'center', justifyContent: 'center',
+    width: 34,
+    height: 34,
+    borderRadius: radius.sm,
+    backgroundColor: 'rgba(229, 57, 53, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(229, 57, 53, 0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

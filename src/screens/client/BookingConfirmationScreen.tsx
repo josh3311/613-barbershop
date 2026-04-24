@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -6,10 +6,10 @@ import {
   TouchableOpacity,
   Dimensions,
   StatusBar,
-  Animated,
   Linking,
   Platform,
   Image,
+  Animated,
 } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,56 +22,40 @@ import { useAuth } from '@/hooks/useAuth';
 import { db } from '@/config/firebase';
 import { COLLECTIONS } from '@/constants/collections';
 import type { Booking, RequestedStyle } from '@/types/booking.types';
-
-// ─── Theme ────────────────────────────────────────────────────────────────────
-
-const C = {
-  bg:          '#0A0A0A',
-  surface:     '#141414',
-  card:        '#161616',
-  elevated:    '#1C1C1C',
-  gold:        '#D4AF37',
-  goldDark:    '#A8861A',
-  goldLight:   '#EDD060',
-  goldGlow:    '#D4AF3718',
-  goldBorder:  '#D4AF3760',
-  success:     '#4CAF50',
-  successBg:   '#0A1A0A',
-  successBdr:  '#4CAF5044',
-  danger:      '#CF6679',
-  dangerBg:    '#1A0A0A',
-  dangerBdr:   '#CF667944',
-  white:       '#FFFFFF',
-  sub:         '#888888',
-  muted:       '#444444',
-  divider:     '#1E1E1E',
-} as const;
+import { colors, fonts, spacing, radius, shadows, icons, animations } from '@/theme';
 
 const { width: SW } = Dimensions.get('window');
 
-
-// ─── Static service lookup ────────────────────────────────────────────────────
-
+// ==========================================
+// Static service lookup
+// ==========================================
 const SERVICE_MAP: Record<string, {
-  name: string; price: number; durationMinutes: number;
-  iconName: keyof typeof Ionicons.glyphMap; category: string;
+  name: string;
+  price: number;
+  durationMinutes: number;
+  iconName: keyof typeof Ionicons.glyphMap;
+  category: string;
 }> = {
-  s1: { name: 'Fade',            price: 40, durationMinutes: 30, iconName: 'cut-outline',        category: 'Haircut' },
-  s2: { name: 'Lineup',          price: 15, durationMinutes: 15, iconName: 'cut-outline',        category: 'Haircut' },
-  s3: { name: 'Beard Trim',      price: 25, durationMinutes: 20, iconName: 'brush-outline',      category: 'Beard'   },
-  s4: { name: 'Haircut',         price: 35, durationMinutes: 45, iconName: 'cut-outline',        category: 'Haircut' },
-  s5: { name: 'Beard + Haircut', price: 50, durationMinutes: 60, iconName: 'star-outline',       category: 'Combo'   },
+  s1: { name: 'Fade', price: 40, durationMinutes: 30, iconName: icons.cutOutline, category: 'Haircut' },
+  s2: { name: 'Lineup', price: 15, durationMinutes: 15, iconName: icons.cutOutline, category: 'Haircut' },
+  s3: { name: 'Beard Trim', price: 25, durationMinutes: 20, iconName: icons.brush, category: 'Beard' },
+  s4: { name: 'Haircut', price: 35, durationMinutes: 45, iconName: icons.cutOutline, category: 'Haircut' },
+  s5: { name: 'Beard + Haircut', price: 50, durationMinutes: 60, iconName: icons.starOutline, category: 'Combo' },
 };
 
 const DEFAULT_SERVICE = {
-  name: 'Service', price: 0, durationMinutes: 30,
-  iconName: 'cut-outline' as keyof typeof Ionicons.glyphMap, category: '',
+  name: 'Service',
+  price: 0,
+  durationMinutes: 30,
+  iconName: icons.cutOutline as keyof typeof Ionicons.glyphMap,
+  category: '',
 };
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const DAYS   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+// ==========================================
+// Helpers
+// ==========================================
+const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 function formatDate(ts: number): string {
   const d = new Date(ts);
@@ -89,8 +73,8 @@ function formatTime(ts: number): string {
 
 function buildGoogleCalendarUrl(title: string, startMs: number, durationMins: number): string {
   const start = new Date(startMs);
-  const end   = new Date(startMs + durationMins * 60 * 1000);
-  const fmt   = (d: Date) =>
+  const end = new Date(startMs + durationMins * 60 * 1000);
+  const fmt = (d: Date) =>
     d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
   return (
     `https://calendar.google.com/calendar/render?action=TEMPLATE` +
@@ -100,21 +84,49 @@ function buildGoogleCalendarUrl(title: string, startMs: number, durationMins: nu
   );
 }
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ==========================================
+// Types
+// ==========================================
+type Props = NativeStackScreenProps<BookStackParamList, 'BookingConfirm'>;
+type Phase = 'preview' | 'saving' | 'success' | 'error';
 
-type Props  = NativeStackScreenProps<BookStackParamList, 'BookingConfirm'>;
-type Phase  = 'preview' | 'saving' | 'success' | 'error';
+// ==========================================
+// Animated Components
+// ==========================================
+function FadeInView({ children, delay = 0 }: { children: React.ReactNode; delay?: number }): React.JSX.Element {
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
 
-// ─── Row component ────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(fadeAnim, { toValue: 1, duration: animations.normal, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 0, duration: animations.normal, useNativeDriver: true }),
+      ]).start();
+    }, delay);
+    return () => clearTimeout(timeout);
+  }, []);
 
+  return (
+    <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+      {children}
+    </Animated.View>
+  );
+}
+
+// ==========================================
+// Summary Row Component
+// ==========================================
 function SummaryRow({ iconName, label, value, valueStyle }: {
   iconName: keyof typeof Ionicons.glyphMap;
-  label: string; value: string; valueStyle?: object;
+  label: string;
+  value: string;
+  valueStyle?: object;
 }): React.JSX.Element {
   return (
     <View style={styles.summaryRow} accessibilityLabel={`${label}: ${value}`}>
       <View style={styles.summaryIconWrap}>
-        <Ionicons name={iconName} size={16} color="#555555" />
+        <Ionicons name={iconName} size={16} color={colors.greyDark} />
       </View>
       <View style={styles.summaryRowText}>
         <Text style={styles.summaryLabel}>{label}</Text>
@@ -124,42 +136,39 @@ function SummaryRow({ iconName, label, value, valueStyle }: {
   );
 }
 
-// ─── Screen ───────────────────────────────────────────────────────────────────
-
+// ==========================================
+// Main Screen Component
+// ==========================================
 export default function BookingConfirmationScreen({ route, navigation }: Props): React.JSX.Element {
   const { barberId, barberName, serviceId, scheduledAt } = route.params;
   const insets = useSafeAreaInsets();
   const { firebaseUser } = useAuth();
 
-  const service   = SERVICE_MAP[serviceId] ?? DEFAULT_SERVICE;
+  const service = SERVICE_MAP[serviceId] ?? DEFAULT_SERVICE;
   const dateLabel = formatDate(scheduledAt);
   const timeLabel = formatTime(scheduledAt);
 
-  const [phase,     setPhase]     = useState<Phase>('preview');
+  const [phase, setPhase] = useState<Phase>('preview');
   const [bookingId, setBookingId] = useState<string | null>(null);
-  const [errorMsg,  setErrorMsg]  = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [savedStylePreview, setSavedStylePreview] = useState<RequestedStyle | null>(null);
   const [confirmedBooking, setConfirmedBooking] = useState<Booking | null>(null);
 
-  // Derived from the real Firestore doc ID — not fake Math.random()
   const confCode = bookingId ? bookingId.substring(0, 6).toUpperCase() : '';
 
-  // ── Animations ─────────────────────────────────────────────────────────────
-  const checkScale   = useRef(new Animated.Value(0)).current;
-  const checkOpacity = useRef(new Animated.Value(0)).current;
-  const cardOpacity  = useRef(new Animated.Value(0)).current;
-  const btnScale     = useRef(new Animated.Value(1)).current;
+  // Animations
+  const checkScaleAnim = useRef(new Animated.Value(0)).current;
+  const checkOpacityAnim = useRef(new Animated.Value(0)).current;
+  const cardOpacityAnim = useRef(new Animated.Value(0)).current;
+  const btnScaleAnim = useRef(new Animated.Value(1)).current;
 
   const playSuccess = useCallback(() => {
-    Animated.sequence([
-      Animated.parallel([
-        Animated.spring(checkScale, { toValue: 1.15, useNativeDriver: true, speed: 20, bounciness: 8 }),
-        Animated.timing(checkOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
-      ]),
-      Animated.spring(checkScale, { toValue: 1, useNativeDriver: true, speed: 30, bounciness: 4 }),
-      Animated.timing(cardOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
-    ]).start();
-  }, [checkScale, checkOpacity, cardOpacity]);
+    Animated.spring(checkScaleAnim, { toValue: 1, useNativeDriver: true, friction: 5, tension: 40 }).start();
+    Animated.timing(checkOpacityAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
+    setTimeout(() => {
+      Animated.timing(cardOpacityAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
+    }, 200);
+  }, []);
 
   useEffect(() => {
     if (phase === 'success') playSuccess();
@@ -191,8 +200,6 @@ export default function BookingConfirmationScreen({ route, navigation }: Props):
     };
   }, [firebaseUser, phase]);
 
-  // ── Confirm: write booking to Firestore ────────────────────────────────────
-
   async function handleConfirm(): Promise<void> {
     if (!firebaseUser) {
       setErrorMsg('You must be signed in to book.');
@@ -204,15 +211,15 @@ export default function BookingConfirmationScreen({ route, navigation }: Props):
     setErrorMsg(null);
 
     const result = await BookingService.create({
-      clientId:        firebaseUser.uid,
-      clientName:      firebaseUser.displayName ?? firebaseUser.email ?? 'Client',
+      clientId: firebaseUser.uid,
+      clientName: firebaseUser.displayName ?? firebaseUser.email ?? 'Client',
       barberId,
       barberName,
       serviceId,
-      scheduledAt:     Timestamp.fromMillis(scheduledAt),
+      scheduledAt: Timestamp.fromMillis(scheduledAt),
       durationMinutes: service.durationMinutes,
-      price:           service.price,
-      notes:           null,
+      price: service.price,
+      notes: null,
     });
 
     if (!result.success) {
@@ -231,21 +238,16 @@ export default function BookingConfirmationScreen({ route, navigation }: Props):
     setPhase('success');
   }
 
-  // ── Calendar ───────────────────────────────────────────────────────────────
-
   function handleAddToCalendar(): void {
     const url = buildGoogleCalendarUrl(
       `613 Barbershop — ${service.name}`,
       scheduledAt,
       service.durationMinutes,
     );
-    Linking.openURL(url).catch(() => {});
+    Linking.openURL(url).catch(() => { });
   }
 
-  // ── Navigation actions ─────────────────────────────────────────────────────
-
   function goToHistory(): void {
-    // Pop out of BookNavigator to the tab level, then switch tab
     navigation.getParent()?.navigate('History' as never);
   }
 
@@ -253,12 +255,13 @@ export default function BookingConfirmationScreen({ route, navigation }: Props):
     navigation.popToTop();
   }
 
-  // ── Button spring ──────────────────────────────────────────────────────────
+  function btnIn(): void {
+    Animated.spring(btnScaleAnim, { toValue: animations.pressScale, useNativeDriver: true, friction: 5 }).start();
+  }
 
-  function btnIn():  void { Animated.spring(btnScale, { toValue: 0.96, useNativeDriver: true, speed: 60, bounciness: 3 }).start(); }
-  function btnOut(): void { Animated.spring(btnScale, { toValue: 1,    useNativeDriver: true, speed: 60, bounciness: 3 }).start(); }
-
-  // ── Shared summary card ────────────────────────────────────────────────────
+  function btnOut(): void {
+    Animated.spring(btnScaleAnim, { toValue: animations.activeScale, useNativeDriver: true, friction: 5 }).start();
+  }
 
   const attachedStyle: RequestedStyle | null | undefined =
     phase === 'success' ? confirmedBooking?.requestedStyle : savedStylePreview;
@@ -268,7 +271,7 @@ export default function BookingConfirmationScreen({ route, navigation }: Props):
       <View style={styles.summaryCardAccent} />
       <View style={styles.summaryCardHeader}>
         <View style={styles.serviceIconWrap}>
-          <Ionicons name={service.iconName} size={22} color={C.gold} />
+          <Ionicons name={service.iconName} size={22} color={colors.gold} />
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.serviceName}>{service.name}</Text>
@@ -279,20 +282,20 @@ export default function BookingConfirmationScreen({ route, navigation }: Props):
 
       <View style={styles.divider} />
 
-      <SummaryRow iconName="person-outline"   label="Barber"   value={barberName} />
+      <SummaryRow iconName={icons.person} label="Barber" value={barberName} />
       <View style={styles.rowDivider} />
-      <SummaryRow iconName="calendar-outline" label="Date"     value={dateLabel} />
+      <SummaryRow iconName={icons.tabBookOutline} label="Date" value={dateLabel} />
       <View style={styles.rowDivider} />
-      <SummaryRow iconName="time-outline"     label="Time"     value={timeLabel} />
+      <SummaryRow iconName={icons.time} label="Time" value={timeLabel} />
       <View style={styles.rowDivider} />
-      <SummaryRow iconName="timer-outline"    label="Duration" value={`${service.durationMinutes} min`} />
+      <SummaryRow iconName={icons.time} label="Duration" value={`${service.durationMinutes} min`} />
       <View style={styles.rowDivider} />
-      <SummaryRow iconName="cash-outline"     label="Price"    value={`$${service.price}`} valueStyle={styles.priceValue} />
+      <SummaryRow iconName={icons.alertCircle} label="Price" value={`$${service.price}`} valueStyle={styles.priceValue} />
 
       {phase === 'success' && confCode ? (
         <>
           <View style={styles.rowDivider} />
-          <SummaryRow iconName="barcode-outline" label="Booking ID" value={confCode} valueStyle={styles.codeValue} />
+          <SummaryRow iconName={icons.information} label="Booking ID" value={confCode} valueStyle={styles.codeValue} />
         </>
       ) : null}
 
@@ -320,15 +323,11 @@ export default function BookingConfirmationScreen({ route, navigation }: Props):
     </View>
   );
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // ── RENDER ───────────────────────────────────────────────────────────────
-  // ─────────────────────────────────────────────────────────────────────────
-
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+      <StatusBar barStyle="light-content" backgroundColor={colors.background} />
 
-      {/* ── Header ── */}
+      {/* Header */}
       <View style={styles.header} accessibilityRole="header">
         {phase !== 'success' ? (
           <TouchableOpacity
@@ -338,7 +337,7 @@ export default function BookingConfirmationScreen({ route, navigation }: Props):
             accessibilityLabel="Go back"
             hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
           >
-            <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
+            <Ionicons name={icons.back} size={22} color={colors.white} />
           </TouchableOpacity>
         ) : <View style={styles.backBtn} />}
 
@@ -352,11 +351,11 @@ export default function BookingConfirmationScreen({ route, navigation }: Props):
       </View>
       <View style={styles.headerLine} />
 
-      {/* ── SAVING overlay ── */}
+      {/* Saving overlay */}
       {phase === 'saving' && (
         <View style={styles.savingOverlay} accessibilityLiveRegion="polite">
           <View style={styles.savingCard}>
-            <ActivityIndicator size={40} color={C.gold} />
+            <ActivityIndicator size={40} color={colors.gold} />
             <Text style={styles.savingTitle}>Securing your slot…</Text>
             <Text style={styles.savingSub}>Please wait a moment</Text>
           </View>
@@ -367,21 +366,24 @@ export default function BookingConfirmationScreen({ route, navigation }: Props):
         contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 110 }]}
         showsVerticalScrollIndicator={false}
       >
-
-        {/* ══════════ SUCCESS STATE ══════════ */}
+        {/* Success State */}
         {phase === 'success' && (
           <>
             {/* Animated checkmark */}
-            <View style={styles.checkWrap} accessibilityLabel="Booking confirmed" accessibilityRole="image">
-              <Animated.View style={[
-                styles.checkRing,
-                { transform: [{ scale: checkScale }], opacity: checkOpacity },
-              ]}>
+            <Animated.View
+              style={[
+                styles.checkWrap,
+                { transform: [{ scale: checkScaleAnim }], opacity: checkOpacityAnim },
+              ]}
+              accessibilityLabel="Booking confirmed"
+              accessibilityRole="image"
+            >
+              <View style={styles.checkRing}>
                 <View style={styles.checkInner}>
-                  <Ionicons name="checkmark" size={40} color={C.gold} />
+                  <Ionicons name={icons.checkmark} size={40} color={colors.gold} />
                 </View>
-              </Animated.View>
-            </View>
+              </View>
+            </Animated.View>
 
             <Text style={styles.successTitle}>Booking Request Sent!</Text>
             <Text style={styles.successSub}>
@@ -389,14 +391,14 @@ export default function BookingConfirmationScreen({ route, navigation }: Props):
             </Text>
 
             {/* Summary card fades in */}
-            <Animated.View style={{ opacity: cardOpacity }}>
+            <Animated.View style={{ opacity: cardOpacityAnim }}>
               {summaryCard}
             </Animated.View>
 
             {/* Status + confirmation badge */}
-            <Animated.View style={[styles.codeBadge, { opacity: cardOpacity }]}>
+            <Animated.View style={[styles.codeBadge, { opacity: cardOpacityAnim }]}>
               <View style={styles.pendingRow}>
-                <Ionicons name="time-outline" size={16} color={C.gold} style={{ marginRight: 6 }} />
+                <Ionicons name={icons.time} size={16} color={colors.gold} style={{ marginRight: 6 }} />
                 <Text style={styles.pendingLabel}>PENDING BARBER CONFIRMATION</Text>
               </View>
               <Text style={styles.codeBadgeValue} accessibilityLabel={`Booking ID: ${confCode}`}>
@@ -408,7 +410,7 @@ export default function BookingConfirmationScreen({ route, navigation }: Props):
             </Animated.View>
 
             {/* Action buttons */}
-            <Animated.View style={[styles.actionGroup, { opacity: cardOpacity }]}>
+            <Animated.View style={[styles.actionGroup, { opacity: cardOpacityAnim }]}>
               {/* Add to Calendar */}
               <TouchableOpacity
                 onPress={handleAddToCalendar}
@@ -416,7 +418,7 @@ export default function BookingConfirmationScreen({ route, navigation }: Props):
                 accessibilityRole="button"
                 accessibilityLabel="Add to Calendar"
               >
-                <Ionicons name="calendar-outline" size={18} color={C.bg} style={{ marginRight: 8 }} />
+                <Ionicons name={icons.tabBookOutline} size={18} color={colors.background} style={{ marginRight: 8 }} />
                 <Text style={styles.calBtnText}>Add to Calendar</Text>
               </TouchableOpacity>
 
@@ -443,12 +445,12 @@ export default function BookingConfirmationScreen({ route, navigation }: Props):
           </>
         )}
 
-        {/* ══════════ ERROR STATE ══════════ */}
+        {/* Error State */}
         {phase === 'error' && (
           <>
             <View style={styles.errorWrap} accessibilityRole="alert">
               <View style={styles.errorIcon}>
-                <Ionicons name="close" size={36} color={C.danger} />
+                <Ionicons name={icons.close} size={36} color={colors.red} />
               </View>
               <Text style={styles.errorTitle}>Booking Failed</Text>
               <Text style={styles.errorMsg}>{errorMsg}</Text>
@@ -462,37 +464,42 @@ export default function BookingConfirmationScreen({ route, navigation }: Props):
               accessibilityRole="button"
               accessibilityLabel="Choose a different time"
             >
-              <Ionicons name="arrow-back" size={14} color={C.gold} style={{ marginRight: 6 }} />
+              <Ionicons name={icons.arrowBack} size={14} color={colors.gold} style={{ marginRight: 6 }} />
               <Text style={styles.retryBtnText}>Choose a Different Time</Text>
             </TouchableOpacity>
           </>
         )}
 
-        {/* ══════════ PREVIEW STATE ══════════ */}
+        {/* Preview State */}
         {(phase === 'preview' || phase === 'saving') && (
           <>
-            <Text style={styles.previewIntro}>
-              Please review your booking details before confirming.
-            </Text>
+            <FadeInView>
+              <Text style={styles.previewIntro}>
+                Please review your booking details before confirming.
+              </Text>
+            </FadeInView>
 
-            {summaryCard}
+            <FadeInView delay={50}>
+              {summaryCard}
+            </FadeInView>
 
             {/* Info strip */}
-            <View style={styles.infoStrip}>
-              <Ionicons name="information-circle-outline" size={15} color="#555555" style={{ marginRight: 6 }} />
-              <Text style={styles.infoStripText}>
-                Free cancellation up to 2 hours before your appointment.
-              </Text>
-            </View>
+            <FadeInView delay={100}>
+              <View style={styles.infoStrip}>
+                <Ionicons name={icons.information} size={15} color={colors.greyDark} style={{ marginRight: 6 }} />
+                <Text style={styles.infoStripText}>
+                  Free cancellation up to 2 hours before your appointment.
+                </Text>
+              </View>
+            </FadeInView>
           </>
         )}
-
       </ScrollView>
 
-      {/* ── Bottom bar (preview only) ── */}
+      {/* Bottom bar (preview only) */}
       {(phase === 'preview' || phase === 'saving') && (
         <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 14 }]}>
-          <Animated.View style={[styles.btnWrap, { transform: [{ scale: btnScale }] }]}>
+          <Animated.View style={[styles.btnWrap, { transform: [{ scale: btnScaleAnim }] }]}>
             <View style={styles.btnGlow} />
             <TouchableOpacity
               onPress={handleConfirm}
@@ -507,11 +514,11 @@ export default function BookingConfirmationScreen({ route, navigation }: Props):
             >
               {phase === 'saving' ? (
                 <View style={styles.btnLoadRow}>
-                  <ActivityIndicator size={18} color={C.bg} />
+                  <ActivityIndicator size={18} color={colors.background} />
                   <Text style={styles.btnText}>Securing Slot…</Text>
                 </View>
               ) : (
-                <Text style={styles.btnText}>Book Now  →</Text>
+                <Text style={styles.btnText}>Book Now</Text>
               )}
               {phase !== 'saving' && <View style={styles.btnDepth} />}
             </TouchableOpacity>
@@ -526,258 +533,496 @@ export default function BookingConfirmationScreen({ route, navigation }: Props):
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
+// ==========================================
+// Styles
+// ==========================================
 const styles = StyleSheet.create({
-  root:   { flex: 1, backgroundColor: C.bg },
-  scroll: { paddingHorizontal: 20, paddingTop: 8 },
+  root: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  scroll: {
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.xs,
+  },
 
   // Header
   header: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 16, paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 14,
   },
-  backBtn:     { width: 36, alignItems: 'center' },
-  headerCenter:{ flex: 1, alignItems: 'center' },
-  headerTitle: { fontSize: 18, fontWeight: '800', color: C.white, letterSpacing: 0.4 },
-  headerSub:   { fontSize: 10, color: C.gold, letterSpacing: 3, fontWeight: '700', marginTop: 2 },
-  headerLine:  {
-    height: 1, marginHorizontal: 20, backgroundColor: C.gold,
-    opacity: 0.3, marginBottom: 2,
+  backBtn: {
+    width: 36,
+    alignItems: 'center',
+  },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  headerTitle: {
+    fontSize: fonts.size.xl,
+    fontFamily: fonts.heading,
+    color: colors.white,
+    letterSpacing: fonts.letterSpacing.wide,
+  },
+  headerSub: {
+    fontSize: fonts.size.xs,
+    color: colors.gold,
+    letterSpacing: fonts.letterSpacing.wider,
+    fontFamily: fonts.bodyBold,
+    marginTop: spacing.xs,
+  },
+  headerLine: {
+    height: 1,
+    marginHorizontal: spacing.xl,
+    backgroundColor: colors.gold,
+    opacity: 0.3,
+    marginBottom: spacing.xs,
   },
 
   // Saving overlay
   savingOverlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 99,
-    backgroundColor: '#0A0A0ACC',
+    backgroundColor: `${colors.background}CC`,
     alignItems: 'center',
     justifyContent: 'center',
   },
   savingCard: {
-    backgroundColor: C.card,
-    borderRadius: 20,
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
     padding: 36,
     alignItems: 'center',
     gap: 14,
     borderWidth: 1,
-    borderColor: C.goldBorder,
-    shadowColor: C.gold,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 20,
-    elevation: 20,
+    borderColor: colors.gold,
+    ...shadows.md,
     minWidth: 220,
   },
-  savingTitle: { fontSize: 17, fontWeight: '800', color: C.white },
-  savingSub:   { fontSize: 13, color: C.sub },
+  savingTitle: {
+    fontSize: fonts.size.lg,
+    fontFamily: fonts.bodyBold,
+    color: colors.white,
+  },
+  savingSub: {
+    fontSize: fonts.size.md,
+    color: colors.grey,
+    fontFamily: fonts.body,
+  },
 
   // Preview
   previewIntro: {
-    fontSize: 13, color: C.sub, textAlign: 'center',
-    marginTop: 14, marginBottom: 20, lineHeight: 18,
+    fontSize: fonts.size.md,
+    color: colors.grey,
+    textAlign: 'center',
+    marginTop: spacing.md,
+    marginBottom: spacing.xl,
+    lineHeight: fonts.lineHeight.relaxed * fonts.size.md,
+    fontFamily: fonts.body,
   },
 
   // Summary card
   summaryCard: {
-    backgroundColor: C.card,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: C.goldBorder,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.gold,
     overflow: 'hidden',
-    shadowColor: C.gold,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.12,
-    shadowRadius: 14,
-    elevation: 10,
-    marginBottom: 16,
+    ...shadows.md,
+    marginBottom: spacing.lg,
   },
-  summaryCardAccent: { height: 3, backgroundColor: C.gold },
+  summaryCardAccent: {
+    height: 3,
+    backgroundColor: colors.gold,
+  },
   summaryCardHeader: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 16, paddingVertical: 16, gap: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
+    gap: spacing.md,
   },
   serviceIconWrap: {
-    width: 48, height: 48, borderRadius: 13,
-    backgroundColor: C.goldGlow,
-    borderWidth: 1, borderColor: C.goldBorder,
-    alignItems: 'center', justifyContent: 'center',
+    width: 48,
+    height: 48,
+    borderRadius: radius.md,
+    backgroundColor: colors.goldGlow,
+    borderWidth: 1,
+    borderColor: colors.gold,
+    alignItems: 'center',
+    justifyContent: 'center',
     flexShrink: 0,
   },
-  serviceName:     { fontSize: 17, fontWeight: '800', color: C.white, letterSpacing: 0.3 },
-  serviceCategory: { fontSize: 11, color: C.sub, marginTop: 2, fontWeight: '600' },
-  servicePrice:    { fontSize: 28, fontWeight: '900', color: C.gold, letterSpacing: -0.5, flexShrink: 0 },
-  divider:         { height: 1, backgroundColor: C.divider, marginHorizontal: 16 },
+  serviceName: {
+    fontSize: fonts.size.lg,
+    fontFamily: fonts.bodyBold,
+    color: colors.white,
+    letterSpacing: fonts.letterSpacing.normal,
+  },
+  serviceCategory: {
+    fontSize: fonts.size.xs,
+    color: colors.grey,
+    marginTop: 2,
+    fontFamily: fonts.bodySemiBold,
+  },
+  servicePrice: {
+    fontSize: fonts.size['3xl'],
+    fontFamily: fonts.bodyBold,
+    color: colors.gold,
+    letterSpacing: fonts.letterSpacing.tight,
+    flexShrink: 0,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginHorizontal: spacing.lg,
+  },
 
   summaryRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 16, paddingVertical: 13, gap: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 13,
+    gap: spacing.md,
   },
-  summaryIconWrap: { width: 26, alignItems: 'center' },
-  summaryRowText:  { flex: 1 },
-  summaryLabel:    { fontSize: 10, color: C.muted, fontWeight: '700', letterSpacing: 1.2, marginBottom: 2 },
-  summaryValue:    { fontSize: 15, fontWeight: '700', color: C.white },
-  priceValue:      { color: C.gold, fontSize: 18 },
-  codeValue:       { color: C.gold, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace', letterSpacing: 3, fontSize: 18 },
-  rowDivider:      { height: 1, backgroundColor: C.divider, marginHorizontal: 16 },
+  summaryIconWrap: {
+    width: 26,
+    alignItems: 'center',
+  },
+  summaryRowText: {
+    flex: 1,
+  },
+  summaryLabel: {
+    fontSize: fonts.size.xs,
+    color: colors.greyDark,
+    fontFamily: fonts.bodyBold,
+    letterSpacing: fonts.letterSpacing.wide,
+    marginBottom: 2,
+  },
+  summaryValue: {
+    fontSize: fonts.size.md,
+    fontFamily: fonts.bodyBold,
+    color: colors.white,
+  },
+  priceValue: {
+    color: colors.gold,
+    fontSize: fonts.size.xl,
+  },
+  codeValue: {
+    color: colors.gold,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    letterSpacing: 3,
+    fontSize: fonts.size.xl,
+  },
+  rowDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginHorizontal: spacing.lg,
+  },
 
-  styleAttachBlock: { paddingHorizontal: 16, paddingBottom: 16 },
-  styleAttachLabel: {
-    fontSize: 10,
-    color: C.gold,
-    fontWeight: '800',
-    letterSpacing: 1.2,
-    marginBottom: 10,
+  styleAttachBlock: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.lg,
   },
-  styleAttachRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  styleAttachThumb: { width: 56, height: 56, borderRadius: 10, backgroundColor: C.surface, borderWidth: 1, borderColor: C.goldBorder },
-  styleAttachName: { fontSize: 15, fontWeight: '800', color: C.white, marginBottom: 4 },
-  styleAttachDesc: { fontSize: 12, color: C.sub, lineHeight: 17 },
+  styleAttachLabel: {
+    fontSize: fonts.size.xs,
+    color: colors.gold,
+    fontFamily: fonts.bodyBold,
+    letterSpacing: fonts.letterSpacing.wide,
+    marginBottom: spacing.md,
+  },
+  styleAttachRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  styleAttachThumb: {
+    width: 56,
+    height: 56,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceRaised,
+    borderWidth: 1,
+    borderColor: colors.gold,
+  },
+  styleAttachName: {
+    fontSize: fonts.size.md,
+    fontFamily: fonts.bodyBold,
+    color: colors.white,
+    marginBottom: 4,
+  },
+  styleAttachDesc: {
+    fontSize: fonts.size.sm,
+    color: colors.grey,
+    lineHeight: fonts.lineHeight.relaxed * fonts.size.sm,
+    fontFamily: fonts.body,
+  },
 
   // Info strip
   infoStrip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: C.goldGlow,
-    borderWidth: 1, borderColor: C.goldBorder,
-    borderRadius: 10,
-    paddingVertical: 12, paddingHorizontal: 14,
-    marginBottom: 16,
+    backgroundColor: colors.goldGlow,
+    borderWidth: 1,
+    borderColor: colors.gold,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.lg,
   },
-  infoStripText: { flex: 1, fontSize: 12, color: C.gold, lineHeight: 17 },
+  infoStripText: {
+    flex: 1,
+    fontSize: fonts.size.sm,
+    color: colors.gold,
+    lineHeight: fonts.lineHeight.relaxed * fonts.size.sm,
+    fontFamily: fonts.body,
+  },
 
   // Success
-  checkWrap: { alignItems: 'center', marginTop: 24, marginBottom: 20 },
+  checkWrap: {
+    alignItems: 'center',
+    marginTop: spacing.xl,
+    marginBottom: spacing.lg,
+  },
   checkRing: {
-    width: 100, height: 100, borderRadius: 50,
-    backgroundColor: C.successBg,
-    borderWidth: 3, borderColor: C.success,
-    alignItems: 'center', justifyContent: 'center',
-    shadowColor: C.success,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6,
-    shadowRadius: 20,
-    elevation: 14,
+    width: 100,
+    height: 100,
+    borderRadius: radius.full,
+    backgroundColor: colors.goldGlow,
+    borderWidth: 3,
+    borderColor: colors.green,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.lg,
   },
   checkInner: {
-    width: 72, height: 72, borderRadius: 36,
-    backgroundColor: C.success + '22',
-    alignItems: 'center', justifyContent: 'center',
+    width: 72,
+    height: 72,
+    borderRadius: radius.full,
+    backgroundColor: `${colors.green}22`,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  successTitle: { fontSize: 20, fontWeight: '800', color: C.white, textAlign: 'center', marginBottom: 6 },
-  successSub:   { fontSize: 13, color: C.sub, textAlign: 'center', lineHeight: 18, marginBottom: 24 },
+  successTitle: {
+    fontSize: fonts.size['2xl'],
+    fontFamily: fonts.heading,
+    color: colors.white,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  successSub: {
+    fontSize: fonts.size.md,
+    color: colors.grey,
+    textAlign: 'center',
+    lineHeight: fonts.lineHeight.relaxed * fonts.size.md,
+    marginBottom: spacing.xl,
+    fontFamily: fonts.body,
+  },
 
   // Confirmation code badge
   codeBadge: {
-    backgroundColor: C.elevated,
-    borderWidth: 1.5, borderColor: C.goldBorder,
-    borderRadius: 14,
-    paddingVertical: 18, paddingHorizontal: 20,
+    backgroundColor: colors.surfaceRaised,
+    borderWidth: 1,
+    borderColor: colors.gold,
+    borderRadius: radius.md,
+    paddingVertical: 18,
+    paddingHorizontal: spacing.xl,
     alignItems: 'center',
-    marginBottom: 24,
-    shadowColor: C.gold,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 6,
+    marginBottom: spacing.xl,
+    ...shadows.sm,
   },
-  pendingRow:   { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  pendingLabel: { fontSize: 10, color: C.gold, fontWeight: '700', letterSpacing: 1.5 },
-  codeBadgeLabel: { fontSize: 10, color: C.muted, fontWeight: '700', letterSpacing: 2, marginBottom: 8 },
+  pendingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  pendingLabel: {
+    fontSize: fonts.size.xs,
+    color: colors.gold,
+    fontFamily: fonts.bodyBold,
+    letterSpacing: fonts.letterSpacing.wider,
+  },
   codeBadgeValue: {
-    fontSize: 34,
-    fontWeight: '900',
-    color: C.gold,
+    fontSize: fonts.size['4xl'],
+    color: colors.gold,
     letterSpacing: 8,
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
-  codeBadgeHint:  { fontSize: 11, color: C.sub },
+  codeBadgeHint: {
+    fontSize: fonts.size.sm,
+    color: colors.grey,
+    fontFamily: fonts.body,
+  },
 
   // Action buttons (success)
-  actionGroup: { gap: 12, marginBottom: 24 },
+  actionGroup: {
+    gap: spacing.md,
+    marginBottom: spacing.xl,
+  },
   calBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: 10,
-    backgroundColor: C.card,
-    borderWidth: 1.5, borderColor: C.goldBorder,
-    borderRadius: 14, height: 52,
-    shadowColor: C.gold, shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12, shadowRadius: 8, elevation: 6,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.gold,
+    borderRadius: radius['2xl'],
+    height: 52,
+    ...shadows.sm,
   },
-  calBtnText: { fontSize: 15, fontWeight: '700', color: C.gold },
+  calBtnText: {
+    fontSize: fonts.size.md,
+    fontFamily: fonts.bodyBold,
+    color: colors.gold,
+  },
   historyBtn: {
-    backgroundColor: C.gold,
-    borderRadius: 14, height: 52,
-    alignItems: 'center', justifyContent: 'center',
-    shadowColor: C.goldDark, shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.8, shadowRadius: 10, elevation: 10,
+    backgroundColor: colors.gold,
+    borderRadius: radius['2xl'],
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.gold,
   },
-  historyBtnText: { fontSize: 15, fontWeight: '800', color: C.bg, letterSpacing: 0.5 },
+  historyBtnText: {
+    fontSize: fonts.size.md,
+    fontFamily: fonts.bodyBold,
+    color: colors.background,
+    letterSpacing: fonts.letterSpacing.normal,
+  },
   anotherBtn: {
-    backgroundColor: C.elevated,
-    borderRadius: 14, height: 48,
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: C.divider,
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radius['2xl'],
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  anotherBtnText: { fontSize: 14, fontWeight: '700', color: C.sub },
+  anotherBtnText: {
+    fontSize: fonts.size.md,
+    fontFamily: fonts.bodyBold,
+    color: colors.grey,
+  },
 
   // Error
-  errorWrap: { alignItems: 'center', marginTop: 24, marginBottom: 24 },
-  errorIcon: {
-    width: 72, height: 72, borderRadius: 36,
-    backgroundColor: C.dangerBg,
-    borderWidth: 2, borderColor: C.danger,
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: 16,
-    shadowColor: C.danger,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.4, shadowRadius: 14, elevation: 8,
+  errorWrap: {
+    alignItems: 'center',
+    marginTop: spacing.xl,
+    marginBottom: spacing.xl,
   },
-  errorTitle:    { fontSize: 20, fontWeight: '800', color: C.white, marginBottom: 10 },
-  errorMsg:      { fontSize: 13, color: C.sub, textAlign: 'center', lineHeight: 18, paddingHorizontal: 20 },
+  errorIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: radius.full,
+    backgroundColor: `${colors.red}22`,
+    borderWidth: 2,
+    borderColor: colors.red,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.lg,
+    ...shadows.sm,
+  },
+  errorTitle: {
+    fontSize: fonts.size['2xl'],
+    fontFamily: fonts.heading,
+    color: colors.white,
+    marginBottom: spacing.sm,
+  },
+  errorMsg: {
+    fontSize: fonts.size.md,
+    color: colors.grey,
+    textAlign: 'center',
+    lineHeight: fonts.lineHeight.relaxed * fonts.size.md,
+    paddingHorizontal: spacing.lg,
+    fontFamily: fonts.body,
+  },
   retryBtn: {
     flexDirection: 'row',
-    marginTop: 8, marginBottom: 24,
-    backgroundColor: C.elevated,
-    borderRadius: 14, height: 50,
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: C.divider,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xl,
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radius['2xl'],
+    height: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  retryBtnText: { fontSize: 14, fontWeight: '700', color: C.gold },
+  retryBtnText: {
+    fontSize: fonts.size.md,
+    fontFamily: fonts.bodyBold,
+    color: colors.gold,
+  },
 
   // Bottom bar
   bottomBar: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: C.surface,
-    paddingTop: 14, paddingHorizontal: 20,
-    borderTopWidth: 1, borderTopColor: C.divider,
-    gap: 8,
-    shadowColor: '#000', shadowOffset: { width: 0, height: -8 },
-    shadowOpacity: 0.6, shadowRadius: 16, elevation: 20,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: colors.surface,
+    paddingTop: spacing.md,
+    paddingHorizontal: spacing.xl,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    gap: spacing.sm,
+    ...shadows.md,
   },
-  btnHint: { fontSize: 11, color: C.muted, textAlign: 'center' },
-  btnWrap: { position: 'relative' },
+  btnHint: {
+    fontSize: fonts.size.xs,
+    color: colors.greyDark,
+    textAlign: 'center',
+    fontFamily: fonts.body,
+  },
+  btnWrap: {
+    position: 'relative',
+  },
   btnGlow: {
-    position: 'absolute', top: 4, left: 10, right: 10, bottom: -4,
-    backgroundColor: C.gold, borderRadius: 14, opacity: 0.2,
-    shadowColor: C.gold, shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.5, shadowRadius: 12,
+    position: 'absolute',
+    top: 4,
+    left: 10,
+    right: 10,
+    bottom: -4,
+    backgroundColor: colors.gold,
+    borderRadius: radius['2xl'],
+    opacity: 0.2,
+    ...shadows.gold,
   },
   btn: {
-    height: 54, borderRadius: 14, backgroundColor: C.gold,
-    alignItems: 'center', justifyContent: 'center',
-    borderTopWidth: 1, borderTopColor: C.goldLight + '70',
-    shadowColor: C.goldDark, shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.8, shadowRadius: 10, elevation: 10,
+    height: 54,
+    borderRadius: radius['2xl'],
+    backgroundColor: colors.gold,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.md,
     overflow: 'hidden',
   },
-  btnDisabled: { backgroundColor: C.elevated, borderTopColor: 'transparent' },
-  btnText:     { fontSize: 16, fontWeight: '800', color: C.bg, letterSpacing: 1 },
-  btnLoadRow:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  btnDisabled: {
+    backgroundColor: colors.surfaceRaised,
+  },
+  btnText: {
+    fontSize: fonts.size.md,
+    fontFamily: fonts.bodyBold,
+    color: colors.background,
+    letterSpacing: fonts.letterSpacing.normal,
+  },
+  btnLoadRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
   btnDepth: {
-    position: 'absolute', bottom: 0, left: 0, right: 0, height: 4,
-    backgroundColor: C.goldDark, opacity: 0.5,
-    borderBottomLeftRadius: 14, borderBottomRightRadius: 14,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 4,
+    backgroundColor: colors.goldDim,
+    opacity: 0.5,
+    borderBottomLeftRadius: radius['2xl'],
+    borderBottomRightRadius: radius['2xl'],
   },
 });

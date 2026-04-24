@@ -1,13 +1,13 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Animated,
   Platform,
   Image,
+  Animated,
 } from 'react-native';
 import { ActivityIndicator } from 'react-native-paper';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -17,45 +17,171 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import { COLLECTIONS } from '@/constants/collections';
 import { BarberService } from '@/services/barber.service';
+import { colors, fonts, spacing, radius, shadows, icons, animations } from '@/theme';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
+// ==========================================
+// Types
+// ==========================================
 type Props = NativeStackScreenProps<BookStackParamList, 'SelectBarber'>;
 
 interface BarberOption {
-  id:          string;   // Firebase UID (real) or fallback mock ID
-  name:        string;
-  title:       string;
-  experience:  string;
-  specialty:   string;
-  rating:      number;
-  reviews:     number;
-  initials:    string;
-  photoURL:    string | null;
+  id: string;
+  name: string;
+  title: string;
+  experience: string;
+  specialty: string;
+  rating: number;
+  reviews: number;
+  initials: string;
+  photoURL: string | null;
 }
 
-// ─── Fallback barbers (shown while loading or if no Firestore barbers exist) ──
-
+// ==========================================
+// Fallback barbers
+// ==========================================
 const FALLBACK_BARBERS: BarberOption[] = [
-  { id: 'barber-james', name: 'James',       title: 'Senior Barber',   experience: '5 yrs exp',  specialty: 'Fades & Tapers',   rating: 4.9, reviews: 142, initials: 'JA', photoURL: null },
-  { id: 'barber-akim',  name: 'Akim',        title: 'Style Specialist', experience: '3 yrs exp', specialty: 'Beard Sculpting',  rating: 4.8, reviews: 98,  initials: 'AK', photoURL: null },
-  { id: 'barber-amir',  name: 'Amir Joseph', title: 'Master Barber',   experience: '10 yrs exp', specialty: 'All Styles',       rating: 5.0, reviews: 311, initials: 'AJ', photoURL: null },
+  { id: 'barber-james', name: 'James', title: 'Senior Barber', experience: '5 yrs exp', specialty: 'Fades & Tapers', rating: 4.9, reviews: 142, initials: 'JA', photoURL: null },
+  { id: 'barber-akim', name: 'Akim', title: 'Style Specialist', experience: '3 yrs exp', specialty: 'Beard Sculpting', rating: 4.8, reviews: 98, initials: 'AK', photoURL: null },
+  { id: 'barber-amir', name: 'Amir Joseph', title: 'Master Barber', experience: '10 yrs exp', specialty: 'All Styles', rating: 5.0, reviews: 311, initials: 'AJ', photoURL: null },
 ];
 
-const GOLD = '#D4AF37';
-const BG   = '#0A0A0A';
-const CARD = '#161616';
+// ==========================================
+// Animated Barber Card Component
+// ==========================================
+interface BarberCardProps {
+  barber: BarberOption;
+  isSelected: boolean;
+  onPress: () => void;
+  index: number;
+}
 
-// ─── Main screen ─────────────────────────────────────────────────────────────
+function BarberCard({ barber, isSelected, onPress, index }: BarberCardProps): React.JSX.Element {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
 
+  // Entrance animation
+  useEffect(() => {
+    const delay = index * 60;
+    setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(fadeAnim, { toValue: 1, duration: animations.normal, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 0, duration: animations.normal, useNativeDriver: true }),
+      ]).start();
+    }, delay);
+  }, []);
+
+  const handlePressIn = useCallback(() => {
+    Animated.spring(scaleAnim, { toValue: animations.pressScale, useNativeDriver: true, friction: 5 }).start();
+  }, []);
+
+  const handlePressOut = useCallback(() => {
+    Animated.spring(scaleAnim, { toValue: animations.activeScale, useNativeDriver: true, friction: 5 }).start();
+  }, []);
+
+  const hasReviews = barber.reviews > 0 && barber.rating > 0;
+  const reviewText = barber.reviews === 1 ? '1 review' : `${barber.reviews} reviews`;
+
+  return (
+    <Animated.View
+      style={[
+        styles.cardContainer,
+        { transform: [{ scale: scaleAnim }, { translateY: slideAnim }], opacity: fadeAnim },
+      ]}
+    >
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={onPress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        accessibilityRole="button"
+        accessibilityLabel={`Select ${barber.name}`}
+        accessibilityState={{ selected: isSelected }}
+      >
+        <View style={[styles.card, isSelected && styles.cardSelected]}>
+          <View style={styles.cardInner}>
+            {/* Avatar */}
+            <View style={[styles.avatar, { borderColor: isSelected ? colors.gold : colors.border }]}>
+              {barber.photoURL ? (
+                <Image
+                  source={{ uri: barber.photoURL }}
+                  style={styles.avatarImg}
+                  resizeMode="cover"
+                  accessibilityIgnoresInvertColors
+                />
+              ) : (
+                <Text style={[styles.avatarText, { color: isSelected ? colors.gold : colors.grey }]}>
+                  {barber.initials}
+                </Text>
+              )}
+              {isSelected && (
+                <View style={styles.avatarCheck}>
+                  <Ionicons name={icons.check} size={20} color={colors.gold} />
+                </View>
+              )}
+            </View>
+
+            {/* Info */}
+            <View style={styles.cardInfo}>
+              <View style={styles.nameLine}>
+                <Text style={[styles.barberName, isSelected && { color: colors.gold }]}>
+                  {barber.name}
+                </Text>
+                {barber.rating >= 4.9 && barber.reviews > 0 && (
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>TOP</Text>
+                  </View>
+                )}
+              </View>
+
+              <Text style={styles.barberTitle}>{barber.title}</Text>
+
+              <Text style={styles.ratingLine}>
+                {hasReviews
+                  ? `${barber.rating.toFixed(1)} ${barber.rating >= 4.8 ? '★' : '☆'} (${reviewText})`
+                  : 'New barber'}
+              </Text>
+
+              <View style={styles.tagRow}>
+                <View style={styles.tag}>
+                  <Ionicons name={icons.cutOutline} size={11} color={colors.gold} style={{ marginRight: 3 }} />
+                  <Text style={styles.tagText}>{barber.specialty}</Text>
+                </View>
+                {barber.experience !== '' && (
+                  <View style={styles.tag}>
+                    <Ionicons name={icons.time} size={11} color={colors.grey} style={{ marginRight: 3 }} />
+                    <Text style={[styles.tagText, { color: colors.grey }]}>{barber.experience}</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+
+            {/* Select indicator */}
+            <View style={[styles.selectCircle, isSelected && styles.selectCircleActive]}>
+              {isSelected ? (
+                <Ionicons name={icons.checkmark} size={16} color={colors.background} />
+              ) : (
+                <Ionicons name={icons.forward} size={16} color={colors.greyDark} />
+              )}
+            </View>
+          </View>
+        </View>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
+// ==========================================
+// Main Screen Component
+// ==========================================
 export default function SelectBarberScreen({ route, navigation }: Props): React.JSX.Element {
   const { serviceId } = route.params;
-  const [barbers,    setBarbers]    = useState<BarberOption[]>([]);
+  const [barbers, setBarbers] = useState<BarberOption[]>([]);
   const [loadingBar, setLoadingBar] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const btnScale = useRef(new Animated.Value(1)).current;
+  const btnScaleAnim = useRef(new Animated.Value(1)).current;
 
-  // ── Load barbers from `barbers` collection; refresh rating/reviewCount per doc via getDoc ──
+  // Load barbers from Firestore
   useEffect(() => {
     let mounted = true;
     void (async () => {
@@ -112,8 +238,6 @@ export default function SelectBarberScreen({ route, navigation }: Props): React.
     };
   }, []);
 
-  // ── Helpers ─────────────────────────────────────────────────────────────────
-
   function handleSelect(id: string): void {
     setSelectedId(prev => (prev === id ? null : id));
   }
@@ -123,16 +247,20 @@ export default function SelectBarberScreen({ route, navigation }: Props): React.
     const selected = barbers.find(b => b.id === selectedId);
     if (!selected) return;
 
-    Animated.sequence([
-      Animated.timing(btnScale, { toValue: 0.95, duration: 80, useNativeDriver: true }),
-      Animated.timing(btnScale, { toValue: 1,    duration: 80, useNativeDriver: true }),
-    ]).start(() => {
-      navigation.navigate('SelectDateTime', {
-        barberId: selected.id,
-        serviceId,
-        barberName: selected.name,
-      });
+    navigation.navigate('SelectDateTime', {
+      barberId: selected.id,
+      serviceId,
+      barberName: selected.name,
     });
+  }
+
+  function btnPressIn(): void {
+    if (!selectedId) return;
+    Animated.spring(btnScaleAnim, { toValue: animations.pressScale, useNativeDriver: true, friction: 5 }).start();
+  }
+
+  function btnPressOut(): void {
+    Animated.spring(btnScaleAnim, { toValue: animations.activeScale, useNativeDriver: true, friction: 5 }).start();
   }
 
   const selectedBarber = barbers.find(b => b.id === selectedId);
@@ -140,123 +268,48 @@ export default function SelectBarberScreen({ route, navigation }: Props): React.
     ? `Continue with ${selectedBarber.name}`
     : 'Select a Barber to Continue';
 
-  // ── Render ──────────────────────────────────────────────────────────────────
-
   return (
-    <View style={st.root}>
+    <View style={styles.root}>
       {/* Header */}
-      <View style={st.header}>
+      <View style={styles.header}>
         <TouchableOpacity
-          style={st.backBtn}
+          style={styles.backBtn}
           onPress={() => navigation.goBack()}
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <Ionicons name="chevron-back" size={24} color={GOLD} />
+          <Ionicons name={icons.back} size={24} color={colors.gold} />
         </TouchableOpacity>
-        <View style={st.headerCenter}>
-          <Text style={st.headerTitle}>Choose Your Barber</Text>
-          <Text style={st.headerSub}>Select who will be cutting your hair</Text>
+        <View style={styles.headerCenter}>
+          <Text style={styles.headerTitle}>Choose Your Barber</Text>
+          <Text style={styles.headerSub}>Select who will be cutting your hair</Text>
         </View>
         <View style={{ width: 40 }} />
       </View>
-      <View style={st.divider} />
+      <View style={styles.divider} />
 
       {/* Body */}
       {loadingBar ? (
-        <View style={st.loadingWrap}>
-          <ActivityIndicator size={32} color={GOLD} />
-          <Text style={st.loadingText}>Finding available barbers…</Text>
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator size={32} color={colors.gold} />
+          <Text style={styles.loadingText}>Finding available barbers…</Text>
         </View>
       ) : (
         <ScrollView
-          contentContainerStyle={st.scroll}
+          contentContainerStyle={styles.scroll}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {barbers.map((barber) => {
+          {barbers.map((barber, idx) => {
             const isSelected = selectedId === barber.id;
-            const hasReviews =
-              barber.reviews > 0 &&
-              typeof barber.rating === 'number' &&
-              barber.rating > 0;
             return (
-              <TouchableOpacity
+              <BarberCard
                 key={barber.id}
-                activeOpacity={0.85}
+                barber={barber}
+                isSelected={isSelected}
                 onPress={() => handleSelect(barber.id)}
-                accessibilityRole="button"
-                accessibilityLabel={`Select ${barber.name}`}
-                accessibilityState={{ selected: isSelected }}
-              >
-                <View style={[st.card, isSelected && st.cardSelected]}>
-                  <View style={st.cardInner}>
-                    {/* Avatar */}
-                    <View style={[st.avatar, { borderColor: isSelected ? GOLD : '#2A2A2A' }]}>
-                      {barber.photoURL ? (
-                        <Image
-                          source={{ uri: barber.photoURL }}
-                          style={st.avatarImg}
-                          resizeMode="cover"
-                          accessibilityIgnoresInvertColors
-                        />
-                      ) : (
-                        <Text style={[st.avatarText, { color: isSelected ? GOLD : '#888' }]}>
-                          {barber.initials}
-                        </Text>
-                      )}
-                      {isSelected && (
-                        <View style={st.avatarCheck}>
-                          <Ionicons name="checkmark-circle" size={20} color={GOLD} />
-                        </View>
-                      )}
-                    </View>
-
-                    {/* Info */}
-                    <View style={st.cardInfo}>
-                      <View style={st.nameLine}>
-                        <Text style={[st.barberName, isSelected && { color: GOLD }]}>
-                          {barber.name}
-                        </Text>
-                        {barber.rating >= 4.9 && barber.reviews > 0 && (
-                          <View style={st.badge}>
-                            <Text style={st.badgeText}>TOP</Text>
-                          </View>
-                        )}
-                      </View>
-
-                      <Text style={st.barberTitle}>{barber.title}</Text>
-
-                      <Text style={st.ratingLine}>
-                        {hasReviews
-                          ? `${barber.rating.toFixed(1)} ★ (${barber.reviews} ${barber.reviews === 1 ? 'review' : 'reviews'})`
-                          : 'New barber'}
-                      </Text>
-
-                      <View style={st.tagRow}>
-                        <View style={st.tag}>
-                          <Ionicons name="cut-outline" size={11} color={GOLD} style={{ marginRight: 3 }} />
-                          <Text style={st.tagText}>{barber.specialty}</Text>
-                        </View>
-                        {barber.experience !== '' && (
-                          <View style={st.tag}>
-                            <Ionicons name="time-outline" size={11} color="#888" style={{ marginRight: 3 }} />
-                            <Text style={[st.tagText, { color: '#888' }]}>{barber.experience}</Text>
-                          </View>
-                        )}
-                      </View>
-                    </View>
-
-                    {/* Select indicator */}
-                    <View style={[st.selectCircle, isSelected && st.selectCircleActive]}>
-                      {isSelected
-                        ? <Ionicons name="checkmark" size={16} color={BG} />
-                        : <Ionicons name="chevron-forward" size={16} color="#555" />
-                      }
-                    </View>
-                  </View>
-                </View>
-              </TouchableOpacity>
+                index={idx}
+              />
             );
           })}
 
@@ -265,11 +318,13 @@ export default function SelectBarberScreen({ route, navigation }: Props): React.
       )}
 
       {/* Footer button */}
-      <View style={st.footer}>
-        <Animated.View style={{ transform: [{ scale: btnScale }] }}>
+      <View style={styles.footer}>
+        <Animated.View style={[{ transform: [{ scale: btnScaleAnim }] }]}>
           <TouchableOpacity
-            style={[st.continueBtn, !selectedId && st.continueBtnDisabled]}
+            style={[styles.continueBtn, !selectedId && styles.continueBtnDisabled]}
             onPress={handleContinue}
+            onPressIn={btnPressIn}
+            onPressOut={btnPressOut}
             disabled={!selectedId}
             activeOpacity={0.85}
             accessibilityRole="button"
@@ -277,9 +332,9 @@ export default function SelectBarberScreen({ route, navigation }: Props): React.
             accessibilityState={{ disabled: !selectedId }}
           >
             {selectedId && (
-              <Ionicons name="checkmark-circle-outline" size={20} color={BG} style={{ marginRight: 8 }} />
+              <Ionicons name={icons.checkOutline} size={20} color={colors.background} style={{ marginRight: 8 }} />
             )}
-            <Text style={[st.continueBtnText, !selectedId && { color: '#555' }]}>
+            <Text style={[styles.continueBtnText, !selectedId && { color: colors.greyDark }]}>
               {btnLabel}
             </Text>
           </TouchableOpacity>
@@ -289,116 +344,223 @@ export default function SelectBarberScreen({ route, navigation }: Props): React.
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
-const st = StyleSheet.create({
-  root: { flex: 1, backgroundColor: BG },
+// ==========================================
+// Styles
+// ==========================================
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
 
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingTop: Platform.OS === 'ios' ? 56 : 24,
-    paddingBottom: 16,
-    paddingHorizontal: 16,
+    paddingBottom: spacing.lg,
+    paddingHorizontal: spacing.lg,
   },
   backBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: '#161616',
-    alignItems: 'center', justifyContent: 'center',
+    width: 40,
+    height: 40,
+    borderRadius: radius.full,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  headerCenter: { flex: 1, alignItems: 'center' },
-  headerTitle: { fontSize: 18, fontWeight: '800', color: '#FFFFFF', letterSpacing: 0.3 },
-  headerSub:   { fontSize: 12, color: '#666', marginTop: 2 },
-  divider: { height: 1, backgroundColor: '#1E1E1E' },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  headerTitle: {
+    fontSize: fonts.size.xl,
+    fontFamily: fonts.heading,
+    color: colors.white,
+    letterSpacing: fonts.letterSpacing.wide,
+  },
+  headerSub: {
+    fontSize: fonts.size.sm,
+    color: colors.grey,
+    marginTop: spacing.xs,
+    fontFamily: fonts.body,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: colors.borderSubtle,
+  },
 
-  loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14 },
-  loadingText: { fontSize: 13, color: '#555' },
+  loadingWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 14,
+  },
+  loadingText: {
+    fontSize: fonts.size.md,
+    color: colors.greyDark,
+    fontFamily: fonts.body,
+  },
 
-  scroll: { paddingHorizontal: 16, paddingTop: 20 },
+  scroll: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xl,
+  },
 
+  cardContainer: {
+    marginBottom: spacing.md,
+  },
   card: {
-    backgroundColor: CARD,
-    borderRadius: 16, borderWidth: 1.5, borderColor: '#222',
-    marginBottom: 14, overflow: 'hidden',
-    ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
-      android: { elevation: 4 },
-    }),
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+    ...shadows.sm,
   },
   cardSelected: {
-    borderColor: GOLD,
-    ...Platform.select({
-      ios: { shadowColor: GOLD, shadowOpacity: 0.25 },
-      android: { elevation: 8 },
-    }),
+    borderColor: colors.gold,
+    ...shadows.gold,
   },
-  cardInner: { flexDirection: 'row', alignItems: 'center', padding: 16 },
+  cardInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
 
   avatar: {
-    width: 64, height: 64, borderRadius: 32,
-    backgroundColor: '#1E1E1E', borderWidth: 2,
-    alignItems: 'center', justifyContent: 'center', marginRight: 14,
+    width: 64,
+    height: 64,
+    borderRadius: radius.full,
+    backgroundColor: colors.surfaceRaised,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.lg,
     overflow: 'hidden',
   },
-  avatarImg: { width: 64, height: 64, borderRadius: 30 },
-  avatarText: { fontSize: 20, fontWeight: '800', letterSpacing: 1 },
-  avatarCheck: { position: 'absolute', bottom: -2, right: -2, backgroundColor: BG, borderRadius: 12 },
+  avatarImg: {
+    width: 64,
+    height: 64,
+    borderRadius: 30,
+  },
+  avatarText: {
+    fontSize: fonts.size['2xl'],
+    fontFamily: fonts.bodyBold,
+    letterSpacing: fonts.letterSpacing.wide,
+  },
+  avatarCheck: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    backgroundColor: colors.background,
+    borderRadius: radius.lg,
+  },
 
-  cardInfo: { flex: 1 },
-  nameLine:  { flexDirection: 'row', alignItems: 'center', marginBottom: 2 },
-  barberName: { fontSize: 17, fontWeight: '800', color: '#FFFFFF', marginRight: 6 },
-  barberTitle: { fontSize: 12, color: '#888', marginBottom: 5 },
+  cardInfo: {
+    flex: 1,
+  },
+  nameLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  barberName: {
+    fontSize: fonts.size.lg,
+    fontFamily: fonts.bodyBold,
+    color: colors.white,
+    marginRight: spacing.sm,
+  },
+  barberTitle: {
+    fontSize: fonts.size.sm,
+    color: colors.grey,
+    marginBottom: spacing.sm,
+    fontFamily: fonts.body,
+  },
 
-  badge: { backgroundColor: GOLD, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 },
-  badgeText: { fontSize: 9, fontWeight: '900', color: BG, letterSpacing: 0.5 },
+  badge: {
+    backgroundColor: colors.gold,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
+  },
+  badgeText: {
+    fontSize: 9,
+    fontFamily: fonts.bodyBold,
+    color: colors.background,
+    letterSpacing: fonts.letterSpacing.normal,
+  },
 
   ratingLine: {
-    fontSize: 13,
-    color: GOLD,
-    fontWeight: '700',
-    marginBottom: 8,
+    fontSize: fonts.size.md,
+    color: colors.gold,
+    fontFamily: fonts.bodyBold,
+    marginBottom: spacing.sm,
   },
 
-  tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 4 },
-  tag: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#1E1E1E', borderRadius: 6,
-    paddingHorizontal: 7, paddingVertical: 3,
+  tagRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
   },
-  tagText: { fontSize: 11, color: GOLD, fontWeight: '600' },
+  tag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+  },
+  tagText: {
+    fontSize: fonts.size.xs,
+    color: colors.gold,
+    fontFamily: fonts.bodySemiBold,
+  },
 
   selectCircle: {
-    width: 32, height: 32, borderRadius: 16,
-    backgroundColor: '#1E1E1E', borderWidth: 1, borderColor: '#333',
-    alignItems: 'center', justifyContent: 'center', marginLeft: 8,
+    width: 32,
+    height: 32,
+    borderRadius: radius.full,
+    backgroundColor: colors.surfaceRaised,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: spacing.sm,
   },
-  selectCircleActive: { backgroundColor: GOLD, borderColor: GOLD },
-
-  anyCard: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#111', borderRadius: 14,
-    borderWidth: 1.5, borderColor: '#222', borderStyle: 'dashed',
-    padding: 16, marginBottom: 14,
+  selectCircleActive: {
+    backgroundColor: colors.gold,
+    borderColor: colors.gold,
   },
-  anyTitle: { fontSize: 15, fontWeight: '700', color: '#AAA', marginBottom: 2 },
-  anySub:   { fontSize: 12, color: '#555' },
 
   footer: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: BG,
-    paddingHorizontal: 20, paddingTop: 12,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: colors.background,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.md,
     paddingBottom: Platform.OS === 'ios' ? 36 : 20,
-    borderTopWidth: 1, borderTopColor: '#1E1E1E',
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSubtle,
   },
   continueBtn: {
     flexDirection: 'row',
-    backgroundColor: GOLD, borderRadius: 14, height: 54,
-    alignItems: 'center', justifyContent: 'center',
-    ...Platform.select({
-      ios: { shadowColor: GOLD, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.35, shadowRadius: 10 },
-      android: { elevation: 8 },
-    }),
+    backgroundColor: colors.gold,
+    borderRadius: radius['2xl'],
+    height: 54,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.gold,
   },
-  continueBtnDisabled: { backgroundColor: '#1A1A1A' },
-  continueBtnText: { fontSize: 16, fontWeight: '800', color: BG, letterSpacing: 0.3 },
+  continueBtnDisabled: {
+    backgroundColor: colors.surfaceRaised,
+  },
+  continueBtnText: {
+    fontSize: fonts.size.md,
+    fontFamily: fonts.bodyBold,
+    color: colors.background,
+    letterSpacing: fonts.letterSpacing.normal,
+  },
 });

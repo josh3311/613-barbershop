@@ -6,6 +6,8 @@ import {
   ScrollView,
 } from 'react-native';
 import { Text } from 'react-native-paper';
+import { Ionicons } from '@expo/vector-icons';
+import { colors, fonts, spacing, radius, icons } from '@/theme';
 
 interface Props {
   children: React.ReactNode;
@@ -56,7 +58,11 @@ export class ErrorBoundary extends React.Component<Props, State> {
     return (
       <View style={s.root}>
         <View style={s.iconWrap}>
-          <Text style={s.iconText}>⚠</Text>
+          <Ionicons
+            name={icons.warning}
+            size={36}
+            color={colors.red}
+          />
         </View>
 
         <Text style={s.title}>Something went wrong</Text>
@@ -86,71 +92,67 @@ export class ErrorBoundary extends React.Component<Props, State> {
 const s = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#0A0A0A',
+    backgroundColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 32,
+    paddingHorizontal: spacing['3xl'],
   },
   iconWrap: {
     width: 80,
     height: 80,
-    borderRadius: 40,
-    backgroundColor: '#1A0A0A',
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(229, 57, 53, 0.15)',
     borderWidth: 2,
-    borderColor: '#CF667944',
+    borderColor: colors.red,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 24,
-  },
-  iconText: {
-    fontSize: 36,
-    color: '#CF6679',
+    marginBottom: spacing.xl,
   },
   title: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    marginBottom: 10,
+    fontSize: fonts.size['2xl'],
+    fontFamily: fonts.bodyBold,
+    color: colors.white,
+    marginBottom: spacing.sm,
     textAlign: 'center',
   },
   subtitle: {
-    fontSize: 14,
-    color: '#888888',
+    fontSize: fonts.size.md,
+    color: colors.grey,
     textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 24,
+    lineHeight: fonts.lineHeight.relaxed * fonts.size.md,
+    marginBottom: spacing.xl,
   },
   detailBox: {
-    backgroundColor: '#111111',
-    borderRadius: 10,
-    padding: 14,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
     maxHeight: 120,
     width: '100%',
-    marginBottom: 24,
+    marginBottom: spacing.xl,
     borderWidth: 1,
-    borderColor: '#222222',
+    borderColor: colors.border,
   },
   detail: {
-    fontSize: 11,
-    color: '#CF6679',
+    fontSize: fonts.size.sm,
+    color: colors.red,
     fontFamily: 'monospace',
-    lineHeight: 16,
+    lineHeight: fonts.lineHeight.relaxed * fonts.size.sm,
   },
   retryBtn: {
-    backgroundColor: '#D4AF37',
-    borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 40,
-    shadowColor: '#A8861A',
+    backgroundColor: colors.gold,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing['3xl'],
+    shadowColor: colors.goldDim,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.7,
     shadowRadius: 8,
     elevation: 8,
   },
   retryText: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#0A0A0A',
-    letterSpacing: 1,
+    fontSize: fonts.size.lg,
+    fontFamily: fonts.bodyBold,
+    color: colors.background,
+    letterSpacing: fonts.letterSpacing.wide,
   },
 });

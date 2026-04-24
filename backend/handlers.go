@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -473,3 +475,313 @@ func barberCutGuide(c *gin.Context) {
 func tryOn(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"error": "Feature coming soon"})
 }
+
+// --- Try-On Kontext (FLUX Kontext on Replicate) ---
+
+type tryOnKontextRequest struct {
+	SelfieBase64 string `json:"selfie_base64"`
+	StylePrompt  string `json:"style_prompt"`
+}
+
+type tryOnKontextResponse struct {
+	ResultURL string `json:"result_url"`
+}
+
+// imgbbUploadResponse represents the JSON response from imgbb API
+type imgbbUploadResponse struct {
+	Data struct {
+		URL string `json:"url"`
+	} `json:"data"`
+	Status int    `json:"status"`
+	Error  string `json:"error,omitempty"`
+}
+
+// tryOnUploadImgbb uploads a base64 image to imgbb and returns the public URL
+func tryOnUploadImgbb(base64Image string) (string, error) {
+	apiKey := os.Getenv("IMGBB_API_KEY")
+	if apiKey == "" {
+		return "", fmt.Errorf("IMGBB_API_KEY not set")
+	}
+
+	// Prepare the form data
+	formData := url.Values{}
+	formData.Set("key", apiKey)
+	formData.Set("image", base64Image)
+
+	// Make the request to imgbb
+	resp, err := http.PostForm("https://api.imgbb.com/1/upload", formData)
+	if err != nil {
+		return "", fmt.Errorf("failed to upload to imgbb: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read imgbb response: %w", err)
+	}
+
+	var imgbbResp imgbbUploadResponse
+	if err := json.Unmarshal(body, &imgbbResp); err != nil {
+		return "", fmt.Errorf("failed to parse imgbb response: %w", err)
+	}
+
+	if imgbbResp.Status != 200 || imgbbResp.Data.URL == "" {
+		return "", fmt.Errorf("imgbb upload failed: %s", imgbbResp.Error)
+	}
+
+	return imgbbResp.Data.URL, nil
+}
+
+// replicatePredictionRequest represents the request body for Replicate API
+// For FLUX Kontext model route, we only send input (no version field)
+type replicatePredictionRequest struct {
+	Input map[string]interface{} `json:"input"`
+}
+
+// replicatePredictionResponse represents the response from Replicate API
+type replicatePredictionResponse struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
+	Output interface{} `json:"output"`
+	Error  string `json:"error,omitempty"`
+}
+
+// tryOnKontext handles the virtual try-on using FLUX Kontext on Replicate
+func tryOnKontext(c *gin.Context) {
+	// Fix 1: Log handler reached as very first line
+	log.Printf("[kontext] handler reached")
+
+	var req tryOnKontextRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("[kontext] ERROR: invalid request body: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+
+	// Fix 4: Log request details
+	log.Printf("[kontext] selfie base64 length: %d", len(req.SelfieBase64))
+	log.Printf("[kontext] style prompt: %s", req.StylePrompt)
+
+	if req.SelfieBase64 == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "selfie_base64 is required"})
+		return
+	}
+
+	if req.StylePrompt == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "style_prompt is required"})
+		return
+	}
+
+	// Step 1: Upload selfie to imgbb
+	publicURL, err := tryOnUploadImgbb(req.SelfieBase64)
+	if err != nil {
+		log.Printf("[kontext] ERROR: imgbb upload failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to upload image: " + err.Error()})
+		return
+	}
+
+	// Fix 4: Log and verify imgbb URL
+	log.Printf("[kontext] imgbb upload result: %s", publicURL)
+	if publicURL == "" || !strings.HasPrefix(publicURL, "http") {
+		log.Printf("[kontext] ERROR: invalid imgbb URL: %s", publicURL)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not upload photo. Try again."})
+		return
+	}
+	log.Printf("[kontext] imgbb URL confirmed: %s", publicURL)
+
+	// Step 2: Call FLUX Kontext on Replicate
+	replicateToken := os.Getenv("REPLICATE_API_TOKEN")
+	if replicateToken == "" {
+		log.Printf("[kontext] ERROR: REPLICATE_API_TOKEN not set")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "REPLICATE_API_TOKEN not set"})
+		return
+	}
+
+	// Fix 2: Use correct Replicate API format for hosted deployments
+	// No "version" field, just "input" with the correct parameters
+	predictionBody := map[string]interface{}{
+		"input": map[string]interface{}{
+			"input_image":      publicURL,
+			"prompt":           req.StylePrompt,
+			"output_format":    "png",
+			"safety_tolerance": 2,
+			"output_quality":   90,
+		},
+	}
+
+	jsonData, err := json.Marshal(predictionBody)
+	if err != nil {
+		log.Printf("[kontext] ERROR: failed to marshal prediction request: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to marshal prediction request"})
+		return
+	}
+
+	// Fix 2: Use correct model deployments endpoint URL
+	replicateURL := "https://api.replicate.com/v1/models/black-forest-labs/flux-kontext-pro/predictions"
+	log.Printf("[kontext] replicate request URL: %s", replicateURL)
+
+	httpReq, err := http.NewRequest("POST", replicateURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		log.Printf("[kontext] ERROR: failed to create prediction request: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create prediction request"})
+		return
+	}
+
+	// Fix 5: Ensure all required headers are set
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Token "+replicateToken)
+	httpReq.Header.Set("Prefer", "wait")
+
+	client := &http.Client{}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		log.Printf("[kontext] ERROR: replicate prediction request failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to start prediction: " + err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("[kontext] ERROR: failed to read prediction response: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read prediction response"})
+		return
+	}
+
+	// Fix 3: Log response status and body for debugging
+	log.Printf("[kontext] replicate create status: %d", resp.StatusCode)
+	log.Printf("[kontext] replicate create body: %s", string(body))
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		log.Printf("[kontext] ERROR: replicate prediction failed with status %d: %s", resp.StatusCode, string(body))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Replicate API error: " + string(body)})
+		return
+	}
+
+	var predictionResp replicatePredictionResponse
+	if err := json.Unmarshal(body, &predictionResp); err != nil {
+		log.Printf("[kontext] ERROR: failed to parse prediction response: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse prediction response"})
+		return
+	}
+
+	predictionID := predictionResp.ID
+	if predictionID == "" {
+		log.Printf("[kontext] ERROR: prediction ID is empty in response")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid prediction response: no ID"})
+		return
+	}
+	log.Printf("[kontext] prediction ID: %s", predictionID)
+
+	// Step 3: Poll for result
+	resultURL, err := pollReplicatePrediction(client, replicateToken, predictionID)
+	if err != nil {
+		log.Printf("[kontext] ERROR: polling failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Fix 4: Log final result
+	log.Printf("[kontext] final result URL: %s", resultURL)
+
+	// Step 4: Return result
+	c.JSON(http.StatusOK, tryOnKontextResponse{
+		ResultURL: resultURL,
+	})
+}
+
+// pollReplicatePrediction polls the Replicate API for prediction result
+// Polls every 3 seconds, max 120 seconds (40 attempts)
+func pollReplicatePrediction(client *http.Client, token, predictionID string) (string, error) {
+	maxAttempts := 40
+	pollInterval := 3 * time.Second
+	pollURL := fmt.Sprintf("https://api.replicate.com/v1/predictions/%s", predictionID)
+	pollCount := 0
+
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		time.Sleep(pollInterval)
+		pollCount++
+
+		req, err := http.NewRequest("GET", pollURL, nil)
+		if err != nil {
+			log.Printf("[kontext] ERROR: failed to create poll request: %v", err)
+			return "", fmt.Errorf("failed to create poll request: %w", err)
+		}
+
+		req.Header.Set("Authorization", "Token "+token)
+
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Printf("[kontext] poll attempt %d failed: %v", pollCount, err)
+			continue
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if err != nil {
+			log.Printf("[kontext] poll attempt %d read failed: %v", pollCount, err)
+			continue
+		}
+
+		// Fix 3: Log poll response body for debugging
+		log.Printf("[kontext] poll response body: %s", string(body))
+
+		var pollResp replicatePredictionResponse
+		if err := json.Unmarshal(body, &pollResp); err != nil {
+			log.Printf("[kontext] poll attempt %d parse failed: %v", pollCount, err)
+			continue
+		}
+
+		status := pollResp.Status
+		// Fix 4: Log poll count with status
+		log.Printf("[kontext] poll #%d status: %s", pollCount, status)
+
+		switch status {
+		case "succeeded":
+			// Fix 3: Handle FLUX Kontext output format - returns string URL, not array
+			resultURL := extractResultURLFromInterface(pollResp.Output)
+			if resultURL == "" {
+				return "", fmt.Errorf("prediction succeeded but no result URL found")
+			}
+			return resultURL, nil
+		case "failed":
+			errorMsg := pollResp.Error
+			if errorMsg == "" {
+				errorMsg = "Prediction failed"
+			}
+			log.Printf("[kontext] ERROR: prediction failed: %s", errorMsg)
+			return "", fmt.Errorf("%s", errorMsg)
+		case "canceled":
+			log.Printf("[kontext] ERROR: prediction was canceled")
+			return "", fmt.Errorf("prediction was canceled")
+		}
+		// Continue polling for "starting", "processing" statuses
+	}
+
+	log.Printf("[kontext] ERROR: polling timeout after %d attempts", maxAttempts)
+	return "", fmt.Errorf("polling timeout: prediction did not complete within 120 seconds")
+}
+
+// extractResultURLFromInterface extracts the result URL from Replicate output
+// Fix 3: FLUX Kontext returns output as a plain string URL, not an array
+func extractResultURLFromInterface(output interface{}) string {
+	if output == nil {
+		return ""
+	}
+
+	// Try string first (FLUX Kontext returns single string URL)
+	if str, ok := output.(string); ok {
+		return str
+	}
+
+	// Try array (fallback for other models)
+	if arr, ok := output.([]interface{}); ok && len(arr) > 0 {
+		if str, ok := arr[0].(string); ok {
+			return str
+		}
+	}
+
+	return ""
+}
+

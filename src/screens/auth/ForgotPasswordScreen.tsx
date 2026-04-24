@@ -15,28 +15,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '@/navigation/types';
 import { AuthService } from '@/services/auth.service';
+import { colors, fonts, spacing, radius, icons } from '@/theme';
 
-// ─── Theme ────────────────────────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
-const C = {
-  background:      '#0A0A0A',
-  surface:         '#1A1A1A',
-  surfaceElevated: '#222222',
-  gold:            '#D4AF37',
-  goldDark:        '#A8861A',
-  goldLight:       '#F0CC55',
-  error:           '#CF6679',
-  success:         '#4CAF50',
-  successBg:       '#0D2010',
-  textPrimary:     '#FFFFFF',
-  textSecondary:   '#AAAAAA',
-  textMuted:       '#666666',
-  inputBg:         '#252525',
-  inputBorder:     '#333333',
-  divider:         '#2A2A2A',
-} as const;
+const CARD_WIDTH = Math.min(SCREEN_WIDTH - 32, 440);
 
 // ─── Firebase error map ───────────────────────────────────────────────────────
 
@@ -102,7 +86,7 @@ export default function ForgotPasswordScreen({ navigation }: Props): React.JSX.E
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor={C.background} />
+      <StatusBar barStyle="light-content" backgroundColor={colors.background} />
 
       <KeyboardAvoidingView
         style={styles.flex}
@@ -131,7 +115,7 @@ export default function ForgotPasswordScreen({ navigation }: Props): React.JSX.E
 
             {/* Lock icon */}
             <View style={styles.lockBadge} accessibilityElementsHidden>
-              <Ionicons name="lock-closed" size={28} color={C.gold} />
+              <Ionicons name="lock-closed" size={28} color={colors.gold} />
             </View>
 
             <Text style={styles.cardTitle}>Reset Password</Text>
@@ -142,7 +126,7 @@ export default function ForgotPasswordScreen({ navigation }: Props): React.JSX.E
             {/* ── Success state ── */}
             {sent ? (
               <View style={styles.successBox} accessibilityRole="alert" accessibilityLabel="Reset email sent">
-                <Ionicons name="checkmark-circle" size={28} color={C.success} style={styles.successIcon} />
+                <Ionicons name={icons.check} size={28} color={colors.green} style={styles.successIcon} />
                 <View style={styles.successTextWrap}>
                   <Text style={styles.successTitle}>Email Sent!</Text>
                   <Text style={styles.successBody}>
@@ -179,16 +163,16 @@ export default function ForgotPasswordScreen({ navigation }: Props): React.JSX.E
                     onSubmitEditing={handleReset}
                     error={!!emailErr}
                     disabled={loading}
-                    left={<TextInput.Icon icon="email-outline" color={emailErr ? C.error : C.textMuted} />}
+                    left={<TextInput.Icon icon={() => <Ionicons name={icons.mail} size={20} color={emailErr ? colors.red : colors.greyDark} />} />}
                     style={styles.input}
                     outlineStyle={styles.outline}
                     contentStyle={styles.inputContent}
                     theme={{
                       colors: {
-                        primary: C.gold,
-                        onSurfaceVariant: C.textSecondary,
-                        background: C.inputBg,
-                        error: C.error,
+                        primary: colors.gold,
+                        onSurfaceVariant: colors.grey,
+                        background: colors.surface,
+                        error: colors.red,
                       },
                     }}
                     accessibilityLabel="Email address input"
@@ -201,7 +185,6 @@ export default function ForgotPasswordScreen({ navigation }: Props): React.JSX.E
 
                 {/* Send button */}
                 <Animated.View style={[styles.btnWrap, { transform: [{ scale: btnScale }] }]}>
-                  <View style={styles.btnGlow} />
                   <TouchableOpacity
                     onPress={handleReset}
                     onPressIn={pressIn}
@@ -215,13 +198,12 @@ export default function ForgotPasswordScreen({ navigation }: Props): React.JSX.E
                   >
                     {loading ? (
                       <View style={styles.btnLoadRow}>
-                        <ActivityIndicator size={20} color={C.background} />
-                        <Text style={styles.btnLoadText}>Sending…</Text>
+                        <ActivityIndicator size={20} color={colors.background} />
+                        <Text style={styles.btnLoadText}>Sending...</Text>
                       </View>
                     ) : (
                       <Text style={styles.btnText}>Send Reset Link</Text>
                     )}
-                    <View style={styles.btnDepth} />
                   </TouchableOpacity>
                 </Animated.View>
               </>
@@ -241,10 +223,11 @@ export default function ForgotPasswordScreen({ navigation }: Props): React.JSX.E
               accessibilityRole="button"
               accessibilityLabel="Back to Sign In"
             >
-              <Text style={styles.linkText}>
-                ‹ {'  '}
+              <View style={styles.backLinkRow}>
+                <Ionicons name={icons.back} size={16} color={colors.gold} />
+                <View style={styles.backLinkGap} />
                 <Text style={styles.linkAccent}>Back to Sign In</Text>
-              </Text>
+              </View>
             </TouchableOpacity>
           </View>
 
@@ -259,143 +242,128 @@ export default function ForgotPasswordScreen({ navigation }: Props): React.JSX.E
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const CARD_W = Math.min(SCREEN_WIDTH - 32, 440);
-
 const styles = StyleSheet.create({
-  root:  { flex: 1, backgroundColor: C.background },
+  root:  { flex: 1, backgroundColor: colors.background },
   flex:  { flex: 1 },
   scroll: {
     flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 48,
-    paddingHorizontal: 16,
+    paddingVertical: spacing['3xl'],
+    paddingHorizontal: spacing.lg,
   },
 
   // Brand
-  brand: { alignItems: 'center', marginBottom: 32 },
+  brand: { alignItems: 'center', marginBottom: spacing['3xl'] },
   logoOuter: {
-    width: 80, height: 80, borderRadius: 40,
-    backgroundColor: C.surface,
+    width: 80, height: 80, borderRadius: radius.full,
+    backgroundColor: colors.surface,
     alignItems: 'center', justifyContent: 'center',
-    marginBottom: 16,
-    shadowColor: C.gold, shadowOffset: { width: 0, height: 4 },
+    marginBottom: spacing.lg,
+    shadowColor: colors.gold, shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4, shadowRadius: 14, elevation: 18,
-    borderWidth: 1.5, borderColor: C.gold + '55',
+    borderWidth: 1.5, borderColor: colors.gold + '55',
   },
   logoInner: {
-    width: 62, height: 62, borderRadius: 31,
-    backgroundColor: C.surfaceElevated,
+    width: 62, height: 62, borderRadius: radius.full,
+    backgroundColor: colors.surfaceRaised,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: C.gold + '33',
+    borderWidth: 1, borderColor: colors.gold + '33',
   },
-  logoNum:   { fontSize: 20, fontWeight: '900', color: C.gold, letterSpacing: 1 },
-  brandName: { fontSize: 22, fontWeight: '900', color: C.textPrimary, letterSpacing: 4, marginBottom: 4 },
-  brandTag:  { fontSize: 12, color: C.gold, letterSpacing: 2, fontWeight: '500', textTransform: 'uppercase' },
+  logoNum:   { fontSize: 20, fontFamily: fonts.bodyBold, color: colors.gold, letterSpacing: 1 },
+  brandName: { fontSize: 22, fontFamily: fonts.heading, color: colors.white, letterSpacing: 4, marginBottom: spacing.xs },
+  brandTag:  { fontSize: 12, color: colors.gold, letterSpacing: 2, fontFamily: fonts.bodySemiBold, textTransform: 'uppercase' },
 
   // Card
   card: {
-    width: CARD_W,
-    backgroundColor: C.surface,
-    borderRadius: 20,
-    paddingHorizontal: 24,
+    width: CARD_WIDTH,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing['2xl'],
     paddingTop: 0,
-    paddingBottom: 28,
+    paddingBottom: spacing.xl,
     shadowColor: '#000', shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.7, shadowRadius: 24, elevation: 24,
-    borderWidth: 1, borderColor: '#2A2A2A',
+    borderWidth: 1, borderColor: colors.border,
     overflow: 'hidden',
   },
   cardAccent: {
-    height: 3, backgroundColor: C.gold,
-    marginHorizontal: -24, marginBottom: 24,
-    shadowColor: C.gold, shadowOffset: { width: 0, height: 0 },
+    height: 3, backgroundColor: colors.gold,
+    marginHorizontal: -spacing['2xl'], marginBottom: spacing.xl,
+    shadowColor: colors.gold, shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.8, shadowRadius: 8, elevation: 4,
   },
   lockBadge: {
-    width: 56, height: 56, borderRadius: 16,
-    backgroundColor: C.surfaceElevated,
+    width: 56, height: 56, borderRadius: radius.lg,
+    backgroundColor: colors.surfaceRaised,
     alignItems: 'center', justifyContent: 'center',
-    marginBottom: 16, alignSelf: 'center',
-    borderWidth: 1, borderColor: C.gold + '33',
+    marginBottom: spacing.lg, alignSelf: 'center',
+    borderWidth: 1, borderColor: colors.gold + '33',
     shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4, shadowRadius: 8, elevation: 6,
   },
-  lockIcon:  { fontSize: 26 },
-  cardTitle: { fontSize: 22, fontWeight: '800', color: C.textPrimary, marginBottom: 6, letterSpacing: 0.5, textAlign: 'center' },
-  cardSub:   { fontSize: 13, color: C.textSecondary, marginBottom: 22, lineHeight: 18, textAlign: 'center' },
+  cardTitle: { fontSize: fonts.size['2xl'], fontFamily: fonts.bodyBold, color: colors.white, marginBottom: spacing.sm, letterSpacing: 0.5, textAlign: 'center' },
+  cardSub:   { fontSize: fonts.size.md, color: colors.grey, marginBottom: spacing.lg, lineHeight: 18, textAlign: 'center' },
 
   // Success box
   successBox: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: C.successBg,
-    borderWidth: 1, borderColor: C.success + '55',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: colors.green + '15',
+    borderWidth: 1, borderColor: colors.green + '55',
+    borderRadius: radius.sm,
+    padding: spacing.lg,
     gap: 14,
-    marginBottom: 20,
+    marginBottom: spacing.lg,
   },
-  successIcon: { fontSize: 22, color: C.success, marginTop: 2 },
+  successIcon: { fontSize: 22, color: colors.green, marginTop: 2 },
   successTextWrap: { flex: 1 },
-  successTitle: { fontSize: 15, fontWeight: '800', color: C.success, marginBottom: 4 },
-  successBody:  { fontSize: 13, color: C.textSecondary, lineHeight: 18 },
-  successEmail: { color: C.gold, fontWeight: '700' },
+  successTitle: { fontSize: fonts.size.lg, fontFamily: fonts.bodyBold, color: colors.green, marginBottom: spacing.xs },
+  successBody:  { fontSize: fonts.size.md, color: colors.grey, lineHeight: 18 },
+  successEmail: { color: colors.gold, fontFamily: fonts.bodyBold },
 
   // Error banner
   errorBanner: {
-    backgroundColor: C.error + '1A',
-    borderWidth: 1, borderColor: C.error + '55',
-    borderRadius: 10, paddingVertical: 12, paddingHorizontal: 16, marginBottom: 18,
+    backgroundColor: colors.red + '1A',
+    borderWidth: 1, borderColor: colors.red + '55',
+    borderRadius: radius.sm, paddingVertical: spacing.md, paddingHorizontal: spacing.lg, marginBottom: spacing.lg,
   },
-  errorBannerText: { color: C.error, fontSize: 13, fontWeight: '500', lineHeight: 18 },
+  errorBannerText: { color: colors.red, fontSize: fonts.size.md, fontFamily: fonts.bodySemiBold, lineHeight: 18 },
 
   // Field
-  fieldWrap: { marginBottom: 18 },
-  input:        { backgroundColor: C.inputBg },
-  outline:      { borderRadius: 12, borderColor: C.inputBorder },
-  inputContent: { color: C.textPrimary, fontSize: 15 },
-  fieldErr:     { fontSize: 12, color: C.error, marginTop: 4, marginLeft: 4, fontWeight: '500' },
+  fieldWrap: { marginBottom: spacing.lg },
+  input:        { backgroundColor: colors.surface },
+  outline:      { borderRadius: radius.sm, borderColor: colors.border },
+  inputContent: { color: colors.white, fontSize: fonts.size.md },
+  fieldErr:     { fontSize: fonts.size.sm, color: colors.red, marginTop: spacing.xs, marginLeft: spacing.xs, fontFamily: fonts.bodySemiBold },
 
   // Button
-  btnWrap: { position: 'relative', marginBottom: 22 },
-  btnGlow: {
-    position: 'absolute', top: 4, left: 8, right: 8, bottom: -4,
-    backgroundColor: C.gold, borderRadius: 14, opacity: 0.22,
-    shadowColor: C.gold, shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.5, shadowRadius: 12,
-  },
+  btnWrap: { position: 'relative', marginBottom: spacing.lg },
   btn: {
-    backgroundColor: C.gold, borderRadius: 14, height: 54,
+    backgroundColor: colors.gold, borderRadius: radius['2xl'], height: 54,
     alignItems: 'center', justifyContent: 'center',
-    borderTopWidth: 1, borderTopColor: C.goldLight + '88',
-    shadowColor: C.goldDark, shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.8, shadowRadius: 10, elevation: 10,
-    overflow: 'hidden',
+    shadowColor: colors.gold, shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4, shadowRadius: 12, elevation: 10,
   },
   btnLoading:   { opacity: 0.85 },
-  btnDepth: {
-    position: 'absolute', bottom: 0, left: 0, right: 0, height: 4,
-    backgroundColor: C.goldDark, opacity: 0.55,
-    borderBottomLeftRadius: 14, borderBottomRightRadius: 14,
-  },
-  btnText:    { fontSize: 16, fontWeight: '800', color: C.background, letterSpacing: 1.5, textTransform: 'uppercase' },
+  btnText:    { fontSize: fonts.size.lg, fontFamily: fonts.bodyBold, color: colors.background, letterSpacing: 1.5, textTransform: 'uppercase' },
   btnLoadRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  btnLoadText:{ fontSize: 15, fontWeight: '700', color: C.background },
+  btnLoadText:{ fontSize: fonts.size.md, fontFamily: fonts.bodyBold, color: colors.background },
 
   // Divider
-  divRow:  { flexDirection: 'row', alignItems: 'center', marginBottom: 18 },
-  divLine: { flex: 1, height: 1, backgroundColor: C.divider },
-  divLabel:{ color: C.textMuted, fontSize: 13, marginHorizontal: 12, fontWeight: '500' },
+  divRow:  { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md },
+  divLine: { flex: 1, height: 1, backgroundColor: colors.border },
+  divLabel:{ color: colors.greyDark, fontSize: fonts.size.md, marginHorizontal: spacing.md, fontFamily: fonts.bodySemiBold },
 
   // Link
-  linkBtn:   { alignItems: 'center', paddingVertical: 4 },
-  linkText:  { fontSize: 14, color: C.textSecondary, textAlign: 'center' },
-  linkAccent:{ color: C.gold, fontWeight: '700' },
+  linkBtn:   { alignItems: 'center', paddingVertical: spacing.xs },
+  backLinkRow: { flexDirection: 'row', alignItems: 'center' },
+  backLinkGap: { width: spacing.sm },
+  linkAccent:{ color: colors.gold, fontFamily: fonts.bodyBold },
 
   // Footer
   footer: {
-    fontSize: 11, color: C.textMuted, textAlign: 'center',
-    marginTop: 24, letterSpacing: 0.3, lineHeight: 16,
+    fontSize: fonts.size.sm, color: colors.greyDark, textAlign: 'center',
+    marginTop: spacing.xl, letterSpacing: 0.3, lineHeight: 16,
   },
 });

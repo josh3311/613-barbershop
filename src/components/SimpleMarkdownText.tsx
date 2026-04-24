@@ -1,5 +1,6 @@
 import React from 'react';
 import { Text, StyleSheet, TextStyle, StyleProp } from 'react-native';
+import { colors, fonts } from '@/theme';
 
 type Props = {
   text: string;
@@ -71,7 +72,18 @@ function parseItalicsInPlain(s: string, nextKey: () => string): React.ReactNode[
 }
 
 const styles = StyleSheet.create({
-  base: { fontSize: 15, color: '#FFFFFF', lineHeight: 21 },
-  bold: { fontWeight: '800', color: '#FFFFFF' },
-  italic: { fontStyle: 'italic', color: '#FFFFFF' },
+  base: {
+    fontSize: fonts.size.lg,
+    color: colors.white,
+    lineHeight: fonts.lineHeight.normal * fonts.size.lg,
+    fontFamily: fonts.body,
+  },
+  bold: {
+    fontFamily: fonts.bodyBold,
+    color: colors.white,
+  },
+  italic: {
+    fontStyle: 'italic',
+    color: colors.white,
+  },
 });

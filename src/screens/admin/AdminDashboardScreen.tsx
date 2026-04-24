@@ -20,19 +20,7 @@ import { AdminStackParamList } from '@/navigation/types';
 import { Booking } from '@/types/booking.types';
 import { Barber } from '@/types/barber.types';
 import { BookingService } from '@/services/booking.service';
-
-const C = {
-  bg:     '#0A0A0A',
-  card:   '#141414',
-  border: '#252525',
-  gold:   '#D4AF37',
-  white:  '#FFFFFF',
-  sub:    '#666666',
-  muted:  '#444444',
-  green:  '#4CAF50',
-  red:    '#FF4444',
-  grey:   '#666666',
-} as const;
+import { colors, fonts, spacing, radius, icons } from '@/theme';
 
 const SERVICE_NAMES: Record<string, string> = {
   s1: 'Fade',
@@ -139,11 +127,11 @@ function Skeleton(): React.JSX.Element {
 
 const sk = StyleSheet.create({
   root:   { paddingHorizontal: 16, paddingTop: 8, gap: 12 },
-  header: { height: 52, borderRadius: 10, backgroundColor: '#1A1A1A' },
+  header: { height: 52, borderRadius: 10, backgroundColor: colors.surfaceRaised },
   row3:   { flexDirection: 'row', gap: 8 },
-  card:   { flex: 1, height: 88, borderRadius: 12, backgroundColor: '#1A1A1A' },
-  badges: { height: 36, borderRadius: 10, backgroundColor: '#1A1A1A' },
-  long:   { height: 72, borderRadius: 12, backgroundColor: '#1A1A1A' },
+  card:   { flex: 1, height: 88, borderRadius: radius.md, backgroundColor: colors.surfaceRaised },
+  badges: { height: 36, borderRadius: 10, backgroundColor: colors.surfaceRaised },
+  long:   { height: 72, borderRadius: radius.md, backgroundColor: colors.surfaceRaised },
 });
 
 export default function AdminDashboardScreen(): React.JSX.Element {
@@ -163,10 +151,8 @@ export default function AdminDashboardScreen(): React.JSX.Element {
       return sum;
     }, 0);
     const pending = todayBookings.filter((b) => b.status === 'pending').length;
-    const confirmed = todayBookings.filter((b) => b.status === 'confirmed')
-      .length;
-    const completed = todayBookings.filter((b) => b.status === 'completed')
-      .length;
+    const confirmed = todayBookings.filter((b) => b.status === 'confirmed').length;
+    const completed = todayBookings.filter((b) => b.status === 'completed').length;
     const declined = todayBookings.filter((b) => b.status === 'declined').length;
     return {
       total,
@@ -227,7 +213,7 @@ export default function AdminDashboardScreen(): React.JSX.Element {
 
   return (
     <View style={[s.root, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+      <StatusBar barStyle="light-content" backgroundColor={colors.background} />
 
       <ScrollView
         contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
@@ -240,7 +226,7 @@ export default function AdminDashboardScreen(): React.JSX.Element {
 
         {error ? (
           <View style={s.errBanner}>
-            <Ionicons name="warning-outline" size={18} color={C.red} />
+            <Ionicons name={icons.warning} size={18} color={colors.red} />
             <Text style={s.errText}>{error}</Text>
           </View>
         ) : null}
@@ -266,18 +252,18 @@ export default function AdminDashboardScreen(): React.JSX.Element {
 
             <Text style={s.sectionLabel}>Status today</Text>
             <View style={s.badgeRow}>
-              <View style={[s.badge, { borderColor: C.green + '50' }]}>
-                <Text style={[s.badgeText, { color: C.green }]}>
+              <View style={[s.badge, { borderColor: colors.green + '50' }]}>
+                <Text style={[s.badgeText, { color: colors.green }]}>
                   Confirmed {stats.confirmed}
                 </Text>
               </View>
-              <View style={[s.badge, { borderColor: C.grey + '50' }]}>
-                <Text style={[s.badgeText, { color: C.grey }]}>
+              <View style={[s.badge, { borderColor: colors.greyDark + '50' }]}>
+                <Text style={[s.badgeText, { color: colors.greyDark }]}>
                   Completed {stats.completed}
                 </Text>
               </View>
-              <View style={[s.badge, { borderColor: C.red + '50' }]}>
-                <Text style={[s.badgeText, { color: C.red }]}>
+              <View style={[s.badge, { borderColor: colors.red + '50' }]}>
+                <Text style={[s.badgeText, { color: colors.red }]}>
                   Declined {stats.declined}
                 </Text>
               </View>
@@ -291,7 +277,7 @@ export default function AdminDashboardScreen(): React.JSX.Element {
               accessibilityLabel="Backfill loyalty stamps for completed bookings"
             >
               {backfillBusy ? (
-                <ActivityIndicator color={C.gold} />
+                <ActivityIndicator color={colors.gold} />
               ) : (
                 <Text style={s.backfillBtnText}>Backfill loyalty</Text>
               )}
@@ -316,12 +302,12 @@ export default function AdminDashboardScreen(): React.JSX.Element {
                   accessibilityLabel={`${row.displayName} schedule for today`}
                 >
                   <View style={s.barberCardTop}>
-                    <Ionicons name="person-outline" size={20} color={C.gold} />
+                    <Ionicons name={icons.person} size={20} color={colors.gold} />
                     <Text style={s.barberName}>{row.displayName}</Text>
                     <Ionicons
-                      name="chevron-forward"
+                      name={icons.forward}
                       size={18}
-                      color={C.sub}
+                      color={colors.grey}
                       style={{ marginLeft: 'auto' }}
                     />
                   </View>
@@ -350,20 +336,21 @@ export default function AdminDashboardScreen(): React.JSX.Element {
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: C.bg },
+  root: { flex: 1, backgroundColor: colors.background },
   greeting: {
     fontSize: 22,
-    fontWeight: '800',
-    color: C.white,
+    fontFamily: fonts.heading,
+    color: colors.white,
     paddingHorizontal: 16,
     marginTop: 8,
   },
   dateLine: {
     fontSize: 13,
-    color: C.sub,
+    color: colors.grey,
     paddingHorizontal: 16,
     marginTop: 4,
     marginBottom: 16,
+    fontFamily: fonts.body,
   },
   errBanner: {
     flexDirection: 'row',
@@ -372,12 +359,12 @@ const s = StyleSheet.create({
     marginHorizontal: 16,
     marginBottom: 12,
     padding: 12,
-    borderRadius: 10,
-    backgroundColor: '#1A0A0A',
+    borderRadius: radius.sm,
+    backgroundColor: colors.red + '15',
     borderWidth: 1,
-    borderColor: C.red + '40',
+    borderColor: colors.red + '40',
   },
-  errText: { flex: 1, fontSize: 13, color: C.red },
+  errText: { flex: 1, fontSize: 13, color: colors.red, fontFamily: fonts.body },
   statsRow: {
     flexDirection: 'row',
     gap: 8,
@@ -386,16 +373,16 @@ const s = StyleSheet.create({
   },
   statCard: {
     flex: 1,
-    backgroundColor: C.card,
-    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: C.border,
+    borderColor: colors.border,
     paddingVertical: 12,
     paddingHorizontal: 8,
     alignItems: 'center',
     ...Platform.select({
       ios: {
-        shadowColor: C.gold,
+        shadowColor: colors.gold,
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.06,
         shadowRadius: 6,
@@ -405,20 +392,20 @@ const s = StyleSheet.create({
   },
   statVal: {
     fontSize: 20,
-    fontWeight: '900',
-    color: C.gold,
+    fontFamily: fonts.bodyBold,
+    color: colors.gold,
     marginBottom: 4,
   },
   statLabel: {
     fontSize: 10,
-    color: C.sub,
-    fontWeight: '700',
+    color: colors.grey,
+    fontFamily: fonts.bodyBold,
     textAlign: 'center',
   },
   sectionLabel: {
     fontSize: 11,
-    color: C.muted,
-    fontWeight: '800',
+    color: colors.greyDark,
+    fontFamily: fonts.bodyBold,
     letterSpacing: 1.5,
     paddingHorizontal: 16,
     marginBottom: 10,
@@ -427,18 +414,18 @@ const s = StyleSheet.create({
     marginHorizontal: 16,
     marginBottom: 16,
     paddingVertical: 12,
-    borderRadius: 12,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: C.gold + '55',
-    backgroundColor: '#161616',
+    borderColor: colors.gold + '55',
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 44,
   },
   backfillBtnText: {
     fontSize: 13,
-    fontWeight: '800',
-    color: C.gold,
+    fontFamily: fonts.bodyBold,
+    color: colors.gold,
     letterSpacing: 0.5,
   },
   badgeRow: {
@@ -451,24 +438,25 @@ const s = StyleSheet.create({
   badge: {
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 20,
+    borderRadius: radius.sm,
     borderWidth: 1,
-    backgroundColor: '#161616',
+    backgroundColor: colors.surface,
   },
-  badgeText: { fontSize: 12, fontWeight: '700' },
+  badgeText: { fontSize: 12, fontFamily: fonts.bodyBold },
   empty: {
     fontSize: 14,
-    color: C.sub,
+    color: colors.grey,
     paddingHorizontal: 16,
     marginBottom: 12,
+    fontFamily: fonts.body,
   },
   barberCard: {
     marginHorizontal: 16,
     marginBottom: 10,
-    backgroundColor: C.card,
-    borderRadius: 14,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: C.border,
+    borderColor: colors.border,
     padding: 14,
   },
   barberCardTop: {
@@ -479,11 +467,11 @@ const s = StyleSheet.create({
   },
   barberName: {
     fontSize: 16,
-    fontWeight: '800',
-    color: C.white,
+    fontFamily: fonts.bodyBold,
+    color: colors.white,
     flex: 1,
   },
   barberMeta: { gap: 4, paddingLeft: 30 },
-  metaText: { fontSize: 12, color: C.sub, fontWeight: '600' },
-  metaGold: { fontSize: 12, color: C.gold, fontWeight: '700' },
+  metaText: { fontSize: 12, color: colors.grey, fontFamily: fonts.bodySemiBold },
+  metaGold: { fontSize: 12, color: colors.gold, fontFamily: fonts.bodyBold },
 });

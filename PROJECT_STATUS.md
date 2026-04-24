@@ -4,9 +4,9 @@ For: Builder Agent (What to build, what's done, UI specs)
 > **Every session (humans + AI):** Follow **`START-HERE.md`** for the full read order. At minimum, read **this file** first for sprint/backlog/UI. Then **`PROJECT-HANDOFF-FOR-KIMI.md`** (security/store context) and **`REVIEWER_CHECKLIST.md`** (compliance) when touching infra or release. After shipping a meaningful feature, update **Last Updated** and the relevant checklists so the plan stays true.
 
 # 613 Barbershop - Project Status
-**Last Updated:** 2026-04-18 (admin dashboard complete; pre-demo sprint)  
-**Stack:** Expo SDK ~54, React Native, TypeScript, Firebase  
-**Theme:** Dark (#0A0A0A), Gold (#D4AF37)
+**Last Updated:** 2026-04-23 (Style tab fully rebuilt with AI try-on, chat, camera flows; post-Redesign sprint)  
+**Stack:** Expo SDK ~54, React Native, TypeScript, Firebase, Go backend  
+**Theme:** Dark (#0A0A0A), Gold (#D4AF37), Bebas Neue + Inter typography
 
 ## ✅ COMPLETED (Do Not Rebuild)
 - [x] Auth flow (Login/Register/Forgot) for Clients & Barbers
@@ -47,18 +47,30 @@ For: Builder Agent (What to build, what's done, UI specs)
       - AdminNavigator with Dashboard and Profile tabs
       - role: 'admin' routes to AdminNavigator in RootNavigator
       - Firestore rules updated with isAdmin() function
+- [x] **AI Virtual Try-On with FLUX Kontext Pro** — Before/after comparison with draggable slider, saves to `users/{uid}.savedLooks`
+- [x] **Camera flow for style analysis** — Native `expo-camera` with preview modal, web fallback to `expo-image-picker`
+- [x] **Gallery upload flow for style analysis** — `expo-image-picker` with crop/preview, saves base64 selfie to Firestore
+- [x] **AI Chat Stylist fully rebuilt** — Strict focus mode, photo uploads trigger re-analysis, chat history in `users/{uid}/styleChats`, style profile context on open, `[BOOK_STYLE:Name]` booking integration
 
 ## 🚧 ACTIVE SPRINT (Build These Now)
 
-   Priority 1: Pre-demo polish and bug fixes
-   - Fix "1 reviews" grammar to "1 review" on SelectBarberScreen
-   - Fix admin greeting name (change displayName in Firestore to "Amir")
-   - Test full booking flow end to end one final time
-   - Fix Expo Go mobile testing issue
-   - Prepare demo script for Amir
+**Current Sprint Status:** "Style tab fully rebuilt — analysis, try-on, chat all working. Next: fix Reanimated → built-in Animated, full design polish."
+
+   Priority 1: Web compatibility and design polish
+   - Replace all `react-native-reanimated` with React Native's built-in `Animated` API
+   - Fix Booking tab crash on web (Reanimated root cause)
+   - Design polish pass: Bebas Neue fonts, 3D card shadows, full `theme.ts` rollout
+   - Test full client + barber + admin flows after Reanimated fix
 
 ## ⚠️ REQUIRED FIX (Before Release)
 - [x] **Barber `BarberProfileScreen` — Save / persist:** Fixed Apr 2026 — `BarberService.saveProfile(uid, …)` **upserts** (`create` if `barbers/{uid}` missing, else `update`). Post-save uses `await load(…).catch(…)` so reload errors don’t leave ambiguous state. Re-test on web + native after deploy.
+
+## 🐛 KNOWN ISSUES / NEXT STEPS
+
+- **Reanimated web error:** `react-native-reanimated` causes crashes on web platform — replace all usage with built-in `Animated` API
+- **Booking tab crash on web:** Same root cause as Reanimated error
+- **Design polish incomplete:** Some screens still need full `theme.ts` integration (Bebas Neue headers, 3D card shadows, consistent spacing)
+- **Post-Reanimated testing:** Verify all client + barber + admin flows work correctly after animation library swap
 
 ## 📋 BACKLOG (Future Sprints)
 - [ ] Cancel window enforcement (e.g., no cancel within 2 hours)
@@ -85,11 +97,23 @@ For: Builder Agent (What to build, what's done, UI specs)
 - Chat Service: `src/services/chat.service.ts`
 - Chat Types: `src/types/chat.types.ts`
 - Navigation: `src/navigation/RootNavigator.tsx`, `ClientNavigator.tsx`, `BarberNavigator.tsx`, `HistoryNavigator.tsx`, `ScheduleNavigator.tsx`
-- Screens Client: `src/screens/client/HomeScreen.tsx`, `ServicesScreen.tsx`, `SelectBarberScreen.tsx`, `BookingScreen.tsx`, `HistoryScreen.tsx`, `BookingConfirmationScreen.tsx`, `src/screens/chat/ChatScreen.tsx`
+- Screens Client: `src/screens/client/HomeScreen.tsx`, `ServicesScreen.tsx`, `SelectBarberScreen.tsx`, `BookingScreen.tsx`, `HistoryScreen.tsx`, `BookingConfirmationScreen.tsx`, `src/screens/chat/ChatScreen.tsx`, `StyleOnboardingScreen.tsx`, `StyleResultsScreen.tsx`, `StyleChatScreen.tsx`
 - Screens Barber: `src/screens/barber/BarberDashboardScreen.tsx`, `ScheduleScreen.tsx`, `ClientsScreen.tsx`, `BarberProfileScreen.tsx`
-- Services: `src/services/booking.service.ts`, `barber.service.ts`, `push.service.ts`, `chat.service.ts`
+- Services: `src/services/booking.service.ts`, `barber.service.ts`, `push.service.ts`, `chat.service.ts`, `aiChat.service.ts`, `ai.service.ts`
 - Cloud Functions: `functions/src/index.ts` (Expo push on booking create/update)
 - Hooks: `src/hooks/useAuth.ts`
+- Theme: `src/theme.ts` (design system — colors, fonts, spacing, animations)
+
+### Environment Variables (Backend)
+- `ANTHROPIC_API_KEY` — Claude API for analysis and chat
+- `REPLICATE_API_TOKEN` — Replicate API — FLUX Kontext Pro try-on + any future models
+- `IMGBB_API_KEY` — imgbb.com — public image hosting for Replicate input
+- `UNSPLASH_ACCESS_KEY` — Unsplash API for style reference photos
+
+### Backend Endpoints (Go)
+- `POST /api/analyze-profile` — Photo analysis + initial recommendations
+- `POST /api/style-chat` — AI stylist chat with full conversation history
+- `POST /api/try-on-kontext` — FLUX Kontext hair try-on via Replicate
 
 ## 🚨 CURRENT BLOCKERS
 - None

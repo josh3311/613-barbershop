@@ -17,52 +17,30 @@ import { Booking, BookingStatus } from '@/types/booking.types';
 import { safeFormatTime, safeToDate } from '@/utils/date.utils';
 import RatingModal from '@/components/RatingModal';
 import { RatingService } from '@/services/rating.service';
+import { colors, fonts, spacing, radius, icons } from '@/theme';
 
 type Props = CompositeScreenProps<
   NativeStackScreenProps<HistoryStackParamList, 'HistoryList'>,
   BottomTabScreenProps<ClientTabParamList>
 >;
 
-const C = {
-  bg:         '#0A0A0A',
-  card:       '#161616',
-  elevated:   '#1E1E1E',
-  gold:       '#D4AF37',
-  goldGlow:   '#D4AF3715',
-  goldBorder: '#D4AF3730',
-  green:      '#4CAF50',
-  greenBg:    '#0D200D',
-  greenBdr:   '#4CAF5030',
-  amber:      '#FF9800',
-  amberBg:    '#1A1000',
-  danger:     '#CF6679',
-  dangerBg:   '#1A0A0A',
-  dangerBdr:  '#CF667940',
-  red:        '#FF4444',
-  redBg:      '#2A0A0A',
-  redBdr:     '#FF444430',
-  white:      '#FFFFFF',
-  sub:        '#888888',
-  muted:      '#333333',
-  divider:    '#1A1A1A',
-} as const;
-
 const SERVICE_NAMES: Record<string, string> = {
   s1: 'Fade', s2: 'Lineup', s3: 'Beard Trim', s4: 'Haircut', s5: 'Beard + Haircut',
 };
 const SERVICE_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
-  s1: 'cut-outline', s2: 'cut-outline', s3: 'brush-outline',
-  s4: 'cut-outline', s5: 'star-outline',
+  s1: icons.cutOutline, s2: icons.cutOutline, s3: icons.brush,
+  s4: icons.cutOutline, s5: icons.starOutline,
 };
 
+// Status colors using theme
 const STATUS_META: Record<string, { label: string; color: string; bg: string; icon: keyof typeof Ionicons.glyphMap }> = {
-  pending:     { label: 'Pending Confirmation', color: '#FF9800', bg: '#1A1000', icon: 'time-outline' },
-  confirmed:   { label: 'Confirmed',            color: C.green,  bg: C.greenBg, icon: 'checkmark-circle-outline' },
-  declined:    { label: 'Declined by Barber',   color: C.danger, bg: C.dangerBg, icon: 'close-circle-outline' },
-  in_progress: { label: 'In Chair',             color: C.gold,   bg: C.goldGlow, icon: 'cut-outline' },
-  completed:   { label: 'Completed',            color: '#4CAF50',bg: C.greenBg,  icon: 'checkmark-done-outline' },
-  cancelled:   { label: 'Cancelled',            color: C.danger, bg: C.dangerBg, icon: 'close-circle-outline' },
-  no_show:     { label: 'No Show',              color: C.danger, bg: C.dangerBg, icon: 'alert-circle-outline' },
+  pending:     { label: 'Pending', color: colors.gold,  bg: colors.gold + '15', icon: icons.time },
+  confirmed:   { label: 'Confirmed', color: colors.green, bg: colors.green + '15', icon: icons.checkOutline },
+  declined:    { label: 'Declined', color: colors.red, bg: colors.red + '15', icon: icons.close },
+  in_progress: { label: 'In Chair', color: colors.blue || '#2196F3', bg: (colors.blue || '#2196F3') + '15', icon: icons.cut },
+  completed:   { label: 'Completed', color: colors.green, bg: colors.green + '15', icon: icons.check },
+  cancelled:   { label: 'Cancelled', color: colors.red, bg: colors.red + '15', icon: icons.close },
+  no_show:     { label: 'No Show', color: colors.red, bg: colors.red + '15', icon: icons.warning },
 };
 
 const DAYS   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -77,203 +55,10 @@ function formatBookingDate(ts: Timestamp | null | undefined): string {
 /** Statuses the client can still cancel */
 const CANCELLABLE: BookingStatus[] = ['pending', 'confirmed'];
 
-/** Three-step cancel state — works on web AND native (no Alert.alert needed) */
+/** Three-step cancel state */
 type CancelState = 'idle' | 'confirm' | 'loading';
 
-// Styles must be declared BEFORE components that reference them (avoids web bundle / TDZ issues)
-const s = StyleSheet.create({
-  root:   { flex: 1, backgroundColor: C.bg },
-  center: { flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center', gap: 14 },
-  list:   { paddingHorizontal: 16, paddingTop: 8 },
-  listEmpty: { flexGrow: 1 },
-
-  header: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 18, paddingTop: 10, paddingBottom: 10,
-  },
-  headerEyebrow: { fontSize: 10, color: C.muted, fontWeight: '800', letterSpacing: 2, marginBottom: 2 },
-  headerTitle:   { fontSize: 22, fontWeight: '900', color: C.white, letterSpacing: -0.3 },
-  headerLine:    { height: 1, marginHorizontal: 18, backgroundColor: C.gold, opacity: 0.15, marginBottom: 6 },
-  countBadge: {
-    backgroundColor: C.goldGlow, borderWidth: 1, borderColor: C.goldBorder,
-    borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5,
-  },
-  countText: { fontSize: 13, fontWeight: '800', color: C.gold },
-  loadingText: { fontSize: 13, color: C.muted },
-
-  errorBanner: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#1A0A0A', borderWidth: 1, borderColor: C.danger + '40',
-    borderRadius: 10, marginHorizontal: 16, marginBottom: 10,
-    padding: 12,
-  },
-  errorText: { flex: 1, fontSize: 13, color: C.danger },
-
-  card: {
-    backgroundColor: C.card, borderRadius: 14,
-    borderWidth: 1, borderColor: C.goldBorder,
-    overflow: 'hidden', marginBottom: 12,
-    ...Platform.select({
-      ios:     { shadowColor: C.gold, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 10 },
-      android: { elevation: 6 },
-    }),
-  },
-  cardDimmed: { opacity: 0.55 },
-  cardAccent: { height: 3 },
-  cardHeader: {
-    flexDirection: 'row', alignItems: 'center',
-    padding: 14, gap: 12,
-  },
-  svcIconWrap: {
-    width: 44, height: 44, borderRadius: 11,
-    backgroundColor: C.goldGlow, borderWidth: 1, borderColor: C.goldBorder,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  svcName:  { fontSize: 16, fontWeight: '800', color: C.white, marginBottom: 3 },
-  svcDate:  { fontSize: 11, color: C.sub },
-  svcPrice: { fontSize: 24, fontWeight: '900', color: C.gold, letterSpacing: -0.5 },
-
-  cardFooter: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 14, paddingBottom: 12, gap: 10,
-  },
-  codeWrap:     { flexDirection: 'row', alignItems: 'center' },
-  codeText:     { fontSize: 11, color: C.muted, fontFamily: 'monospace', letterSpacing: 1 },
-  durationWrap: { flexDirection: 'row', alignItems: 'center' },
-  durationText: { fontSize: 11, color: C.muted },
-  statusBadge: {
-    marginLeft: 'auto', flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 10, paddingVertical: 4,
-    borderRadius: 20, borderWidth: 1,
-  },
-  statusText: { fontSize: 11, fontWeight: '700' },
-
-  barberRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 14, paddingBottom: 8,
-  },
-  barberLabel: { fontSize: 12, color: C.gold, fontWeight: '600' },
-
-  noticeRow: {
-    flexDirection: 'row', alignItems: 'center',
-    borderTopWidth: 1,
-    paddingHorizontal: 14, paddingVertical: 10,
-  },
-  noticeText: { flex: 1, fontSize: 11, lineHeight: 16 },
-
-  snackbar: {
-    marginBottom: 80, marginHorizontal: 12, borderRadius: 12,
-    borderWidth: 1,
-  },
-  snackbarSuccess: {
-    backgroundColor: '#0D200D', borderColor: '#4CAF5060',
-  },
-  snackbarError: {
-    backgroundColor: '#2A0A0A', borderColor: '#FF444440',
-  },
-
-  msgBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: C.goldBorder,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    backgroundColor: C.elevated,
-  },
-  msgBtnText: { flex: 1, fontSize: 13, fontWeight: '700', color: C.white },
-
-  rateSection: {
-    borderTopWidth: 1,
-    borderTopColor: C.goldBorder,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    backgroundColor: C.bg,
-  },
-  rateLoading: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 4,
-  },
-  rateBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#1A1A1A',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: C.goldBorder,
-    paddingVertical: 11,
-    gap: 8,
-  },
-  rateBtnText: { fontSize: 13, fontWeight: '800', color: C.gold },
-  ratedLabel: { fontSize: 13, fontWeight: '700', color: C.sub },
-  ratedLabelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-
-  cancelWrap: {
-    borderTopWidth: 1, borderTopColor: C.redBdr,
-    backgroundColor: C.redBg,
-    paddingHorizontal: 14, paddingVertical: 12,
-  },
-
-  cancelBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: C.redBdr,
-    borderRadius: 10, paddingVertical: 11,
-    backgroundColor: '#3D0808',
-  },
-  cancelBtnText: { fontSize: 13, fontWeight: '800', color: C.red },
-
-  confirmWrap:    { gap: 10 },
-  confirmTextRow: { flexDirection: 'row', alignItems: 'flex-start' },
-  confirmText:    { flex: 1, fontSize: 13, color: C.white, lineHeight: 18 },
-  confirmBtns:    { flexDirection: 'row', gap: 10 },
-  keepBtn: {
-    flex: 1, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: C.muted,
-    borderRadius: 10, paddingVertical: 11,
-    backgroundColor: C.elevated,
-  },
-  keepBtnText:    { fontSize: 13, fontWeight: '700', color: C.sub },
-  yesCancelBtn: {
-    flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    borderRadius: 10, paddingVertical: 11,
-    backgroundColor: C.red,
-    ...Platform.select({
-      ios:     { shadowColor: C.red, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.4, shadowRadius: 6 },
-      android: { elevation: 4 },
-    }),
-  },
-  yesCancelBtnText: { fontSize: 13, fontWeight: '800', color: C.white },
-
-  cancelLoadRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 4 },
-  cancelLoadText: { fontSize: 13, color: C.red },
-
-  emptyWrap: {
-    flex: 1, alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: 40, gap: 12, paddingTop: 60,
-  },
-  emptyIconWrap: {
-    width: 80, height: 80, borderRadius: 40,
-    backgroundColor: C.elevated, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: C.divider, marginBottom: 8,
-  },
-  emptyTitle:  { fontSize: 20, fontWeight: '800', color: C.white, textAlign: 'center' },
-  emptySub:    { fontSize: 13, color: C.sub, textAlign: 'center', lineHeight: 18 },
-  emptyBtn: {
-    backgroundColor: C.gold, borderRadius: 14,
-    paddingHorizontal: 24, paddingVertical: 12, marginTop: 8,
-  },
-  emptyBtnText: { fontSize: 14, fontWeight: '800', color: C.bg },
-});
-
-// ── Booking card (standalone component with own cancel state) ─────────────────
+// ─── Booking Card Component ───────────────────────────────────────────────────
 
 function BookingCard({
   item,
@@ -292,7 +77,7 @@ function BookingCard({
 
   const meta        = STATUS_META[item.status] ?? STATUS_META.pending;
   const svcName     = SERVICE_NAMES[item.serviceId] ?? item.serviceId;
-  const svcIcon     = SERVICE_ICONS[item.serviceId] ?? 'cut-outline';
+  const svcIcon     = SERVICE_ICONS[item.serviceId] ?? icons.cutOutline;
   const dateLabel   = formatBookingDate(item.scheduledAt);
   const shortCode   = item.id.substring(0, 6).toUpperCase();
   const barberLabel = item.barberName ?? 'Your Barber';
@@ -315,183 +100,182 @@ function BookingCard({
   }
 
   return (
-    <View style={[s.card, isTerminal && s.cardDimmed]}>
-      {/* Top accent stripe coloured by status */}
-      <View style={[s.cardAccent, { backgroundColor: meta.color }]} />
+    <View style={[styles.card, isTerminal && styles.cardDimmed]}>
+      {/* Left status bar */}
+      <View style={[styles.leftStatusBar, { backgroundColor: meta.color }]} />
 
-      <View style={s.cardHeader}>
-        <View style={s.svcIconWrap}>
-          <Ionicons name={svcIcon} size={20} color={isTerminal ? C.muted : C.gold} />
+      <View style={styles.cardContent}>
+        {/* Header */}
+        <View style={styles.cardHeader}>
+          <View style={styles.svcIconWrap}>
+            <Ionicons name={svcIcon} size={20} color={isTerminal ? colors.greyDark : colors.gold} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.svcName, isTerminal && { color: colors.grey }]}>{svcName}</Text>
+            <Text style={styles.svcDate}>{dateLabel}</Text>
+          </View>
+          <Text style={[styles.svcPrice, isTerminal && { color: colors.grey }]}>${item.price}</Text>
         </View>
-        <View style={{ flex: 1 }}>
-          <Text style={[s.svcName, isTerminal && { color: C.sub }]}>{svcName}</Text>
-          <Text style={s.svcDate}>{dateLabel}</Text>
-        </View>
-        <Text style={[s.svcPrice, isTerminal && { color: C.sub }]}>${item.price}</Text>
-      </View>
 
-      {/* Barber row */}
-      <View style={s.barberRow}>
-        <Ionicons name="cut-outline" size={12} color={isTerminal ? C.muted : C.gold} style={{ marginRight: 5 }} />
-        <Text style={[s.barberLabel, isTerminal && { color: C.sub }]}>{barberLabel}</Text>
-      </View>
+        {/* Barber row */}
+        <View style={styles.barberRow}>
+          <Ionicons name={icons.cutOutline} size={12} color={isTerminal ? colors.greyDark : colors.gold} style={{ marginRight: 5 }} />
+          <Text style={[styles.barberLabel, isTerminal && { color: colors.grey }]}>{barberLabel}</Text>
+        </View>
 
-      {/* Footer: code · duration · status badge */}
-      <View style={s.cardFooter}>
-        <View style={s.codeWrap}>
-          <Ionicons name="barcode-outline" size={12} color={C.muted} style={{ marginRight: 4 }} />
-          <Text style={s.codeText}>{shortCode}</Text>
+        {/* Footer: code · duration · status badge pill */}
+        <View style={styles.cardFooter}>
+          <View style={styles.codeWrap}>
+            <Ionicons name="barcode-outline" size={12} color={colors.greyDark} style={{ marginRight: 4 }} />
+            <Text style={styles.codeText}>{shortCode}</Text>
+          </View>
+          <View style={styles.durationWrap}>
+            <Ionicons name={icons.time} size={12} color={colors.greyDark} style={{ marginRight: 4 }} />
+            <Text style={styles.durationText}>{item.durationMinutes} min</Text>
+          </View>
+          <View style={[styles.statusBadge, { backgroundColor: meta.bg, borderColor: meta.color + '50' }]}>
+            <Ionicons name={meta.icon} size={12} color={meta.color} style={{ marginRight: 4 }} />
+            <Text style={[styles.statusText, { color: meta.color }]}>{meta.label}</Text>
+          </View>
         </View>
-        <View style={s.durationWrap}>
-          <Ionicons name="timer-outline" size={12} color={C.muted} style={{ marginRight: 4 }} />
-          <Text style={s.durationText}>{item.durationMinutes} min</Text>
-        </View>
-        <View style={[s.statusBadge, { backgroundColor: meta.bg, borderColor: meta.color + '40' }]}>
-          <Ionicons name={meta.icon} size={12} color={meta.color} style={{ marginRight: 4 }} />
-          <Text style={[s.statusText, { color: meta.color }]}>{meta.label}</Text>
-        </View>
-      </View>
 
-      {/* Status-specific notice row */}
-      {item.status === 'pending' && (
-        <View style={[s.noticeRow, { borderTopColor: C.amber + '40', backgroundColor: C.amberBg }]}>
-          <Ionicons name="time-outline" size={13} color={C.amber} style={{ marginRight: 6 }} />
-          <Text style={[s.noticeText, { color: C.amber }]}>
-            Awaiting barber confirmation. You'll be notified once confirmed.
-          </Text>
-        </View>
-      )}
-      {item.status === 'confirmed' && (
-        <View style={[s.noticeRow, { borderTopColor: C.green + '30', backgroundColor: C.greenBg }]}>
-          <Ionicons name="checkmark-circle-outline" size={13} color={C.green} style={{ marginRight: 6 }} />
-          <Text style={[s.noticeText, { color: C.green }]}>
-            Booking confirmed! See you at your appointment.
-          </Text>
-        </View>
-      )}
-      {item.status === 'declined' && (
-        <View style={[s.noticeRow, { borderTopColor: C.danger + '30', backgroundColor: C.dangerBg }]}>
-          <Ionicons name="close-circle-outline" size={13} color={C.danger} style={{ marginRight: 6 }} />
-          <Text style={[s.noticeText, { color: C.danger }]}>
-            This booking was declined by the barber. Please book a different time.
-          </Text>
-        </View>
-      )}
-      {item.status === 'cancelled' && (
-        <View style={[s.noticeRow, { borderTopColor: C.red + '30', backgroundColor: C.redBg }]}>
-          <Ionicons name="close-circle-outline" size={13} color={C.red} style={{ marginRight: 6 }} />
-          <Text style={[s.noticeText, { color: C.red }]}>
-            You cancelled this appointment.
-          </Text>
-        </View>
-      )}
+        {/* Status-specific notice row */}
+        {item.status === 'pending' && (
+          <View style={[styles.noticeRow, { borderTopColor: colors.gold + '30', backgroundColor: colors.gold + '10' }]}>
+            <Ionicons name={icons.time} size={13} color={colors.gold} style={{ marginRight: 6 }} />
+            <Text style={[styles.noticeText, { color: colors.gold }]}>
+              Awaiting barber confirmation. You'll be notified once confirmed.
+            </Text>
+          </View>
+        )}
+        {item.status === 'confirmed' && (
+          <View style={[styles.noticeRow, { borderTopColor: colors.green + '30', backgroundColor: colors.green + '10' }]}>
+            <Ionicons name={icons.checkOutline} size={13} color={colors.green} style={{ marginRight: 6 }} />
+            <Text style={[styles.noticeText, { color: colors.green }]}>
+              Booking confirmed! See you at your appointment.
+            </Text>
+          </View>
+        )}
+        {item.status === 'declined' && (
+          <View style={[styles.noticeRow, { borderTopColor: colors.red + '30', backgroundColor: colors.red + '10' }]}>
+            <Ionicons name={icons.close} size={13} color={colors.red} style={{ marginRight: 6 }} />
+            <Text style={[styles.noticeText, { color: colors.red }]}>
+              This booking was declined by the barber. Please book a different time.
+            </Text>
+          </View>
+        )}
+        {item.status === 'cancelled' && (
+          <View style={[styles.noticeRow, { borderTopColor: colors.red + '30', backgroundColor: colors.red + '10' }]}>
+            <Ionicons name={icons.close} size={13} color={colors.red} style={{ marginRight: 6 }} />
+            <Text style={[styles.noticeText, { color: colors.red }]}>
+              You cancelled this appointment.
+            </Text>
+          </View>
+        )}
 
-      {/* ── Message barber ── */}
-      <TouchableOpacity
-        style={s.msgBtn}
-        onPress={onMessage}
-        activeOpacity={0.85}
-        accessibilityRole="button"
-        accessibilityLabel={`Message ${barberLabel}`}
-      >
-        <Ionicons name="chatbubble-ellipses-outline" size={16} color={C.gold} style={{ marginRight: 8 }} />
-        <Text style={s.msgBtnText}>Message {barberLabel}</Text>
-        <Ionicons name="chevron-forward" size={16} color={C.sub} style={{ marginLeft: 'auto' }} />
-      </TouchableOpacity>
+        {/* Message barber */}
+        <TouchableOpacity
+          style={styles.msgBtn}
+          onPress={onMessage}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel={`Message ${barberLabel}`}
+        >
+          <Ionicons name={icons.chatOutline} size={16} color={colors.gold} style={{ marginRight: 8 }} />
+          <Text style={styles.msgBtnText}>Message {barberLabel}</Text>
+          <Ionicons name={icons.forward} size={16} color={colors.greyDark} style={{ marginLeft: 'auto' }} />
+        </TouchableOpacity>
 
-      {item.status === 'completed' && ratedState != null && (
-        <View style={s.rateSection}>
-          {ratedState === 'loading' && (
-            <View style={s.rateLoading}>
-              <ActivityIndicator size="small" color={C.gold} />
-            </View>
-          )}
-          {ratedState === 'rated' && (
-            <View style={s.ratedLabelRow}>
-              <Ionicons name="star" size={14} color={C.gold} />
-              <Text style={s.ratedLabel}>Rated</Text>
-            </View>
-          )}
-          {ratedState === 'unrated' && onRatePress != null && (
-            <TouchableOpacity
-              style={s.rateBtn}
-              onPress={onRatePress}
-              activeOpacity={0.85}
-              accessibilityRole="button"
-              accessibilityLabel="Rate this cut"
-            >
-              <Ionicons name="star-outline" size={18} color={C.gold} />
-              <Text style={s.rateBtnText}>Rate this cut</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      )}
-
-      {/* ── Cancel section (only for pending / confirmed) ── */}
-      {canCancel && (
-        <View style={s.cancelWrap}>
-
-          {/* Step 1 — idle: show "Cancel Appointment" link */}
-          {cancelState === 'idle' && (
-            <TouchableOpacity
-              style={s.cancelBtn}
-              onPress={() => setCancelState('confirm')}
-              accessibilityRole="button"
-              accessibilityLabel={`Cancel ${svcName} appointment`}
-              activeOpacity={0.75}
-            >
-              <Ionicons name="close-circle-outline" size={15} color={C.red} style={{ marginRight: 6 }} />
-              <Text style={s.cancelBtnText}>Cancel Appointment</Text>
-            </TouchableOpacity>
-          )}
-
-          {/* Step 2 — confirm: ask "are you sure?" inline */}
-          {cancelState === 'confirm' && (
-            <View style={s.confirmWrap}>
-              <View style={s.confirmTextRow}>
-                <Ionicons name="warning-outline" size={14} color={C.red} style={{ marginRight: 6 }} />
-                <Text style={s.confirmText}>
-                  Cancel your <Text style={{ fontWeight: '800' }}>{svcName}</Text> with{' '}
-                  <Text style={{ fontWeight: '800' }}>{barberLabel}</Text>?
-                </Text>
+        {/* Rate this cut - gold outline button */}
+        {item.status === 'completed' && ratedState != null && (
+          <View style={styles.rateSection}>
+            {ratedState === 'loading' && (
+              <View style={styles.rateLoading}>
+                <ActivityIndicator size="small" color={colors.gold} />
               </View>
-              <View style={s.confirmBtns}>
-                <TouchableOpacity
-                  style={s.keepBtn}
-                  onPress={() => setCancelState('idle')}
-                  accessibilityRole="button"
-                  accessibilityLabel="Keep booking"
-                  activeOpacity={0.8}
-                >
-                  <Text style={s.keepBtnText}>Keep It</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={s.yesCancelBtn}
-                  onPress={doCancel}
-                  accessibilityRole="button"
-                  accessibilityLabel="Confirm cancellation"
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name="close-circle" size={14} color={C.white} style={{ marginRight: 5 }} />
-                  <Text style={s.yesCancelBtnText}>Yes, Cancel</Text>
-                </TouchableOpacity>
+            )}
+            {ratedState === 'rated' && (
+              <View style={styles.ratedLabelRow}>
+                <Ionicons name={icons.star} size={14} color={colors.gold} />
+                <Text style={styles.ratedLabel}>Rated</Text>
               </View>
-            </View>
-          )}
+            )}
+            {ratedState === 'unrated' && onRatePress != null && (
+              <TouchableOpacity
+                style={styles.rateBtn}
+                onPress={onRatePress}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel="Rate this cut"
+              >
+                <Ionicons name={icons.starOutline} size={18} color={colors.gold} />
+                <Text style={styles.rateBtnText}>Rate this cut</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
 
-          {/* Step 3 — loading */}
-          {cancelState === 'loading' && (
-            <View style={s.cancelLoadRow}>
-              <ActivityIndicator size={14} color={C.red} />
-              <Text style={s.cancelLoadText}>Cancelling your appointment…</Text>
-            </View>
-          )}
-
-        </View>
-      )}
+        {/* Cancel section */}
+        {canCancel && (
+          <View style={styles.cancelWrap}>
+            {cancelState === 'idle' && (
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => setCancelState('confirm')}
+                accessibilityRole="button"
+                accessibilityLabel={`Cancel ${svcName} appointment`}
+                activeOpacity={0.75}
+              >
+                <Ionicons name={icons.close} size={15} color={colors.red} style={{ marginRight: 6 }} />
+                <Text style={styles.cancelBtnText}>Cancel Appointment</Text>
+              </TouchableOpacity>
+            )}
+            {cancelState === 'confirm' && (
+              <View style={styles.confirmWrap}>
+                <View style={styles.confirmTextRow}>
+                  <Ionicons name={icons.warning} size={14} color={colors.red} style={{ marginRight: 6 }} />
+                  <Text style={styles.confirmText}>
+                    Cancel your <Text style={{ fontFamily: fonts.bodyBold }}>{svcName}</Text> with{' '}
+                    <Text style={{ fontFamily: fonts.bodyBold }}>{barberLabel}</Text>?
+                  </Text>
+                </View>
+                <View style={styles.confirmBtns}>
+                  <TouchableOpacity
+                    style={styles.keepBtn}
+                    onPress={() => setCancelState('idle')}
+                    accessibilityRole="button"
+                    accessibilityLabel="Keep booking"
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.keepBtnText}>Keep It</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.yesCancelBtn}
+                    onPress={doCancel}
+                    accessibilityRole="button"
+                    accessibilityLabel="Confirm cancellation"
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name={icons.close} size={14} color={colors.white} style={{ marginRight: 5 }} />
+                    <Text style={styles.yesCancelBtnText}>Yes, Cancel</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+            {cancelState === 'loading' && (
+              <View style={styles.cancelLoadRow}>
+                <ActivityIndicator size={14} color={colors.red} />
+                <Text style={styles.cancelLoadText}>Cancelling your appointment...</Text>
+              </View>
+            )}
+          </View>
+        )}
+      </View>
     </View>
   );
 }
+
+// ─── Main Screen Component ────────────────────────────────────────────────────
 
 export default function HistoryScreen({ navigation }: Props): React.JSX.Element {
   const insets = useSafeAreaInsets();
@@ -503,13 +287,11 @@ export default function HistoryScreen({ navigation }: Props): React.JSX.Element 
   const [error,      setError]      = useState<string | null>(null);
   const [snack,      setSnack]      = useState<{ msg: string; error: boolean } | null>(null);
 
-  /** `true` = already rated; `false` = not rated; missing key = still checking */
   const [ratedByBooking, setRatedByBooking] = useState<Record<string, boolean>>({});
   const [ratingCheckDone, setRatingCheckDone] = useState(false);
-
   const [ratingBooking, setRatingBooking] = useState<Booking | null>(null);
 
-  // Real-time listener — status updates (pending → confirmed) appear instantly
+  // Real-time listener
   useEffect(() => {
     if (!firebaseUser) return;
     setLoading(true);
@@ -564,9 +346,7 @@ export default function HistoryScreen({ navigation }: Props): React.JSX.Element 
       }
     })();
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [bookings, firebaseUser]);
 
   function ratedStateFor(bookingId: string, isCompleted: boolean): 'loading' | 'rated' | 'unrated' | null {
@@ -576,62 +356,58 @@ export default function HistoryScreen({ navigation }: Props): React.JSX.Element 
     return ratedByBooking[bookingId] ? 'rated' : 'unrated';
   }
 
-  // ── Empty state ──────────────────────────────────────────────────────────────
   function EmptyState(): React.JSX.Element {
     return (
-      <View style={s.emptyWrap}>
-        <View style={s.emptyIconWrap}>
-          <Ionicons name="calendar-outline" size={40} color={C.muted} />
+      <View style={styles.emptyWrap}>
+        <View style={styles.emptyIconWrap}>
+          <Ionicons name={icons.tabBookOutline} size={40} color={colors.greyDark} />
         </View>
-        <Text style={s.emptyTitle}>No bookings yet</Text>
-        <Text style={s.emptySub}>Your appointment history will appear here once you book a service.</Text>
+        <Text style={styles.emptyTitle}>No bookings yet</Text>
+        <Text style={styles.emptySub}>Your appointment history will appear here once you book a service.</Text>
         <TouchableOpacity
-          style={s.emptyBtn}
+          style={styles.emptyBtn}
           onPress={() => navigation.navigate('Book')}
           accessibilityRole="button"
           accessibilityLabel="Book your first appointment"
         >
-          <Text style={s.emptyBtnText}>Book Your First Appointment</Text>
+          <Text style={styles.emptyBtnText}>Book Your First Appointment</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
-
-  // ─────────────────────────────────────────────────────────────────────────────
-
   if (loading) {
     return (
-      <View style={[s.center, { paddingTop: insets.top }]}>
-        <StatusBar barStyle="light-content" backgroundColor={C.bg} />
-        <ActivityIndicator size={36} color={C.gold} />
-        <Text style={s.loadingText}>Loading bookings…</Text>
+      <View style={[styles.center, { paddingTop: insets.top }]}>
+        <StatusBar barStyle="light-content" backgroundColor={colors.background} />
+        <ActivityIndicator size={36} color={colors.gold} />
+        <Text style={styles.loadingText}>Loading bookings...</Text>
       </View>
     );
   }
 
   return (
-    <View style={[s.root, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+    <View style={[styles.root, { paddingTop: insets.top }]}>
+      <StatusBar barStyle="light-content" backgroundColor={colors.background} />
 
       {/* Header */}
-      <View style={s.header}>
+      <View style={styles.header}>
         <View>
-          <Text style={s.headerEyebrow}>MY BOOKINGS</Text>
-          <Text style={s.headerTitle}>History</Text>
+          <Text style={styles.headerEyebrow}>MY BOOKINGS</Text>
+          <Text style={styles.headerTitle}>History</Text>
         </View>
         {bookings.length > 0 && (
-          <View style={s.countBadge}>
-            <Text style={s.countText}>{bookings.length}</Text>
+          <View style={styles.countBadge}>
+            <Text style={styles.countText}>{bookings.length}</Text>
           </View>
         )}
       </View>
-      <View style={s.headerLine} />
+      <View style={styles.headerLine} />
 
       {error ? (
-        <View style={s.errorBanner}>
-          <Ionicons name="warning-outline" size={16} color={C.danger} style={{ marginRight: 8 }} />
-          <Text style={s.errorText}>{error}</Text>
+        <View style={styles.errorBanner}>
+          <Ionicons name={icons.warning} size={16} color={colors.red} style={{ marginRight: 8 }} />
+          <Text style={styles.errorText}>{error}</Text>
         </View>
       ) : null}
 
@@ -657,8 +433,8 @@ export default function HistoryScreen({ navigation }: Props): React.JSX.Element 
           />
         )}
         contentContainerStyle={[
-          s.list,
-          bookings.length === 0 && s.listEmpty,
+          styles.list,
+          bookings.length === 0 && styles.listEmpty,
           { paddingBottom: insets.bottom + 110 },
         ]}
         showsVerticalScrollIndicator={false}
@@ -670,13 +446,13 @@ export default function HistoryScreen({ navigation }: Props): React.JSX.Element 
               setRefreshing(true);
               setTimeout(() => setRefreshing(false), 600);
             }}
-            tintColor={C.gold}
-            colors={[C.gold]}
+            tintColor={colors.gold}
+            colors={[colors.gold]}
           />
         }
       />
 
-      {/* ── Success / error snackbar (Portal + plain text — reliable on web) ── */}
+      {/* Rating Modal */}
       {firebaseUser != null && ratingBooking != null && (
         <RatingModal
           visible
@@ -707,18 +483,19 @@ export default function HistoryScreen({ navigation }: Props): React.JSX.Element 
         />
       )}
 
+      {/* Snackbar */}
       <Portal>
         <Snackbar
           visible={snack !== null}
           onDismiss={() => setSnack(null)}
           duration={3500}
           style={[
-            s.snackbar,
-            snack?.error ? s.snackbarError : s.snackbarSuccess,
+            styles.snackbar,
+            snack?.error ? styles.snackbarError : styles.snackbarSuccess,
           ]}
           action={{
             label: 'OK',
-            textColor: snack?.error ? C.red : C.green,
+            textColor: snack?.error ? colors.red : colors.green,
             onPress: () => setSnack(null),
           }}
         >
@@ -728,3 +505,213 @@ export default function HistoryScreen({ navigation }: Props): React.JSX.Element 
     </View>
   );
 }
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
+const styles = StyleSheet.create({
+  root:   { flex: 1, backgroundColor: colors.background },
+  center: { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center', gap: 14 },
+  list:   { paddingHorizontal: spacing.lg, paddingTop: 8 },
+  listEmpty: { flexGrow: 1 },
+
+  header: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 18, paddingTop: 10, paddingBottom: 10,
+  },
+  headerEyebrow: { fontSize: 10, color: colors.greyDark, fontFamily: fonts.bodyBold, letterSpacing: 2, marginBottom: 2 },
+  headerTitle:   { fontSize: 22, fontFamily: fonts.heading, color: colors.white, letterSpacing: -0.3 },
+  headerLine:    { height: 1, marginHorizontal: 18, backgroundColor: colors.gold, opacity: 0.15, marginBottom: 6 },
+  countBadge: {
+    backgroundColor: colors.gold + '15', borderWidth: 1, borderColor: colors.gold + '40',
+    borderRadius: radius['2xl'], paddingHorizontal: 12, paddingVertical: 5,
+  },
+  countText: { fontSize: 13, fontFamily: fonts.bodyBold, color: colors.gold },
+  loadingText: { fontSize: 13, color: colors.greyDark },
+
+  errorBanner: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: colors.red + '15', borderWidth: 1, borderColor: colors.red + '40',
+    borderRadius: radius.sm, marginHorizontal: 16, marginBottom: 10,
+    padding: 12,
+  },
+  errorText: { flex: 1, fontSize: 13, color: colors.red },
+
+  // Card with left status bar
+  card: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+    marginBottom: 12,
+    ...Platform.select({
+      ios:     { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
+      android: { elevation: 6 },
+    }),
+  },
+  cardDimmed: { opacity: 0.55 },
+  leftStatusBar: {
+    width: 3,
+  },
+  cardContent: {
+    flex: 1,
+  },
+  cardHeader: {
+    flexDirection: 'row', alignItems: 'center',
+    padding: 14, gap: 12,
+  },
+  svcIconWrap: {
+    width: 44, height: 44, borderRadius: radius.sm,
+    backgroundColor: colors.gold + '15', borderWidth: 1, borderColor: colors.gold + '30',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  svcName:  { fontSize: 16, fontFamily: fonts.bodyBold, color: colors.white, marginBottom: 3 },
+  svcDate:  { fontSize: 11, color: colors.grey },
+  svcPrice: { fontSize: 24, fontFamily: fonts.bodyBold, color: colors.gold, letterSpacing: -0.5 },
+
+  cardFooter: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 14, paddingBottom: 12, gap: 10,
+  },
+  codeWrap:     { flexDirection: 'row', alignItems: 'center' },
+  codeText:     { fontSize: 11, color: colors.greyDark, fontFamily: 'monospace', letterSpacing: 1 },
+  durationWrap: { flexDirection: 'row', alignItems: 'center' },
+  durationText: { fontSize: 11, color: colors.greyDark },
+
+  // Status badge pill
+  statusBadge: {
+    marginLeft: 'auto', flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 10, paddingVertical: 4,
+    borderRadius: radius.sm, borderWidth: 1,
+  },
+  statusText: { fontSize: 11, fontFamily: fonts.bodyBold },
+
+  barberRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 14, paddingBottom: 8,
+  },
+  barberLabel: { fontSize: 12, color: colors.gold, fontFamily: fonts.bodySemiBold },
+
+  noticeRow: {
+    flexDirection: 'row', alignItems: 'center',
+    borderTopWidth: 1,
+    paddingHorizontal: 14, paddingVertical: 10,
+  },
+  noticeText: { flex: 1, fontSize: 11, lineHeight: 16 },
+
+  // Snackbar
+  snackbar: {
+    marginBottom: 80, marginHorizontal: 12, borderRadius: radius.sm,
+    borderWidth: 1,
+  },
+  snackbarSuccess: {
+    backgroundColor: colors.green + '15', borderColor: colors.green + '40',
+  },
+  snackbarError: {
+    backgroundColor: colors.red + '15', borderColor: colors.red + '40',
+  },
+
+  // Message button
+  msgBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: colors.surfaceRaised,
+  },
+  msgBtnText: { flex: 1, fontSize: 13, fontFamily: fonts.bodyBold, color: colors.white },
+
+  // Rate section with gold outline button
+  rateSection: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: colors.background,
+  },
+  rateLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+  },
+  rateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+    borderRadius: radius['2xl'],
+    borderWidth: 1,
+    borderColor: colors.gold,
+    paddingVertical: 11,
+    gap: 8,
+  },
+  rateBtnText: { fontSize: 13, fontFamily: fonts.bodyBold, color: colors.gold },
+  ratedLabel: { fontSize: 13, fontFamily: fonts.bodyBold, color: colors.grey },
+  ratedLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+
+  // Cancel section
+  cancelWrap: {
+    borderTopWidth: 1, borderTopColor: colors.red + '30',
+    backgroundColor: colors.red + '10',
+    paddingHorizontal: 14, paddingVertical: 12,
+  },
+  cancelBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: colors.red + '40',
+    borderRadius: radius.sm, paddingVertical: 11,
+    backgroundColor: colors.red + '20',
+  },
+  cancelBtnText: { fontSize: 13, fontFamily: fonts.bodyBold, color: colors.red },
+
+  confirmWrap:    { gap: 10 },
+  confirmTextRow: { flexDirection: 'row', alignItems: 'flex-start' },
+  confirmText:    { flex: 1, fontSize: 13, color: colors.white, lineHeight: 18 },
+  confirmBtns:    { flexDirection: 'row', gap: 10 },
+  keepBtn: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: colors.border,
+    borderRadius: radius.sm, paddingVertical: 11,
+    backgroundColor: colors.surfaceRaised,
+  },
+  keepBtnText:    { fontSize: 13, fontFamily: fonts.bodyBold, color: colors.grey },
+  yesCancelBtn: {
+    flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    borderRadius: radius.sm, paddingVertical: 11,
+    backgroundColor: colors.red,
+    ...Platform.select({
+      ios:     { shadowColor: colors.red, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.4, shadowRadius: 6 },
+      android: { elevation: 4 },
+    }),
+  },
+  yesCancelBtnText: { fontSize: 13, fontFamily: fonts.bodyBold, color: colors.white },
+
+  cancelLoadRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 4 },
+  cancelLoadText: { fontSize: 13, color: colors.red },
+
+  // Empty state
+  emptyWrap: {
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 40, gap: 12, paddingTop: 60,
+  },
+  emptyIconWrap: {
+    width: 80, height: 80, borderRadius: radius.full,
+    backgroundColor: colors.surfaceRaised, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: colors.border, marginBottom: 8,
+  },
+  emptyTitle:  { fontSize: 20, fontFamily: fonts.heading, color: colors.white, textAlign: 'center' },
+  emptySub:    { fontSize: 13, color: colors.grey, textAlign: 'center', lineHeight: 18 },
+  emptyBtn: {
+    backgroundColor: colors.gold, borderRadius: radius['2xl'],
+    paddingHorizontal: 24, paddingVertical: 12, marginTop: 8,
+  },
+  emptyBtnText: { fontSize: 14, fontFamily: fonts.bodyBold, color: colors.background },
+});

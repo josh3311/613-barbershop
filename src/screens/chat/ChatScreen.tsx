@@ -19,18 +19,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { ChatMessage } from '@/types/chat.types';
 import { ChatRouteParams } from '@/navigation/types';
 import { safeFormatTime } from '@/utils/date.utils';
-
-const C = {
-  bg:       '#0A0A0A',
-  card:     '#141414',
-  border:   '#252525',
-  gold:     '#D4AF37',
-  white:    '#FFFFFF',
-  sub:      '#888888',
-  muted:    '#444444',
-  bubbleMe: '#2A2410',
-  bubbleThem: '#1E1E1E',
-} as const;
+import { colors, fonts, spacing, radius, icons } from '@/theme';
 
 type RootChatProps = NativeStackScreenProps<{ Chat: ChatRouteParams }, 'Chat'>;
 
@@ -97,9 +86,9 @@ export default function ChatScreen({ route, navigation }: RootChatProps): React.
   if (loading) {
     return (
       <View style={[styles.center, { paddingTop: insets.top }]}>
-        <StatusBar barStyle="light-content" backgroundColor={C.bg} />
-        <ActivityIndicator size="large" color={C.gold} />
-        <Text style={styles.loadText}>Opening conversation…</Text>
+        <StatusBar barStyle="light-content" backgroundColor={colors.background} />
+        <ActivityIndicator size="large" color={colors.gold} />
+        <Text style={styles.loadText}>Opening conversation...</Text>
       </View>
     );
   }
@@ -107,8 +96,8 @@ export default function ChatScreen({ route, navigation }: RootChatProps): React.
   if (error && !conversationId) {
     return (
       <View style={[styles.center, { paddingTop: insets.top }]}>
-        <StatusBar barStyle="light-content" backgroundColor={C.bg} />
-        <Ionicons name="alert-circle-outline" size={40} color="#CF6679" />
+        <StatusBar barStyle="light-content" backgroundColor={colors.background} />
+        <Ionicons name={icons.warning} size={40} color={colors.red} />
         <Text style={styles.errText}>{error}</Text>
         <TouchableOpacity style={styles.retryBtn} onPress={() => void bootstrap()}>
           <Text style={styles.retryBtnText}>Retry</Text>
@@ -123,7 +112,7 @@ export default function ChatScreen({ route, navigation }: RootChatProps): React.
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 44 : 0}
     >
-      <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+      <StatusBar barStyle="light-content" backgroundColor={colors.background} />
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
@@ -131,7 +120,7 @@ export default function ChatScreen({ route, navigation }: RootChatProps): React.
           accessibilityRole="button"
           accessibilityLabel="Back"
         >
-          <Ionicons name="chevron-back" size={24} color={C.gold} />
+          <Ionicons name={icons.back} size={24} color={colors.gold} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle} numberOfLines={1}>{peerName}</Text>
@@ -176,8 +165,8 @@ export default function ChatScreen({ route, navigation }: RootChatProps): React.
           style={styles.input}
           value={input}
           onChangeText={setInput}
-          placeholder="Type a message…"
-          placeholderTextColor={C.muted}
+          placeholder="Type a message..."
+          placeholderTextColor={colors.greyDark}
           multiline
           maxLength={2000}
           editable={!sending}
@@ -190,9 +179,9 @@ export default function ChatScreen({ route, navigation }: RootChatProps): React.
           accessibilityLabel="Send message"
         >
           {sending ? (
-            <ActivityIndicator size="small" color={C.bg} />
+            <ActivityIndicator size="small" color={colors.background} />
           ) : (
-            <Ionicons name="send" size={20} color={C.bg} />
+            <Ionicons name={icons.send} size={20} color={colors.background} />
           )}
         </TouchableOpacity>
       </View>
@@ -201,12 +190,12 @@ export default function ChatScreen({ route, navigation }: RootChatProps): React.
 }
 
 const styles = StyleSheet.create({
-  root:         { flex: 1, backgroundColor: C.bg },
-  center:       { flex: 1, backgroundColor: C.bg, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24 },
-  loadText:     { color: C.sub, fontSize: 14 },
-  errText:      { color: '#CF6679', textAlign: 'center', fontSize: 14 },
-  retryBtn:     { marginTop: 8, backgroundColor: C.gold, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10 },
-  retryBtnText: { color: C.bg, fontWeight: '800' },
+  root:         { flex: 1, backgroundColor: colors.background },
+  center:       { flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24 },
+  loadText:     { color: colors.grey, fontSize: fonts.size.md, fontFamily: fonts.body },
+  errText:      { color: colors.red, textAlign: 'center', fontSize: fonts.size.md, fontFamily: fonts.body },
+  retryBtn:     { marginTop: 8, backgroundColor: colors.gold, paddingHorizontal: 20, paddingVertical: 10, borderRadius: radius.sm },
+  retryBtnText: { color: colors.background, fontFamily: fonts.bodyBold },
 
   header: {
     flexDirection: 'row',
@@ -216,28 +205,28 @@ const styles = StyleSheet.create({
   },
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   headerCenter: { flex: 1, alignItems: 'center' },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: C.white },
-  headerSub:   { fontSize: 9, color: C.gold, letterSpacing: 2, fontWeight: '700', marginTop: 2 },
-  headerLine:  { height: 1, marginHorizontal: 16, backgroundColor: C.gold, opacity: 0.2 },
+  headerTitle: { fontSize: 17, fontFamily: fonts.bodyBold, color: colors.white },
+  headerSub:   { fontSize: 9, color: colors.gold, letterSpacing: 2, fontFamily: fonts.bodyBold, marginTop: 2 },
+  headerLine:  { height: 1, marginHorizontal: 16, backgroundColor: colors.gold, opacity: 0.2 },
 
   listContent: { paddingHorizontal: 14, paddingTop: 12 },
   row:    { marginBottom: 10, maxWidth: '88%' },
   rowMe:  { alignSelf: 'flex-end' },
   rowThem:{ alignSelf: 'flex-start' },
   bubble: {
-    borderRadius: 14,
+    borderRadius: radius.md,
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderWidth: 1,
-    borderColor: C.border,
+    borderColor: colors.border,
   },
-  bubbleMe:   { backgroundColor: C.bubbleMe, borderColor: C.gold + '44' },
-  bubbleThem: { backgroundColor: C.bubbleThem },
-  bubbleText: { fontSize: 15, color: C.white, lineHeight: 20 },
-  timeText:   { fontSize: 10, color: C.sub, marginTop: 6, alignSelf: 'flex-end' },
+  bubbleMe:   { backgroundColor: colors.gold + '15', borderColor: colors.gold + '44' },
+  bubbleThem: { backgroundColor: colors.surfaceRaised },
+  bubbleText: { fontSize: fonts.size.md, color: colors.white, lineHeight: 20, fontFamily: fonts.body },
+  timeText:   { fontSize: 10, color: colors.grey, marginTop: 6, alignSelf: 'flex-end', fontFamily: fonts.body },
 
-  empty: { textAlign: 'center', color: C.sub, marginTop: 40, fontSize: 14 },
-  bannerErr: { color: '#CF6679', fontSize: 12, paddingHorizontal: 16, paddingBottom: 4 },
+  empty: { textAlign: 'center', color: colors.grey, marginTop: 40, fontSize: fonts.size.md, fontFamily: fonts.body },
+  bannerErr: { color: colors.red, fontSize: 12, paddingHorizontal: 16, paddingBottom: 4, fontFamily: fonts.body },
 
   inputRow: {
     flexDirection: 'row',
@@ -246,27 +235,28 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     gap: 10,
     borderTopWidth: 1,
-    borderTopColor: C.border,
-    backgroundColor: C.card,
+    borderTopColor: colors.border,
+    backgroundColor: colors.surface,
   },
   input: {
     flex: 1,
     minHeight: 44,
     maxHeight: 120,
-    backgroundColor: '#1A1A1A',
-    borderRadius: 12,
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radius.sm,
     borderWidth: 1,
-    borderColor: C.border,
+    borderColor: colors.border,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    fontSize: 15,
-    color: C.white,
+    fontSize: fonts.size.md,
+    color: colors.white,
+    fontFamily: fonts.body,
   },
   sendBtn: {
     width: 46,
     height: 46,
-    borderRadius: 12,
-    backgroundColor: C.gold,
+    borderRadius: radius.sm,
+    backgroundColor: colors.gold,
     alignItems: 'center',
     justifyContent: 'center',
   },

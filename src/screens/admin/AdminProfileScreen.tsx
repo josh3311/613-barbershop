@@ -11,18 +11,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { AuthService } from '@/services/auth.service';
 import { useAuth } from '@/hooks/useAuth';
-
-const C = {
-  bg:     '#0A0A0A',
-  card:   '#141414',
-  border: '#252525',
-  gold:   '#D4AF37',
-  white:  '#FFFFFF',
-  sub:    '#666666',
-  danger: '#CF6679',
-  dangerBg: '#1A0A0A',
-  dangerBdr: '#CF667944',
-} as const;
+import { colors, fonts, spacing, radius, icons } from '@/theme';
 
 export default function AdminProfileScreen(): React.JSX.Element {
   const insets = useSafeAreaInsets();
@@ -40,7 +29,7 @@ export default function AdminProfileScreen(): React.JSX.Element {
 
   return (
     <View style={[s.root, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+      <StatusBar barStyle="light-content" backgroundColor={colors.background} />
 
       <View style={s.header}>
         <Text style={s.headerTitle}>Profile</Text>
@@ -50,7 +39,7 @@ export default function AdminProfileScreen(): React.JSX.Element {
 
       <View style={s.card}>
         <View style={s.row}>
-          <Ionicons name="mail-outline" size={20} color={C.sub} />
+          <Ionicons name={icons.mail} size={20} color={colors.grey} />
           <View style={s.rowText}>
             <Text style={s.label}>Email</Text>
             <Text style={s.value} numberOfLines={2}>
@@ -60,10 +49,10 @@ export default function AdminProfileScreen(): React.JSX.Element {
         </View>
         <View style={s.divider} />
         <View style={s.row}>
-          <Ionicons name="shield-checkmark-outline" size={20} color={C.gold} />
+          <Ionicons name={icons.shield} size={20} color={colors.gold} />
           <View style={s.rowText}>
             <Text style={s.label}>Role</Text>
-            <Text style={[s.value, { color: C.gold }]}>admin</Text>
+            <Text style={[s.value, { color: colors.gold }]}>admin</Text>
           </View>
         </View>
       </View>
@@ -81,12 +70,12 @@ export default function AdminProfileScreen(): React.JSX.Element {
         accessibilityLabel="Log out"
       >
         {loggingOut ? (
-          <ActivityIndicator color={C.danger} />
+          <ActivityIndicator color={colors.red} />
         ) : (
-          <Ionicons name="log-out-outline" size={22} color={C.danger} />
+          <Ionicons name={icons.logOut} size={22} color={colors.red} />
         )}
         <Text style={s.logoutText}>
-          {loggingOut ? 'Signing out…' : 'Log Out'}
+          {loggingOut ? 'Signing out...' : 'Log Out'}
         </Text>
       </TouchableOpacity>
     </View>
@@ -94,62 +83,63 @@ export default function AdminProfileScreen(): React.JSX.Element {
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: C.bg, paddingHorizontal: 20 },
+  root: { flex: 1, backgroundColor: colors.background, paddingHorizontal: 20 },
   header: { alignItems: 'center', paddingVertical: 16 },
-  headerTitle: { fontSize: 20, fontWeight: '800', color: C.white },
+  headerTitle: { fontSize: 20, fontFamily: fonts.heading, color: colors.white },
   headerSub: {
     fontSize: 10,
-    color: C.gold,
+    color: colors.gold,
     letterSpacing: 3,
-    fontWeight: '700',
+    fontFamily: fonts.bodyBold,
     marginTop: 4,
   },
   headerLine: {
     height: 1,
-    backgroundColor: C.gold,
+    backgroundColor: colors.gold,
     opacity: 0.2,
     marginBottom: 20,
   },
   card: {
-    backgroundColor: C.card,
-    borderRadius: 14,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: C.border,
+    borderColor: colors.border,
     padding: 16,
   },
   row: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   rowText: { flex: 1 },
   label: {
     fontSize: 10,
-    color: C.sub,
-    fontWeight: '700',
+    color: colors.grey,
+    fontFamily: fonts.bodyBold,
     marginBottom: 4,
     letterSpacing: 0.5,
   },
-  value: { fontSize: 15, color: C.white, fontWeight: '600' },
+  value: { fontSize: 15, color: colors.white, fontFamily: fonts.bodySemiBold },
   divider: {
     height: 1,
-    backgroundColor: '#1C1C1C',
+    backgroundColor: colors.border,
     marginVertical: 14,
   },
   hint: {
     fontSize: 12,
-    color: C.sub,
+    color: colors.grey,
     lineHeight: 18,
     marginTop: 16,
     marginBottom: 24,
+    fontFamily: fonts.body,
   },
   logoutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    backgroundColor: C.dangerBg,
+    backgroundColor: colors.red + '15',
     borderWidth: 1.5,
-    borderColor: C.dangerBdr,
-    borderRadius: 14,
+    borderColor: colors.red + '40',
+    borderRadius: radius.md,
     paddingVertical: 16,
   },
   logoutBusy: { opacity: 0.7 },
-  logoutText: { fontSize: 16, fontWeight: '800', color: C.danger },
+  logoutText: { fontSize: 16, fontFamily: fonts.bodyBold, color: colors.red },
 });

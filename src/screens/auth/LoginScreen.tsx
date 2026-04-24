@@ -12,30 +12,16 @@ import {
   Animated,
 } from 'react-native';
 import { Text, TextInput, ActivityIndicator } from 'react-native-paper';
+import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '@/navigation/types';
 import { AuthService } from '@/services/auth.service';
+import { colors, fonts, spacing, radius, icons } from '@/theme';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
-const COLORS = {
-  background: '#0A0A0A',
-  surface: '#1A1A1A',
-  surfaceElevated: '#222222',
-  gold: '#D4AF37',
-  goldDark: '#A8861A',
-  goldLight: '#F0CC55',
-  error: '#CF6679',
-  textPrimary: '#FFFFFF',
-  textSecondary: '#AAAAAA',
-  textMuted: '#666666',
-  inputBackground: '#252525',
-  inputBorder: '#333333',
-  inputBorderFocused: '#D4AF37',
-  divider: '#2A2A2A',
-} as const;
+const CARD_WIDTH = Math.min(SCREEN_WIDTH - 32, 440);
 
 // ─── Firebase error → friendly message map ────────────────────────────────────
 
@@ -144,7 +130,7 @@ export default function LoginScreen({ navigation }: Props): React.JSX.Element {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+      <StatusBar barStyle="light-content" backgroundColor={colors.background} />
 
       <KeyboardAvoidingView
         style={styles.keyboardAvoid}
@@ -215,8 +201,7 @@ export default function LoginScreen({ navigation }: Props): React.JSX.Element {
                 disabled={loading}
                 left={
                   <TextInput.Icon
-                    icon="email-outline"
-                    color={emailError ? COLORS.error : COLORS.textMuted}
+                    icon={() => <Ionicons name={icons.mail} size={20} color={emailError ? colors.red : colors.greyDark} />}
                   />
                 }
                 style={styles.textInput}
@@ -224,10 +209,10 @@ export default function LoginScreen({ navigation }: Props): React.JSX.Element {
                 contentStyle={styles.inputContent}
                 theme={{
                   colors: {
-                    primary: COLORS.gold,
-                    onSurfaceVariant: COLORS.textSecondary,
-                    background: COLORS.inputBackground,
-                    error: COLORS.error,
+                    primary: colors.gold,
+                    onSurfaceVariant: colors.grey,
+                    background: colors.surface,
+                    error: colors.red,
                   },
                 }}
                 accessibilityLabel="Email address input"
@@ -265,14 +250,19 @@ export default function LoginScreen({ navigation }: Props): React.JSX.Element {
                 disabled={loading}
                 left={
                   <TextInput.Icon
-                    icon="lock-outline"
-                    color={passwordError ? COLORS.error : COLORS.textMuted}
+                    icon={() => <Ionicons name={icons.lock} size={20} color={passwordError ? colors.red : colors.greyDark} />}
                   />
                 }
                 right={
                   <TextInput.Icon
-                    icon={passwordVisible ? 'eye-off-outline' : 'eye-outline'}
-                    color={COLORS.textMuted}
+                    icon={() => (
+                      <Ionicons
+                        name={passwordVisible ? icons.close : 'eye-outline'}
+                        size={20}
+                        color={colors.greyDark}
+                        onPress={() => setPasswordVisible((v) => !v)}
+                      />
+                    )}
                     onPress={() => setPasswordVisible((v) => !v)}
                     accessibilityLabel={passwordVisible ? 'Hide password' : 'Show password'}
                   />
@@ -282,10 +272,10 @@ export default function LoginScreen({ navigation }: Props): React.JSX.Element {
                 contentStyle={styles.inputContent}
                 theme={{
                   colors: {
-                    primary: COLORS.gold,
-                    onSurfaceVariant: COLORS.textSecondary,
-                    background: COLORS.inputBackground,
-                    error: COLORS.error,
+                    primary: colors.gold,
+                    onSurfaceVariant: colors.grey,
+                    background: colors.surface,
+                    error: colors.red,
                   },
                 }}
                 accessibilityLabel="Password input"
@@ -316,9 +306,6 @@ export default function LoginScreen({ navigation }: Props): React.JSX.Element {
 
             {/* ── Sign In button ── */}
             <Animated.View style={[styles.signInButtonWrapper, { transform: [{ scale: buttonScale }] }]}>
-              {/* Outer glow shadow layer */}
-              <View style={styles.buttonGlowLayer} />
-
               <TouchableOpacity
                 onPress={handleSignIn}
                 onPressIn={onButtonPressIn}
@@ -335,7 +322,7 @@ export default function LoginScreen({ navigation }: Props): React.JSX.Element {
                   <View style={styles.buttonLoadingContent}>
                     <ActivityIndicator
                       size={20}
-                      color={COLORS.background}
+                      color={colors.background}
                       accessibilityLabel="Signing in, please wait"
                     />
                     <Text style={styles.buttonLoadingText}>Signing In...</Text>
@@ -343,8 +330,6 @@ export default function LoginScreen({ navigation }: Props): React.JSX.Element {
                 ) : (
                   <Text style={styles.signInButtonText}>Sign In</Text>
                 )}
-                {/* Bottom depth layer */}
-                <View style={styles.buttonDepthLayer} />
               </TouchableOpacity>
             </Animated.View>
 
@@ -383,12 +368,10 @@ export default function LoginScreen({ navigation }: Props): React.JSX.Element {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const CARD_WIDTH = Math.min(SCREEN_WIDTH - 32, 440);
-
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: colors.background,
   },
   keyboardAvoid: {
     flex: 1,
@@ -397,43 +380,42 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 48,
-    paddingHorizontal: 16,
+    paddingVertical: spacing['3xl'],
+    paddingHorizontal: spacing.lg,
   },
 
   // ── Header ──────────────────────────────────────────────────────────────────
   headerSection: {
     alignItems: 'center',
-    marginBottom: 36,
+    marginBottom: spacing['3xl'],
   },
   logoContainer: {
-    marginBottom: 20,
+    marginBottom: spacing.lg,
   },
   logoOuter: {
     width: 88,
     height: 88,
-    borderRadius: 44,
-    backgroundColor: COLORS.surface,
+    borderRadius: radius.full,
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
-    // Semi-3D: multi-layer shadows
-    shadowColor: COLORS.gold,
+    shadowColor: colors.gold,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4,
     shadowRadius: 16,
     elevation: 20,
     borderWidth: 1.5,
-    borderColor: COLORS.gold + '55',
+    borderColor: colors.gold + '55',
   },
   logoInner: {
     width: 68,
     height: 68,
-    borderRadius: 34,
-    backgroundColor: COLORS.surfaceElevated,
+    borderRadius: radius.full,
+    backgroundColor: colors.surfaceRaised,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: COLORS.gold + '33',
+    borderColor: colors.gold + '33',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.6,
@@ -442,178 +424,145 @@ const styles = StyleSheet.create({
   },
   logoNumber: {
     fontSize: 22,
-    fontWeight: '900',
-    color: COLORS.gold,
+    fontFamily: fonts.bodyBold,
+    color: colors.gold,
     letterSpacing: 1,
   },
   brandName: {
     fontSize: 26,
-    fontWeight: '900',
-    color: COLORS.textPrimary,
+    fontFamily: fonts.heading,
+    color: colors.white,
     letterSpacing: 4,
-    marginBottom: 6,
+    marginBottom: spacing.sm,
   },
   brandTagline: {
     fontSize: 13,
-    color: COLORS.gold,
+    color: colors.gold,
     letterSpacing: 2,
-    fontWeight: '500',
+    fontFamily: fonts.bodySemiBold,
     textTransform: 'uppercase',
   },
 
   // ── Card ─────────────────────────────────────────────────────────────────────
   card: {
     width: CARD_WIDTH,
-    backgroundColor: COLORS.surface,
-    borderRadius: 20,
-    paddingHorizontal: 24,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing['2xl'],
     paddingTop: 0,
-    paddingBottom: 28,
-    // Semi-3D elevation
+    paddingBottom: spacing.xl,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.7,
     shadowRadius: 24,
     elevation: 24,
     borderWidth: 1,
-    borderColor: '#2A2A2A',
+    borderColor: colors.border,
     overflow: 'hidden',
   },
   cardGoldAccent: {
     height: 3,
-    backgroundColor: COLORS.gold,
-    marginHorizontal: -24,
-    marginBottom: 28,
-    shadowColor: COLORS.gold,
+    backgroundColor: colors.gold,
+    marginHorizontal: -spacing['2xl'],
+    marginBottom: spacing.xl,
+    shadowColor: colors.gold,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.8,
     shadowRadius: 8,
     elevation: 4,
   },
   cardTitle: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: COLORS.textPrimary,
-    marginBottom: 4,
+    fontSize: fonts.size['3xl'],
+    fontFamily: fonts.bodyBold,
+    color: colors.white,
+    marginBottom: spacing.xs,
     letterSpacing: 0.5,
   },
   cardSubtitle: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    marginBottom: 24,
+    fontSize: fonts.size.md,
+    color: colors.grey,
+    marginBottom: spacing.xl,
     letterSpacing: 0.2,
   },
 
   // ── Error banner ─────────────────────────────────────────────────────────────
   errorBanner: {
-    backgroundColor: COLORS.error + '1A',
+    backgroundColor: colors.red + '1A',
     borderWidth: 1,
-    borderColor: COLORS.error + '55',
-    borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    marginBottom: 20,
+    borderColor: colors.red + '55',
+    borderRadius: radius.sm,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
   },
   errorBannerText: {
-    color: COLORS.error,
-    fontSize: 13,
-    fontWeight: '500',
+    color: colors.red,
+    fontSize: fonts.size.md,
+    fontFamily: fonts.bodySemiBold,
     lineHeight: 18,
   },
 
   // ── Inputs ───────────────────────────────────────────────────────────────────
   inputWrapper: {
-    marginBottom: 16,
+    marginBottom: spacing.md,
   },
   textInput: {
-    backgroundColor: COLORS.inputBackground,
+    backgroundColor: colors.surface,
   },
   inputOutline: {
-    borderRadius: 12,
-    borderColor: COLORS.inputBorder,
+    borderRadius: radius.sm,
+    borderColor: colors.border,
   },
   inputContent: {
-    color: COLORS.textPrimary,
-    fontSize: 15,
+    color: colors.white,
+    fontSize: fonts.size.md,
   },
   fieldError: {
-    fontSize: 12,
-    color: COLORS.error,
-    marginTop: 4,
-    marginLeft: 4,
-    fontWeight: '500',
+    fontSize: fonts.size.sm,
+    color: colors.red,
+    marginTop: spacing.xs,
+    marginLeft: spacing.xs,
+    fontFamily: fonts.bodySemiBold,
   },
 
   // ── Forgot password ──────────────────────────────────────────────────────────
   forgotPasswordButton: {
     alignSelf: 'flex-end',
-    paddingVertical: 4,
-    marginBottom: 28,
-    marginTop: -4,
+    paddingVertical: spacing.xs,
+    marginBottom: spacing.xl,
+    marginTop: -spacing.xs,
   },
   forgotPasswordText: {
-    color: COLORS.gold,
-    fontSize: 13,
-    fontWeight: '600',
+    color: colors.gold,
+    fontSize: fonts.size.md,
+    fontFamily: fonts.bodySemiBold,
     letterSpacing: 0.2,
   },
 
   // ── Sign In button ───────────────────────────────────────────────────────────
   signInButtonWrapper: {
     position: 'relative',
-    marginBottom: 24,
-  },
-  buttonGlowLayer: {
-    position: 'absolute',
-    top: 4,
-    left: 8,
-    right: 8,
-    bottom: -4,
-    backgroundColor: COLORS.gold,
-    borderRadius: 14,
-    opacity: 0.25,
-    // Blur simulation via elevation
-    shadowColor: COLORS.gold,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.6,
-    shadowRadius: 12,
-    elevation: 0,
+    marginBottom: spacing.lg,
   },
   signInButton: {
-    backgroundColor: COLORS.gold,
-    borderRadius: 14,
+    backgroundColor: colors.gold,
+    borderRadius: radius['2xl'],
     height: 54,
     alignItems: 'center',
     justifyContent: 'center',
-    // Semi-3D top highlight
-    borderTopWidth: 1,
-    borderTopColor: COLORS.goldLight + '88',
-    // Deep shadow
-    shadowColor: COLORS.goldDark,
+    shadowColor: colors.gold,
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.8,
-    shadowRadius: 10,
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
     elevation: 10,
-    overflow: 'hidden',
   },
   signInButtonLoading: {
     opacity: 0.85,
   },
-  buttonDepthLayer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 4,
-    backgroundColor: COLORS.goldDark,
-    borderBottomLeftRadius: 14,
-    borderBottomRightRadius: 14,
-    opacity: 0.6,
-  },
   signInButtonText: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: COLORS.background,
+    fontSize: fonts.size.lg,
+    fontFamily: fonts.bodyBold,
+    color: colors.background,
     letterSpacing: 1.5,
     textTransform: 'uppercase',
   },
@@ -623,9 +572,9 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   buttonLoadingText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: COLORS.background,
+    fontSize: fonts.size.lg,
+    fontFamily: fonts.bodyBold,
+    color: colors.background,
     letterSpacing: 0.5,
   },
 
@@ -633,41 +582,41 @@ const styles = StyleSheet.create({
   dividerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: spacing.md,
   },
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: COLORS.divider,
+    backgroundColor: colors.border,
   },
   dividerText: {
-    color: COLORS.textMuted,
-    fontSize: 13,
-    marginHorizontal: 12,
-    fontWeight: '500',
+    color: colors.greyDark,
+    fontSize: fonts.size.md,
+    marginHorizontal: spacing.md,
+    fontFamily: fonts.bodySemiBold,
   },
 
   // ── Register link ─────────────────────────────────────────────────────────────
   registerButton: {
     alignItems: 'center',
-    paddingVertical: 4,
+    paddingVertical: spacing.xs,
   },
   registerText: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
+    fontSize: fonts.size.md,
+    color: colors.grey,
     textAlign: 'center',
   },
   registerTextAccent: {
-    color: COLORS.gold,
-    fontWeight: '700',
+    color: colors.gold,
+    fontFamily: fonts.bodyBold,
   },
 
   // ── Footer ───────────────────────────────────────────────────────────────────
   footerText: {
-    fontSize: 11,
-    color: COLORS.textMuted,
+    fontSize: fonts.size.sm,
+    color: colors.greyDark,
     textAlign: 'center',
-    marginTop: 28,
+    marginTop: spacing.xl,
     letterSpacing: 0.3,
     lineHeight: 16,
   },

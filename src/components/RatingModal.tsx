@@ -11,11 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-
-const BG = '#0A0A0A';
-const GOLD = '#D4AF37';
-const GREY_STAR = '#333333';
-const INPUT_BG = '#141414';
+import { colors, fonts, spacing, radius, icons } from '@/theme';
 
 export interface RatingModalProps {
   visible: boolean;
@@ -93,9 +89,9 @@ export default function RatingModal({
                 accessibilityState={{ selected: stars >= n }}
               >
                 <Ionicons
-                  name={stars >= n ? 'star' : 'star-outline'}
+                  name={stars >= n ? icons.star : icons.starOutline}
                   size={40}
-                  color={stars >= n ? GOLD : GREY_STAR}
+                  color={stars >= n ? colors.gold : colors.border}
                 />
               </TouchableOpacity>
             ))}
@@ -104,7 +100,7 @@ export default function RatingModal({
           <TextInput
             style={styles.input}
             placeholder="Leave a comment (optional)"
-            placeholderTextColor="#888888"
+            placeholderTextColor={colors.grey}
             value={comment}
             onChangeText={setComment}
             multiline
@@ -121,7 +117,7 @@ export default function RatingModal({
             accessibilityLabel="Submit rating"
           >
             {submitting ? (
-              <ActivityIndicator color={BG} />
+              <ActivityIndicator color={colors.background} />
             ) : (
               <Text
                 style={[
@@ -156,74 +152,74 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.6)',
   },
   sheet: {
-    backgroundColor: BG,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    paddingHorizontal: 20,
-    paddingTop: 22,
-    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+    backgroundColor: colors.background,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.xl,
+    paddingBottom: Platform.OS === 'ios' ? spacing['4xl'] : spacing.xl,
     borderTopWidth: 1,
-    borderColor: '#252525',
+    borderColor: colors.border,
   },
   title: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    marginBottom: 8,
+    fontSize: fonts.size.xl,
+    fontFamily: fonts.bodyBold,
+    color: colors.white,
+    marginBottom: spacing.sm,
     textAlign: 'center',
   },
   subtitle: {
-    fontSize: 13,
-    color: GOLD,
+    fontSize: fonts.size.md,
+    color: colors.gold,
     textAlign: 'center',
-    marginBottom: 20,
+    marginBottom: spacing.lg,
     opacity: 0.95,
   },
   starsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 4,
-    marginBottom: 18,
+    paddingHorizontal: spacing.xs,
+    marginBottom: spacing.lg,
   },
   input: {
-    backgroundColor: INPUT_BG,
-    borderRadius: 10,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#252525',
-    color: '#FFFFFF',
-    fontSize: 14,
+    borderColor: colors.border,
+    color: colors.white,
+    fontSize: fonts.size.md,
     minHeight: 72,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 18,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    marginBottom: spacing.lg,
   },
   submitBtn: {
-    backgroundColor: GOLD,
-    borderRadius: 12,
-    paddingVertical: 14,
+    backgroundColor: colors.gold,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
   submitBtnDisabled: {
-    backgroundColor: '#333333',
+    backgroundColor: colors.border,
   },
   submitBtnText: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: BG,
+    fontSize: fonts.size.lg,
+    fontFamily: fonts.bodyBold,
+    color: colors.background,
   },
   submitBtnTextDisabled: {
-    color: '#666666',
+    color: colors.greyDark,
   },
   cancelWrap: {
     alignItems: 'center',
-    marginTop: 14,
-    paddingVertical: 6,
+    marginTop: spacing.md,
+    paddingVertical: spacing.sm,
   },
   cancelText: {
-    fontSize: 14,
-    color: '#888888',
-    fontWeight: '600',
+    fontSize: fonts.size.md,
+    color: colors.grey,
+    fontFamily: fonts.bodySemiBold,
   },
 });

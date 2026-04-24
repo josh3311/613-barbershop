@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -6,8 +6,8 @@ import {
   TouchableOpacity,
   Dimensions,
   StatusBar,
-  Animated,
   FlatList,
+  Animated,
 } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,51 +20,36 @@ import { Barber } from '@/types/barber.types';
 import { Booking } from '@/types/booking.types';
 import { safeToDate } from '@/utils/date.utils';
 import { buildHalfHourSlots, buildWorkingDates, dayKeyFromDate } from '@/utils/workingHours.utils';
-
-// ─── Theme ────────────────────────────────────────────────────────────────────
-
-const C = {
-  bg:           '#0A0A0A',
-  surface:      '#141414',
-  card:         '#161616',
-  elevated:     '#1C1C1C',
-  gold:         '#D4AF37',
-  goldDark:     '#A8861A',
-  goldLight:    '#EDD060',
-  goldGlow:     '#D4AF3718',
-  goldBorder:   '#D4AF3770',
-  booked:       '#1A1A1A',
-  bookedText:   '#3A3A3A',
-  bookedBorder: '#252525',
-  white:        '#FFFFFF',
-  sub:          '#888888',
-  muted:        '#444444',
-  divider:      '#1E1E1E',
-  danger:       '#CF6679',
-} as const;
+import { colors, fonts, spacing, radius, shadows, icons, animations } from '@/theme';
 
 const { width: SW } = Dimensions.get('window');
 
-// ─── Static service lookup (mirrors ServicesScreen catalogue) ─────────────────
-
+// ==========================================
+// Static service lookup
+// ==========================================
 const SERVICE_MAP: Record<string, {
-  name: string; price: number; durationMinutes: number;
+  name: string;
+  price: number;
+  durationMinutes: number;
   iconName: keyof typeof Ionicons.glyphMap;
 }> = {
-  s1: { name: 'Fade',           price: 40, durationMinutes: 30, iconName: 'cut-outline'   },
-  s2: { name: 'Lineup',         price: 15, durationMinutes: 15, iconName: 'cut-outline'   },
-  s3: { name: 'Beard Trim',     price: 25, durationMinutes: 20, iconName: 'brush-outline' },
-  s4: { name: 'Haircut',        price: 35, durationMinutes: 45, iconName: 'cut-outline'   },
-  s5: { name: 'Beard + Haircut',price: 50, durationMinutes: 60, iconName: 'star-outline'  },
+  s1: { name: 'Fade', price: 40, durationMinutes: 30, iconName: icons.cutOutline },
+  s2: { name: 'Lineup', price: 15, durationMinutes: 15, iconName: icons.cutOutline },
+  s3: { name: 'Beard Trim', price: 25, durationMinutes: 20, iconName: icons.brush },
+  s4: { name: 'Haircut', price: 35, durationMinutes: 45, iconName: icons.cutOutline },
+  s5: { name: 'Beard + Haircut', price: 50, durationMinutes: 60, iconName: icons.starOutline },
 };
 
 const DEFAULT_SERVICE = {
-  name: 'Service', price: 0, durationMinutes: 30,
-  iconName: 'cut-outline' as keyof typeof Ionicons.glyphMap,
+  name: 'Service',
+  price: 0,
+  durationMinutes: 30,
+  iconName: icons.cutOutline as keyof typeof Ionicons.glyphMap,
 };
 
-// ─── Time slots come from the barber's working hours (30-minute steps) ─────────
-
+// ==========================================
+// Types
+// ==========================================
 interface TimeSlot {
   key: string;
   label: string;
@@ -72,10 +57,13 @@ interface TimeSlot {
   minute: number;
 }
 
-// ─── Calendar day helpers ─────────────────────────────────────────────────────
+type Props = NativeStackScreenProps<BookStackParamList, 'SelectDateTime'>;
 
+// ==========================================
+// Calendar helpers
+// ==========================================
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 function isSameDay(a: Date, b: Date): boolean {
   return (
@@ -89,12 +77,112 @@ function isToday(d: Date): boolean {
   return isSameDay(d, new Date());
 }
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ==========================================
+// Animated Components
+// ==========================================
+function AnimatedCard({ children, delay = 0 }: { children: React.ReactNode; delay?: number }): React.JSX.Element {
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
 
-type Props = NativeStackScreenProps<BookStackParamList, 'SelectDateTime'>;
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(fadeAnim, { toValue: 1, duration: animations.normal, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 0, duration: animations.normal, useNativeDriver: true }),
+      ]).start();
+    }, delay);
+    return () => clearTimeout(timeout);
+  }, []);
 
-// ─── Component ────────────────────────────────────────────────────────────────
+  return (
+    <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+      {children}
+    </Animated.View>
+  );
+}
 
+function AnimatedSlot({
+  slot,
+  disabled,
+  booked,
+  past,
+  isSelected,
+  onPress,
+  index,
+}: {
+  slot: TimeSlot;
+  disabled: boolean;
+  booked: boolean;
+  past: boolean;
+  isSelected: boolean;
+  onPress: () => void;
+  index: number;
+}): React.JSX.Element {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      Animated.timing(fadeAnim, { toValue: 1, duration: animations.fast, useNativeDriver: true }).start();
+    }, index * 30);
+    return () => clearTimeout(timeout);
+  }, []);
+
+  const handlePressIn = useCallback(() => {
+    if (!disabled) {
+      Animated.spring(scaleAnim, { toValue: animations.pressScale, useNativeDriver: true, friction: 5 }).start();
+    }
+  }, [disabled]);
+
+  const handlePressOut = useCallback(() => {
+    if (!disabled) {
+      Animated.spring(scaleAnim, { toValue: animations.activeScale, useNativeDriver: true, friction: 5 }).start();
+    }
+  }, [disabled]);
+
+  return (
+    <Animated.View style={[styles.slotWrapper, { transform: [{ scale: scaleAnim }], opacity: fadeAnim }]}>
+      <TouchableOpacity
+        key={slot.key}
+        onPress={onPress}
+        disabled={disabled}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        activeOpacity={disabled ? 1 : 0.75}
+        style={[
+          styles.slot,
+          disabled && styles.slotDisabled,
+          isSelected && styles.slotSelected,
+        ]}
+        accessibilityRole="button"
+        accessibilityLabel={`${slot.label}${booked ? ', booked' : past ? ', past' : ''}`}
+        accessibilityState={{ disabled, selected: isSelected }}
+      >
+        {isSelected && (
+          <View style={styles.slotCheck} importantForAccessibility="no">
+            <Ionicons name={icons.checkmark} size={12} color={colors.background} />
+          </View>
+        )}
+        <Text style={[
+          styles.slotTime,
+          disabled && styles.slotTimeDisabled,
+          isSelected && styles.slotTimeSelected,
+        ]}>
+          {slot.label}
+        </Text>
+        {(booked || past) && (
+          <Text style={styles.slotSubLabel}>
+            {booked ? 'Booked' : 'Past'}
+          </Text>
+        )}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
+// ==========================================
+// Main Screen Component
+// ==========================================
 export default function BookingScreen({ route, navigation }: Props): React.JSX.Element {
   const { barberId, serviceId, barberName } = route.params;
   const insets = useSafeAreaInsets();
@@ -106,15 +194,15 @@ export default function BookingScreen({ route, navigation }: Props): React.JSX.E
     return t;
   }, []);
 
-  const [selectedDay, setSelectedDay]     = useState<Date>(todayStart);
-  const [selectedSlot, setSelectedSlot]   = useState<TimeSlot | null>(null);
-  const [bookedKeys, setBookedKeys]       = useState<Set<string>>(new Set());
-  const [loadingSlots, setLoadingSlots]   = useState(false);
-  const [barberDoc, setBarberDoc]         = useState<Barber | null>(null);
+  const [selectedDay, setSelectedDay] = useState<Date>(todayStart);
+  const [selectedSlot, setSelectedSlot] = useState<TimeSlot | null>(null);
+  const [bookedKeys, setBookedKeys] = useState<Set<string>>(new Set());
+  const [loadingSlots, setLoadingSlots] = useState(false);
+  const [barberDoc, setBarberDoc] = useState<Barber | null>(null);
   const [barberLoading, setBarberLoading] = useState(true);
   const [barberLoadError, setBarberLoadError] = useState<string | null>(null);
 
-  const btnScale = useRef(new Animated.Value(1)).current;
+  const btnScaleAnim = useRef(new Animated.Value(1)).current;
 
   const availableDays = useMemo(
     () => buildWorkingDates(barberDoc?.workingHours, 21),
@@ -153,8 +241,6 @@ export default function BookingScreen({ route, navigation }: Props): React.JSX.E
     if (!ok) setSelectedDay(availableDays[0]);
   }, [availableDays, selectedDay]);
 
-  // ── Fetch booked slots whenever selected day changes ───────────────────────
-
   const fetchBookings = useCallback(async (day: Date): Promise<void> => {
     setLoadingSlots(true);
     setSelectedSlot(null);
@@ -162,9 +248,6 @@ export default function BookingScreen({ route, navigation }: Props): React.JSX.E
     const result = await BookingService.getByBarberAndDate(barberId, day);
 
     if (result.success) {
-      // Build a set of "HH:MM" keys that are taken. Only bookings that
-      // actually hold the slot (pending / confirmed / in_progress / completed)
-      // count; cancelled / declined / no_show bookings free the slot again.
       const BLOCKING = new Set(['pending', 'confirmed', 'in_progress', 'completed']);
       const taken = new Set<string>();
       result.data.forEach((b: Booking) => {
@@ -187,8 +270,6 @@ export default function BookingScreen({ route, navigation }: Props): React.JSX.E
     fetchBookings(selectedDay);
   }, [selectedDay, fetchBookings]);
 
-  // ── Slot state helpers ─────────────────────────────────────────────────────
-
   function isBooked(slot: TimeSlot): boolean {
     return bookedKeys.has(slot.key);
   }
@@ -205,8 +286,6 @@ export default function BookingScreen({ route, navigation }: Props): React.JSX.E
     return isBooked(slot) || isPast(slot);
   }
 
-  // ── Confirm booking ────────────────────────────────────────────────────────
-
   function handleConfirm(): void {
     if (!selectedSlot) return;
     const dt = new Date(selectedDay);
@@ -219,26 +298,26 @@ export default function BookingScreen({ route, navigation }: Props): React.JSX.E
     });
   }
 
-  // ── Button animation ───────────────────────────────────────────────────────
+  function btnIn(): void {
+    if (!selectedSlot) return;
+    Animated.spring(btnScaleAnim, { toValue: animations.pressScale, useNativeDriver: true, friction: 5 }).start();
+  }
 
-  function btnIn():  void { Animated.spring(btnScale, { toValue: 0.96, useNativeDriver: true, speed: 60, bounciness: 3 }).start(); }
-  function btnOut(): void { Animated.spring(btnScale, { toValue: 1,    useNativeDriver: true, speed: 60, bounciness: 3 }).start(); }
+  function btnOut(): void {
+    Animated.spring(btnScaleAnim, { toValue: animations.activeScale, useNativeDriver: true, friction: 5 }).start();
+  }
 
   const canConfirm = !!selectedSlot && daySlots.length > 0;
-
-  // ── Format selected summary ────────────────────────────────────────────────
 
   const selectedSummary = selectedSlot
     ? `${DAY_LABELS[selectedDay.getDay()]}, ${MONTH_LABELS[selectedDay.getMonth()]} ${selectedDay.getDate()} · ${selectedSlot.label}`
     : null;
 
-  // ── Render ─────────────────────────────────────────────────────────────────
-
   if (barberLoading) {
     return (
       <View style={[styles.root, styles.centerMsg, { paddingTop: insets.top }]}>
-        <StatusBar barStyle="light-content" backgroundColor={C.bg} />
-        <ActivityIndicator size="large" color={C.gold} />
+        <StatusBar barStyle="light-content" backgroundColor={colors.background} />
+        <ActivityIndicator size="large" color={colors.gold} />
         <Text style={styles.loadBarberText}>Loading schedule…</Text>
       </View>
     );
@@ -247,8 +326,8 @@ export default function BookingScreen({ route, navigation }: Props): React.JSX.E
   if (barberLoadError || !barberDoc) {
     return (
       <View style={[styles.root, styles.centerMsg, { paddingTop: insets.top }]}>
-        <StatusBar barStyle="light-content" backgroundColor={C.bg} />
-        <Ionicons name="alert-circle-outline" size={44} color={C.danger} />
+        <StatusBar barStyle="light-content" backgroundColor={colors.background} />
+        <Ionicons name={icons.alertCircle} size={44} color={colors.red} />
         <Text style={styles.errTitle}>{barberLoadError ?? 'Could not load barber.'}</Text>
         <TouchableOpacity style={styles.retryBtn} onPress={() => navigation.goBack()} accessibilityRole="button">
           <Text style={styles.retryBtnText}>Go back</Text>
@@ -259,9 +338,9 @@ export default function BookingScreen({ route, navigation }: Props): React.JSX.E
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+      <StatusBar barStyle="light-content" backgroundColor={colors.background} />
 
-      {/* ── Header ── */}
+      {/* Header */}
       <View style={styles.header} accessibilityRole="header">
         <TouchableOpacity
           onPress={() => navigation.goBack()}
@@ -270,7 +349,7 @@ export default function BookingScreen({ route, navigation }: Props): React.JSX.E
           accessibilityLabel="Go back"
           hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
         >
-          <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
+          <Ionicons name={icons.back} size={22} color={colors.white} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>Select Date & Time</Text>
@@ -287,25 +366,27 @@ export default function BookingScreen({ route, navigation }: Props): React.JSX.E
         contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 110 }]}
         showsVerticalScrollIndicator={false}
       >
-        {/* ── Service summary card ── */}
-        <View style={styles.serviceCard} accessibilityLabel={`${service.name}, $${service.price}`}>
-          <View style={styles.serviceCardAccent} />
-          <View style={styles.serviceCardInner}>
-            <View style={styles.serviceIconWrap}>
-              <Ionicons name={service.iconName} size={22} color="#D4AF37" />
-            </View>
-            <View style={styles.serviceInfo}>
-              <Text style={styles.serviceName}>{service.name}</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <Ionicons name="timer-outline" size={12} color="#666666" />
-                <Text style={styles.serviceMeta}>{service.durationMinutes} min</Text>
+        {/* Service summary card */}
+        <AnimatedCard delay={0}>
+          <View style={styles.serviceCard} accessibilityLabel={`${service.name}, $${service.price}`}>
+            <View style={styles.serviceCardAccent} />
+            <View style={styles.serviceCardInner}>
+              <View style={styles.serviceIconWrap}>
+                <Ionicons name={service.iconName} size={22} color={colors.gold} />
               </View>
+              <View style={styles.serviceInfo}>
+                <Text style={styles.serviceName}>{service.name}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Ionicons name={icons.time} size={12} color={colors.greyDark} />
+                  <Text style={styles.serviceMeta}>{service.durationMinutes} min</Text>
+                </View>
+              </View>
+              <Text style={styles.servicePrice}>${service.price}</Text>
             </View>
-            <Text style={styles.servicePrice}>${service.price}</Text>
           </View>
-        </View>
+        </AnimatedCard>
 
-        {/* ── Calendar strip ── */}
+        {/* Calendar strip */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>SELECT DATE</Text>
           {availableDays.length === 0 ? (
@@ -346,14 +427,14 @@ export default function BookingScreen({ route, navigation }: Props): React.JSX.E
           />
         </View>
 
-        {/* ── Time slots ── */}
+        {/* Time slots */}
         <View style={styles.section}>
           <View style={styles.slotHeaderRow}>
             <Text style={styles.sectionLabel}>AVAILABLE TIMES</Text>
             {loadingSlots && (
               <ActivityIndicator
                 size={14}
-                color={C.gold}
+                color={colors.gold}
                 accessibilityLabel="Loading available times"
               />
             )}
@@ -369,45 +450,23 @@ export default function BookingScreen({ route, navigation }: Props): React.JSX.E
             <Text style={styles.noDaysText}>No time slots for this day.</Text>
           ) : (
             <View style={styles.slotsGrid}>
-              {daySlots.map((slot) => {
+              {daySlots.map((slot, idx) => {
                 const disabled = isDisabled(slot);
-                const booked   = isBooked(slot);
-                const past     = isPast(slot);
-                const isSel    = selectedSlot?.key === slot.key;
+                const booked = isBooked(slot);
+                const past = isPast(slot);
+                const isSel = selectedSlot?.key === slot.key;
 
                 return (
-                  <TouchableOpacity
+                  <AnimatedSlot
                     key={slot.key}
-                    onPress={() => !disabled && setSelectedSlot(s => s?.key === slot.key ? null : slot)}
+                    slot={slot}
                     disabled={disabled}
-                    activeOpacity={disabled ? 1 : 0.75}
-                    style={[
-                      styles.slot,
-                      disabled && styles.slotDisabled,
-                      isSel   && styles.slotSelected,
-                    ]}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${slot.label}${booked ? ', booked' : past ? ', past' : ''}`}
-                    accessibilityState={{ disabled, selected: isSel }}
-                  >
-                    {isSel && (
-                      <View style={styles.slotCheck} importantForAccessibility="no">
-                        <Ionicons name="checkmark" size={12} color={C.bg} />
-                      </View>
-                    )}
-                    <Text style={[
-                      styles.slotTime,
-                      disabled && styles.slotTimeDisabled,
-                      isSel   && styles.slotTimeSelected,
-                    ]}>
-                      {slot.label}
-                    </Text>
-                    {(booked || past) && (
-                      <Text style={styles.slotSubLabel}>
-                        {booked ? 'Booked' : 'Past'}
-                      </Text>
-                    )}
-                  </TouchableOpacity>
+                    booked={booked}
+                    past={past}
+                    isSelected={isSel}
+                    onPress={() => setSelectedSlot(s => s?.key === slot.key ? null : slot)}
+                    index={idx}
+                  />
                 );
               })}
             </View>
@@ -415,7 +474,7 @@ export default function BookingScreen({ route, navigation }: Props): React.JSX.E
         </View>
       </ScrollView>
 
-      {/* ── Bottom bar ── */}
+      {/* Bottom bar */}
       <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 14 }]}>
         {/* Selection summary */}
         {selectedSummary ? (
@@ -428,7 +487,7 @@ export default function BookingScreen({ route, navigation }: Props): React.JSX.E
         )}
 
         {/* Confirm button */}
-        <Animated.View style={[styles.btnWrap, { transform: [{ scale: btnScale }] }]}>
+        <Animated.View style={[styles.btnWrap, { transform: [{ scale: btnScaleAnim }] }]}>
           {canConfirm && <View style={styles.btnGlow} />}
           <TouchableOpacity
             onPress={handleConfirm}
@@ -443,7 +502,7 @@ export default function BookingScreen({ route, navigation }: Props): React.JSX.E
             accessibilityState={{ disabled: !canConfirm }}
           >
             <Text style={[styles.btnText, !canConfirm && styles.btnTextDisabled]}>
-              Review & Confirm →
+              Review & Confirm
             </Text>
             {canConfirm && <View style={styles.btnDepth} />}
           </TouchableOpacity>
@@ -453,119 +512,230 @@ export default function BookingScreen({ route, navigation }: Props): React.JSX.E
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
-const SLOT_GAP   = 10;
-const SLOT_COLS  = 3;
-const SLOT_W     = (SW - 40 - SLOT_GAP * (SLOT_COLS - 1)) / SLOT_COLS;
+// ==========================================
+// Styles
+// ==========================================
+const SLOT_GAP = 10;
+const SLOT_COLS = 3;
+const SLOT_W = (SW - 40 - SLOT_GAP * (SLOT_COLS - 1)) / SLOT_COLS;
 
 const styles = StyleSheet.create({
-  root:   { flex: 1, backgroundColor: C.bg },
-  scroll: { paddingTop: 4 },
+  root: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  scroll: {
+    paddingTop: spacing.xs,
+  },
 
-  centerMsg:      { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
-  loadBarberText:  { color: C.sub, fontSize: 14 },
-  errTitle:        { color: C.white, fontSize: 16, textAlign: 'center', fontWeight: '700' },
-  retryBtn:        { marginTop: 8, backgroundColor: C.gold, paddingHorizontal: 22, paddingVertical: 12, borderRadius: 12 },
-  retryBtnText:    { color: C.bg, fontWeight: '800', fontSize: 15 },
-  noDaysText:      { color: C.sub, fontSize: 13, lineHeight: 20, marginBottom: 10 },
+  centerMsg: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.xl,
+    gap: spacing.md,
+  },
+  loadBarberText: {
+    color: colors.grey,
+    fontSize: fonts.size.md,
+    fontFamily: fonts.body,
+  },
+  errTitle: {
+    color: colors.white,
+    fontSize: fonts.size.lg,
+    textAlign: 'center',
+    fontFamily: fonts.bodyBold,
+  },
+  retryBtn: {
+    marginTop: spacing.sm,
+    backgroundColor: colors.gold,
+    paddingHorizontal: 22,
+    paddingVertical: spacing.md,
+    borderRadius: radius.md,
+  },
+  retryBtnText: {
+    color: colors.background,
+    fontFamily: fonts.bodyBold,
+    fontSize: fonts.size.md,
+  },
+  noDaysText: {
+    color: colors.grey,
+    fontSize: fonts.size.md,
+    lineHeight: fonts.lineHeight.relaxed * fonts.size.md,
+    marginBottom: spacing.md,
+    fontFamily: fonts.body,
+  },
 
   // Header
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: spacing.lg,
     paddingVertical: 14,
   },
-  backBtn:     { width: 36, alignItems: 'center' },
-  headerCenter:{ flex: 1, alignItems: 'center' },
-  headerTitle: { fontSize: 18, fontWeight: '800', color: C.white, letterSpacing: 0.4 },
-  headerShop:  { fontSize: 10, color: C.gold, letterSpacing: 2, fontWeight: '700', marginTop: 2 },
-  headerSub:   { fontSize: 12, color: C.sub, fontWeight: '600', marginTop: 4 },
-  headerLine:  {
-    height: 1, marginHorizontal: 20, backgroundColor: C.gold,
-    opacity: 0.3, marginBottom: 2,
-    shadowColor: C.gold, shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5, shadowRadius: 4,
+  backBtn: {
+    width: 36,
+    alignItems: 'center',
+  },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  headerTitle: {
+    fontSize: fonts.size.xl,
+    fontFamily: fonts.heading,
+    color: colors.white,
+    letterSpacing: fonts.letterSpacing.wide,
+  },
+  headerShop: {
+    fontSize: fonts.size.xs,
+    color: colors.gold,
+    letterSpacing: fonts.letterSpacing.wider,
+    fontFamily: fonts.bodyBold,
+    marginTop: spacing.xs,
+  },
+  headerSub: {
+    fontSize: fonts.size.sm,
+    color: colors.grey,
+    fontFamily: fonts.bodySemiBold,
+    marginTop: spacing.xs,
+  },
+  headerLine: {
+    height: 1,
+    marginHorizontal: spacing.xl,
+    backgroundColor: colors.gold,
+    opacity: 0.3,
+    marginBottom: spacing.xs,
   },
 
   // Service card
   serviceCard: {
-    marginHorizontal: 20,
-    marginTop: 14,
-    backgroundColor: C.card,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: C.goldBorder,
+    marginHorizontal: spacing.xl,
+    marginTop: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.gold,
     overflow: 'hidden',
-    shadowColor: C.gold,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 8,
+    ...shadows.md,
   },
-  serviceCardAccent: { height: 3, backgroundColor: C.gold },
+  serviceCardAccent: {
+    height: 3,
+    backgroundColor: colors.gold,
+  },
   serviceCardInner: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    gap: 14,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    gap: spacing.md,
   },
   serviceIconWrap: {
     width: 46,
     height: 46,
-    borderRadius: 12,
-    backgroundColor: C.goldGlow,
+    borderRadius: radius.md,
+    backgroundColor: colors.goldGlow,
     borderWidth: 1,
-    borderColor: C.goldBorder,
+    borderColor: colors.gold,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
   },
-  serviceInfo:  { flex: 1 },
-  serviceName:  { fontSize: 16, fontWeight: '800', color: C.white, letterSpacing: 0.3 },
-  serviceMeta:  { fontSize: 12, color: C.sub, marginTop: 2 },
-  servicePrice: { fontSize: 26, fontWeight: '900', color: C.gold, letterSpacing: -0.5, flexShrink: 0 },
+  serviceInfo: {
+    flex: 1,
+  },
+  serviceName: {
+    fontSize: fonts.size.lg,
+    fontFamily: fonts.bodyBold,
+    color: colors.white,
+    letterSpacing: fonts.letterSpacing.normal,
+  },
+  serviceMeta: {
+    fontSize: fonts.size.sm,
+    color: colors.grey,
+    marginTop: spacing.xs,
+    fontFamily: fonts.body,
+  },
+  servicePrice: {
+    fontSize: fonts.size['3xl'],
+    fontFamily: fonts.bodyBold,
+    color: colors.gold,
+    letterSpacing: fonts.letterSpacing.tight,
+    flexShrink: 0,
+  },
 
   // Section
-  section:       { paddingHorizontal: 20, marginTop: 24 },
-  sectionLabel:  { fontSize: 10, color: C.muted, fontWeight: '700', letterSpacing: 2, marginBottom: 12 },
-  slotHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  section: {
+    paddingHorizontal: spacing.xl,
+    marginTop: spacing.xl,
+  },
+  sectionLabel: {
+    fontSize: fonts.size.xs,
+    color: colors.greyDark,
+    fontFamily: fonts.bodyBold,
+    letterSpacing: fonts.letterSpacing.wider,
+    marginBottom: spacing.md,
+  },
+  slotHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
 
   // Calendar strip
-  calStrip: { gap: 10, paddingBottom: 4 },
+  calStrip: {
+    gap: spacing.sm,
+    paddingBottom: spacing.xs,
+  },
   dayCard: {
     width: 62,
-    paddingVertical: 12,
-    borderRadius: 14,
-    backgroundColor: C.card,
-    borderWidth: 1.5,
-    borderColor: C.divider,
+    paddingVertical: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
     alignItems: 'center',
-    gap: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 6,
+    gap: spacing.xs,
+    ...shadows.sm,
   },
   dayCardSelected: {
-    backgroundColor: C.goldGlow,
-    borderColor: C.gold,
-    shadowColor: C.gold,
-    shadowOpacity: 0.25,
-    elevation: 10,
+    backgroundColor: colors.goldGlow,
+    borderColor: colors.gold,
+    ...shadows.gold,
   },
-  dayName:         { fontSize: 11, fontWeight: '700', color: C.sub,   letterSpacing: 0.5 },
-  dayNameSelected: { color: C.gold },
-  dayNum:          { fontSize: 22, fontWeight: '900', color: C.white },
-  dayNumSelected:  { color: C.gold },
-  dayMonth:        { fontSize: 10, fontWeight: '600', color: C.muted,  letterSpacing: 0.5 },
-  dayMonthSelected:{ color: C.gold },
+  dayName: {
+    fontSize: fonts.size.sm,
+    fontFamily: fonts.bodyBold,
+    color: colors.grey,
+    letterSpacing: fonts.letterSpacing.normal,
+  },
+  dayNameSelected: {
+    color: colors.gold,
+  },
+  dayNum: {
+    fontSize: fonts.size['2xl'],
+    fontFamily: fonts.bodyBold,
+    color: colors.white,
+  },
+  dayNumSelected: {
+    color: colors.gold,
+  },
+  dayMonth: {
+    fontSize: fonts.size.xs,
+    fontFamily: fonts.bodySemiBold,
+    color: colors.greyDark,
+    letterSpacing: fonts.letterSpacing.normal,
+  },
+  dayMonthSelected: {
+    color: colors.gold,
+  },
   dayDot: {
-    width: 5, height: 5, borderRadius: 3,
-    backgroundColor: C.gold, marginTop: 2,
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: colors.gold,
+    marginTop: spacing.xs,
   },
 
   // Slot grid
@@ -574,61 +744,57 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: SLOT_GAP,
   },
+  slotWrapper: {
+    width: SLOT_W,
+    height: 60,
+  },
   slot: {
     width: SLOT_W,
     height: 60,
-    borderRadius: 12,
-    backgroundColor: C.card,
-    borderWidth: 1.5,
-    borderColor: C.divider,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 6,
-    elevation: 5,
+    ...shadows.sm,
     position: 'relative',
   },
   slotSelected: {
-    backgroundColor: C.gold,
-    borderColor: C.goldLight,
-    shadowColor: C.gold,
-    shadowOpacity: 0.5,
-    shadowRadius: 10,
-    elevation: 10,
+    backgroundColor: colors.gold,
+    borderColor: colors.gold,
+    ...shadows.gold,
   },
   slotDisabled: {
-    backgroundColor: C.booked,
-    borderColor: C.bookedBorder,
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
     shadowOpacity: 0,
     elevation: 0,
   },
   slotTime: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: C.white,
-    letterSpacing: 0.2,
+    fontSize: fonts.size.md,
+    fontFamily: fonts.bodyBold,
+    color: colors.white,
+    letterSpacing: fonts.letterSpacing.normal,
   },
-  slotTimeSelected: { color: C.bg },
-  slotTimeDisabled: { color: C.bookedText, fontSize: 12 },
+  slotTimeSelected: {
+    color: colors.background,
+  },
+  slotTimeDisabled: {
+    color: colors.greyDark,
+    fontSize: fonts.size.sm,
+  },
   slotSubLabel: {
     fontSize: 9,
-    color: C.muted,
-    fontWeight: '600',
-    letterSpacing: 0.5,
+    color: colors.greyDark,
+    fontFamily: fonts.bodySemiBold,
+    letterSpacing: fonts.letterSpacing.normal,
     marginTop: 2,
   },
   slotCheck: {
     position: 'absolute',
     top: 4,
     right: 6,
-  },
-  slotCheckMark: {
-    fontSize: 11,
-    fontWeight: '900',
-    color: C.bg,
-    lineHeight: 14,
   },
 
   // Loading skeleton for slots
@@ -640,8 +806,8 @@ const styles = StyleSheet.create({
   slotSkeleton: {
     width: SLOT_W,
     height: 60,
-    borderRadius: 12,
-    backgroundColor: C.elevated,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceRaised,
     opacity: 0.5,
   },
 
@@ -651,56 +817,90 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: C.surface,
-    paddingTop: 14,
-    paddingHorizontal: 20,
+    backgroundColor: colors.surface,
+    paddingTop: spacing.md,
+    paddingHorizontal: spacing.xl,
     borderTopWidth: 1,
-    borderTopColor: C.divider,
-    gap: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -8 },
-    shadowOpacity: 0.6,
-    shadowRadius: 16,
-    elevation: 20,
+    borderTopColor: colors.border,
+    gap: spacing.md,
+    ...shadows.md,
   },
-  hintText: { fontSize: 12, color: C.muted, textAlign: 'center' },
+  hintText: {
+    fontSize: fonts.size.sm,
+    color: colors.greyDark,
+    textAlign: 'center',
+    fontFamily: fonts.body,
+  },
   summary: {
-    backgroundColor: C.elevated,
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
     borderWidth: 1,
-    borderColor: C.goldBorder,
+    borderColor: colors.gold,
   },
-  summaryLabel: { fontSize: 9, color: C.gold, fontWeight: '800', letterSpacing: 2, marginBottom: 3 },
-  summaryValue: { fontSize: 14, fontWeight: '700', color: C.white },
+  summaryLabel: {
+    fontSize: 9,
+    color: colors.gold,
+    fontFamily: fonts.bodyBold,
+    letterSpacing: fonts.letterSpacing.wider,
+    marginBottom: 3,
+  },
+  summaryValue: {
+    fontSize: fonts.size.md,
+    fontFamily: fonts.bodyBold,
+    color: colors.white,
+  },
 
   // Button
-  btnWrap: { position: 'relative' },
+  btnWrap: {
+    position: 'relative',
+  },
   btnGlow: {
     position: 'absolute',
-    top: 4, left: 10, right: 10, bottom: -4,
-    backgroundColor: C.gold, borderRadius: 14, opacity: 0.2,
-    shadowColor: C.gold, shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.5, shadowRadius: 12,
+    top: 4,
+    left: 10,
+    right: 10,
+    bottom: -4,
+    backgroundColor: colors.gold,
+    borderRadius: radius['2xl'],
+    opacity: 0.2,
+    ...shadows.gold,
   },
   btn: {
-    height: 54, borderRadius: 14, backgroundColor: C.gold,
-    alignItems: 'center', justifyContent: 'center',
-    borderTopWidth: 1, borderTopColor: C.goldLight + '70',
-    shadowColor: C.goldDark, shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.8, shadowRadius: 10, elevation: 10,
+    height: 54,
+    borderRadius: radius['2xl'],
+    backgroundColor: colors.gold,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.md,
     overflow: 'hidden',
   },
   btnDisabled: {
-    backgroundColor: C.elevated, borderTopColor: 'transparent',
-    shadowColor: '#000', shadowOpacity: 0.2, elevation: 2,
+    backgroundColor: colors.surfaceRaised,
+    shadowColor: colors.background,
+    shadowOpacity: 0.2,
+    elevation: 2,
   },
-  btnText:         { fontSize: 16, fontWeight: '800', color: C.bg, letterSpacing: 1.5, textTransform: 'uppercase' },
-  btnTextDisabled: { color: C.muted },
+  btnText: {
+    fontSize: fonts.size.md,
+    fontFamily: fonts.bodyBold,
+    color: colors.background,
+    letterSpacing: fonts.letterSpacing.wider,
+    textTransform: 'uppercase',
+  },
+  btnTextDisabled: {
+    color: colors.greyDark,
+  },
   btnDepth: {
-    position: 'absolute', bottom: 0, left: 0, right: 0, height: 4,
-    backgroundColor: C.goldDark, opacity: 0.5,
-    borderBottomLeftRadius: 14, borderBottomRightRadius: 14,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 4,
+    backgroundColor: colors.goldDim,
+    opacity: 0.5,
+    borderBottomLeftRadius: radius['2xl'],
+    borderBottomRightRadius: radius['2xl'],
   },
 });

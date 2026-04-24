@@ -4,11 +4,12 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ActivityIndicator, View, StyleSheet, Text } from 'react-native';
 import { useAuth } from '@/hooks/useAuth';
 import { RootStackParamList } from './types';
-import AuthNavigator   from './AuthNavigator';
+import AuthNavigator from './AuthNavigator';
 import ClientNavigator from './ClientNavigator';
 import BarberNavigator from './BarberNavigator';
-import AdminNavigator  from './AdminNavigator';
+import AdminNavigator from './AdminNavigator';
 import { PushTokenEffect } from '@/components/PushTokenEffect';
+import { colors, fonts, spacing } from '@/theme';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -26,7 +27,7 @@ export default function RootNavigator(): React.JSX.Element {
   if (isLoading || !profileLoaded) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#D4AF37" />
+        <ActivityIndicator size="large" color={colors.gold} />
         <Text style={styles.loadingText}>
           {isLoading ? 'Starting up…' : 'Loading your profile…'}
         </Text>
@@ -40,7 +41,7 @@ export default function RootNavigator(): React.JSX.Element {
         {isAuthenticated ? <PushTokenEffect /> : null}
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           {!isAuthenticated ? (
-            <Stack.Screen name="Auth"      component={AuthNavigator} />
+            <Stack.Screen name="Auth" component={AuthNavigator} />
           ) : appUser?.role === 'admin' ? (
             <Stack.Screen name="AdminApp" component={AdminNavigator} />
           ) : appUser?.role === 'barber' ? (
@@ -59,12 +60,12 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#0A0A0A',
-    gap: 16,
+    backgroundColor: colors.background,
+    gap: spacing.md,
   },
   loadingText: {
-    fontSize: 13,
-    color: '#555555',
-    letterSpacing: 0.3,
+    fontSize: fonts.size.md,
+    color: colors.greyDark,
+    letterSpacing: fonts.letterSpacing.normal,
   },
 });

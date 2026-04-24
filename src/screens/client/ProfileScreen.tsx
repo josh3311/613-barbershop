@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -10,10 +10,10 @@ import {
   Pressable,
   Alert,
   Platform,
+  Animated,
 } from 'react-native';
 import { Text } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
-import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
 import type { NavigationProp } from '@react-navigation/native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
@@ -29,27 +29,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { db } from '@/config/firebase';
 import { COLLECTIONS } from '@/constants/collections';
 import type { ProfileAnalysisResult } from '@/services/ai.service';
-
-// ─── Theme ────────────────────────────────────────────────────────────────────
-
-const C = {
-  bg:           '#0A0A0A',
-  surface:      '#141414',
-  card:         '#161616',
-  elevated:     '#1C1C1C',
-  gold:         '#D4AF37',
-  goldDark:     '#A8861A',
-  goldLight:    '#EDD060',
-  goldGlow:     '#D4AF3715',
-  goldBorder:   '#D4AF3740',
-  danger:       '#CF6679',
-  dangerBg:     '#2A1010',
-  dangerBorder: '#CF667944',
-  white:        '#FFFFFF',
-  sub:          '#999999',
-  muted:        '#555555',
-  divider:      '#1E1E1E',
-} as const;
+import { colors, fonts, spacing, radius, shadows, icons, animations } from '@/theme';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -77,7 +57,7 @@ function formatBirthdayDisplay(mmdd: string | null): string {
 }
 
 function parseMMDD(mmdd: string | null): { month: number; day: number } {
-  if (!mmdd || !/^\d{2}-\d{2}$/.test(mmdd)) return { month: 1, day: 1 };
+  if (!mmdd || /^\d{2}-\d{2}$/.test(mmdd)) return { month: 1, day: 1 };
   const [mm, dd] = mmdd.split('-').map((x) => parseInt(x, 10));
   const month = Math.min(12, Math.max(1, mm || 1));
   const maxD = daysInMonth(month);
@@ -125,7 +105,7 @@ function InfoRow({
   return (
     <View style={styles.infoRow} accessibilityLabel={`${label}: ${value}`}>
       <View style={styles.infoIconWrap}>
-        <Ionicons name={iconName} size={18} color="#555555" />
+        <Ionicons name={iconName} size={18} color={colors.greyDark} />
       </View>
       <View style={styles.infoText}>
         <Text style={styles.infoLabel}>{label}</Text>
@@ -134,8 +114,6 @@ function InfoRow({
     </View>
   );
 }
-
-// ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function ProfileScreen({ navigation }: Props): React.JSX.Element {
   const insets = useSafeAreaInsets();
@@ -148,6 +126,47 @@ export default function ProfileScreen({ navigation }: Props): React.JSX.Element 
   const [pickMonth, setPickMonth] = useState(1);
   const [pickDay, setPickDay] = useState(1);
   const [savingBirthday, setSavingBirthday] = useState(false);
+
+  // Animation refs
+  const avatarAnim = useRef(new Animated.Value(0)).current;
+  const cardAnims = useRef<Animated.Value[]>([]).current;
+
+  useEffect(() => {
+    // Initialize card animation values
+    cardAnims.length = 0;
+    [0, 1, 2, 3].forEach(() => cardAnims.push(new Animated.Value(0)));
+
+    // Staggered entrance animations
+    Animated.sequence([
+      Animated.timing(avatarAnim, {
+        toValue: 1,
+        duration: animations.normal,
+        useNativeDriver: true,
+      }),
+      Animated.stagger(100, cardAnims.map(anim =>
+        Animated.timing(anim, {
+          toValue: 1,
+          duration: animations.normal,
+          useNativeDriver: true,
+        })
+      )),
+    ]).start();
+  }, []);
+
+  const getCardStyle = (index: number) => {
+    const animValue = cardAnims[index] || new Animated.Value(1);
+    return {
+      opacity: animValue,
+      transform: [
+        {
+          translateY: animValue.interpolate({
+            inputRange: [0, 1],
+            outputRange: [animations.slideUp.from, animations.slideUp.to],
+          }),
+        },
+      ],
+    };
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -290,26 +309,29 @@ export default function ProfileScreen({ navigation }: Props): React.JSX.Element 
     setLoggingOut(false);
   }
 
+  // Button press animation
+  const [pressedButton, setPressedButton] = useState<string | null>(null);
+
   return (
     <View style={[styles.root, { paddingBottom: insets.bottom }]}>
-      <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+      <StatusBar barStyle="light-content" backgroundColor={colors.background} />
 
       <ScrollView
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-        {/* ── Avatar card ── */}
-        <View style={styles.avatarCard}>
+        {/* Avatar card */}
+        <Animated.View style={[styles.avatarCard, getCardStyle(0)]}>
           <View style={styles.avatarCardAccent} />
 
-          <View style={styles.avatarWrap}>
+          <Animated.View style={[styles.avatarWrap, { opacity: avatarAnim }]}>
             <View style={styles.avatarGlow} />
             <View style={styles.avatarOuter}>
               <View style={styles.avatarInner}>
                 <Text style={styles.avatarInitials}>{initials}</Text>
               </View>
             </View>
-          </View>
+          </Animated.View>
 
           <Text style={styles.displayName}>{displayName ?? 'Member'}</Text>
           <Text style={styles.memberBadge}>613 BARBERSHOP MEMBER</Text>
@@ -318,25 +340,30 @@ export default function ProfileScreen({ navigation }: Props): React.JSX.Element 
             <Text style={styles.memberSinceLabel}>Member since</Text>
             <Text style={styles.memberSinceValue}>{memberSince}</Text>
           </View>
-        </View>
+        </Animated.View>
 
-        {/* ── Account info ── */}
-        <View style={styles.section}>
+        {/* Account info */}
+        <Animated.View style={[styles.section, getCardStyle(1)]}>
           <Text style={styles.sectionTitle}>ACCOUNT INFO</Text>
           <View style={styles.card}>
-            <InfoRow iconName="mail-outline"    label="Email"   value={email} />
+            <InfoRow iconName={icons.mail} label="Email" value={email} />
             <View style={styles.cardDivider} />
-            <InfoRow iconName="person-outline"  label="Name"    value={displayName ?? '—'} />
+            <InfoRow iconName={icons.tabProfileOutline} label="Name" value={displayName ?? '—'} />
             <View style={styles.cardDivider} />
             <TouchableOpacity
               style={styles.birthdayRow}
               onPress={() => setBirthdayModalOpen(true)}
+              onPressIn={() => setPressedButton('birthday')}
+              onPressOut={() => setPressedButton(null)}
               activeOpacity={0.75}
               accessibilityRole="button"
               accessibilityLabel="Set birthday"
             >
-              <View style={styles.birthdayIconWrap}>
-                <FontAwesome5 name="birthday-cake" size={16} color={C.gold} solid />
+              <View style={[
+                styles.birthdayIconWrap,
+                pressedButton === 'birthday' && { transform: [{ scale: animations.pressScale }] },
+              ]}>
+                <Ionicons name={icons.gift} size={18} color={colors.gold} />
               </View>
               <View style={styles.infoText}>
                 <Text style={styles.infoLabel}>Birthday</Text>
@@ -344,24 +371,29 @@ export default function ProfileScreen({ navigation }: Props): React.JSX.Element 
                   {formatBirthdayDisplay(birthdayMMDD)}
                 </Text>
               </View>
-              <Ionicons name="chevron-forward" size={16} color="#444444" />
+              <Ionicons name={icons.forward} size={16} color={colors.greyDark} />
             </TouchableOpacity>
             <View style={styles.cardDivider} />
-            <InfoRow iconName="key-outline"     label="User ID" value={(firebaseUser?.uid?.slice(0, 16) ?? '—') + '…'} />
+            <InfoRow iconName={icons.lock} label="User ID" value={(firebaseUser?.uid?.slice(0, 16) ?? '—') + '...'} />
           </View>
-        </View>
+        </Animated.View>
 
-        {/* ── AI style ── */}
-        <View style={styles.section}>
+        {/* AI style */}
+        <Animated.View style={[styles.section, getCardStyle(2)]}>
           <Text style={styles.sectionTitle}>AI STYLE</Text>
           <View style={styles.card}>
             {checkingStyle ? (
-              <Text style={styles.aiHint}>Checking style profile…</Text>
+              <Text style={styles.aiHint}>Checking style profile...</Text>
             ) : hasStyleProfile ? (
               <>
                 <TouchableOpacity
-                  style={styles.aiPrimaryBtn}
+                  style={[
+                    styles.aiPrimaryBtn,
+                    pressedButton === 'viewStyle' && { transform: [{ scale: animations.pressScale }] },
+                  ]}
                   onPress={openSavedStyleProfile}
+                  onPressIn={() => setPressedButton('viewStyle')}
+                  onPressOut={() => setPressedButton(null)}
                   accessibilityRole="button"
                   accessibilityLabel="View my style profile"
                 >
@@ -372,8 +404,13 @@ export default function ProfileScreen({ navigation }: Props): React.JSX.Element 
             ) : (
               <>
                 <TouchableOpacity
-                  style={styles.aiPrimaryBtn}
+                  style={[
+                    styles.aiPrimaryBtn,
+                    pressedButton === 'getStyle' && { transform: [{ scale: animations.pressScale }] },
+                  ]}
                   onPress={() => navigateToStyleFromProfile(navigation, 'StyleOnboarding')}
+                  onPressIn={() => setPressedButton('getStyle')}
+                  onPressOut={() => setPressedButton(null)}
                   accessibilityRole="button"
                   accessibilityLabel="Get style recommendations"
                 >
@@ -383,10 +420,10 @@ export default function ProfileScreen({ navigation }: Props): React.JSX.Element 
               </>
             )}
           </View>
-        </View>
+        </Animated.View>
 
-        {/* ── Account actions ── */}
-        <View style={styles.section}>
+        {/* Account actions */}
+        <Animated.View style={[styles.section, getCardStyle(3)]}>
           <Text style={styles.sectionTitle}>ACCOUNT</Text>
           <View style={styles.card}>
             <TouchableOpacity
@@ -394,24 +431,36 @@ export default function ProfileScreen({ navigation }: Props): React.JSX.Element 
               accessibilityRole="button"
               accessibilityLabel="Change password"
               onPress={() => void handleChangePassword()}
+              onPressIn={() => setPressedButton('password')}
+              onPressOut={() => setPressedButton(null)}
             >
               <View style={styles.actionLeft}>
-                <View style={[styles.actionIconWrap, styles.actionIconGold]}>
-                  <Ionicons name="lock-closed-outline" size={18} color="#D4AF37" />
+                <View style={[
+                  styles.actionIconWrap,
+                  styles.actionIconGold,
+                  pressedButton === 'password' && { transform: [{ scale: animations.pressScale }] },
+                ]}>
+                  <Ionicons name={icons.lock} size={18} color={colors.gold} />
                 </View>
                 <Text style={styles.actionLabel}>Change Password</Text>
               </View>
-              <Ionicons name="chevron-forward" size={16} color="#444444" />
+              <Ionicons name={icons.forward} size={16} color={colors.greyDark} />
             </TouchableOpacity>
           </View>
-        </View>
+        </Animated.View>
 
-        {/* ── Logout button ── */}
-        <View style={styles.section}>
+        {/* Logout button */}
+        <Animated.View style={[styles.section, getCardStyle(3)]}>
           <TouchableOpacity
             onPress={handleLogout}
             disabled={loggingOut}
-            style={[styles.logoutBtn, loggingOut && styles.logoutBtnBusy]}
+            style={[
+              styles.logoutBtn,
+              loggingOut && styles.logoutBtnBusy,
+              pressedButton === 'logout' && { transform: [{ scale: animations.pressScale }] },
+            ]}
+            onPressIn={() => setPressedButton('logout')}
+            onPressOut={() => setPressedButton(null)}
             activeOpacity={0.85}
             accessibilityRole="button"
             accessibilityLabel="Log out"
@@ -419,18 +468,18 @@ export default function ProfileScreen({ navigation }: Props): React.JSX.Element 
             accessibilityState={{ busy: loggingOut, disabled: loggingOut }}
           >
             <Ionicons
-              name="log-out-outline"
+              name={icons.logOut}
               size={20}
-              color="#CF6679"
-              style={{ marginRight: 8 }}
+              color={colors.red}
+              style={{ marginRight: spacing.sm }}
             />
             <Text style={styles.logoutText}>
-              {loggingOut ? 'Signing out…' : 'Log Out'}
+              {loggingOut ? 'Signing out...' : 'Log Out'}
             </Text>
           </TouchableOpacity>
 
           <Text style={styles.logoutHint}>You'll be returned to the login screen</Text>
-        </View>
+        </Animated.View>
 
         <Text style={styles.version}>613 Barbershop · v1.0.0</Text>
       </ScrollView>
@@ -493,7 +542,7 @@ export default function ProfileScreen({ navigation }: Props): React.JSX.Element 
                 disabled={savingBirthday}
                 accessibilityRole="button"
               >
-                <Text style={styles.bModalSaveText}>{savingBirthday ? 'Saving…' : 'Save'}</Text>
+                <Text style={styles.bModalSaveText}>{savingBirthday ? 'Saving...' : 'Save'}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -503,143 +552,137 @@ export default function ProfileScreen({ navigation }: Props): React.JSX.Element 
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
-  root:   { flex: 1, backgroundColor: C.bg },
-  scroll: { paddingBottom: 40 },
+  root:   { flex: 1, backgroundColor: colors.background },
+  scroll: { paddingBottom: spacing['3xl'] },
 
   avatarCard: {
-    backgroundColor: C.card, alignItems: 'center', paddingBottom: 28,
-    borderBottomWidth: 1, borderBottomColor: C.divider,
+    backgroundColor: colors.surface, alignItems: 'center', paddingBottom: spacing.xl,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
     shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4, shadowRadius: 12, elevation: 8, overflow: 'hidden',
   },
   avatarCardAccent: {
-    height: 3, width: '100%', backgroundColor: C.gold, marginBottom: 32,
-    shadowColor: C.gold, shadowOffset: { width: 0, height: 0 },
+    height: 3, width: '100%', backgroundColor: colors.gold, marginBottom: spacing.xl,
+    shadowColor: colors.gold, shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.7, shadowRadius: 6,
   },
-  avatarWrap:   { position: 'relative', marginBottom: 16 },
+  avatarWrap:   { position: 'relative', marginBottom: spacing.md },
   avatarGlow: {
     position: 'absolute', top: -6, left: -6, right: -6, bottom: -6,
-    borderRadius: 55, backgroundColor: C.gold, opacity: 0.08,
+    borderRadius: 55, backgroundColor: colors.gold, opacity: 0.08,
   },
   avatarOuter: {
-    width: 90, height: 90, borderRadius: 45, backgroundColor: C.elevated,
+    width: 90, height: 90, borderRadius: radius.full, backgroundColor: colors.surfaceRaised,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2, borderColor: C.goldBorder,
-    shadowColor: C.gold, shadowOffset: { width: 0, height: 4 },
+    borderWidth: 2, borderColor: colors.border,
+    shadowColor: colors.gold, shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3, shadowRadius: 12, elevation: 10,
   },
   avatarInner: {
-    width: 72, height: 72, borderRadius: 36, backgroundColor: C.goldGlow,
+    width: 72, height: 72, borderRadius: radius.full, backgroundColor: colors.goldGlow,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: C.gold + '55',
+    borderWidth: 1, borderColor: `${colors.gold}55`,
   },
-  avatarInitials: { fontSize: 28, fontWeight: '900', color: C.gold, letterSpacing: 1 },
-  displayName:    { fontSize: 22, fontWeight: '800', color: C.white, letterSpacing: 0.3, marginBottom: 4 },
-  memberBadge:    { fontSize: 10, color: C.gold, letterSpacing: 2.5, fontWeight: '700', marginBottom: 14 },
+  avatarInitials: { fontSize: 28, fontFamily: fonts.bodyBold, color: colors.gold, letterSpacing: 1 },
+  displayName:    { fontSize: fonts.size['2xl'], fontFamily: fonts.heading, color: colors.white, letterSpacing: fonts.letterSpacing.normal, marginBottom: spacing.xs },
+  memberBadge:    { fontSize: fonts.size.xs, color: colors.gold, letterSpacing: fonts.letterSpacing.widest, fontFamily: fonts.bodyBold, marginBottom: spacing.md },
   memberSinceRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: C.elevated, paddingHorizontal: 14, paddingVertical: 6,
-    borderRadius: 20, borderWidth: 1, borderColor: C.divider,
+    flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
+    backgroundColor: colors.surfaceRaised, paddingHorizontal: spacing.md, paddingVertical: spacing.xs,
+    borderRadius: radius['2xl'], borderWidth: 1, borderColor: colors.border,
   },
-  memberSinceLabel: { fontSize: 12, color: C.sub },
-  memberSinceValue: { fontSize: 12, color: C.gold, fontWeight: '700' },
+  memberSinceLabel: { fontSize: fonts.size.sm, color: colors.grey },
+  memberSinceValue: { fontSize: fonts.size.sm, color: colors.gold, fontFamily: fonts.bodyBold },
 
-  section:      { paddingHorizontal: 20, marginTop: 28 },
-  sectionTitle: { fontSize: 10, color: C.muted, fontWeight: '700', letterSpacing: 2, marginBottom: 10 },
+  section:      { paddingHorizontal: spacing.lg, marginTop: spacing.xl },
+  sectionTitle: { fontSize: fonts.size.xs, color: colors.greyDark, fontFamily: fonts.bodyBold, letterSpacing: fonts.letterSpacing.wider, marginBottom: spacing.sm, textTransform: 'uppercase' },
 
   card: {
-    backgroundColor: C.card, borderRadius: 14,
-    borderWidth: 1, borderColor: C.divider, overflow: 'hidden',
+    backgroundColor: colors.surface, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
     shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4, shadowRadius: 8, elevation: 6,
   },
-  cardDivider: { height: 1, backgroundColor: C.divider, marginHorizontal: 16 },
+  cardDivider: { height: 1, backgroundColor: colors.border, marginHorizontal: spacing.lg },
 
   infoRow: {
     flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 16, paddingVertical: 14, gap: 14,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.md, gap: spacing.md,
   },
   infoIconWrap: {
-    width: 36, height: 36, borderRadius: 10, backgroundColor: C.elevated,
+    width: 36, height: 36, borderRadius: radius.sm, backgroundColor: colors.surfaceRaised,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: '#2A2A2A', flexShrink: 0,
+    borderWidth: 1, borderColor: colors.border, flexShrink: 0,
   },
-  infoIcon:  { fontSize: 16 },
   infoText:  { flex: 1 },
-  infoLabel: { fontSize: 11, color: C.muted, fontWeight: '600', marginBottom: 2, letterSpacing: 0.5 },
-  infoValue: { fontSize: 14, color: C.white, fontWeight: '500' },
+  infoLabel: { fontSize: fonts.size.xs, color: colors.greyDark, fontFamily: fonts.bodySemiBold, marginBottom: spacing.xs, letterSpacing: fonts.letterSpacing.normal },
+  infoValue: { fontSize: fonts.size.md, color: colors.white, fontFamily: fonts.body },
 
   actionRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingVertical: 14,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
   },
-  actionLeft:     { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  actionLeft:     { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   actionIconWrap: {
-    width: 36, height: 36, borderRadius: 10,
+    width: 36, height: 36, borderRadius: radius.sm,
     alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, flexShrink: 0,
   },
-  actionIconGold: { backgroundColor: C.goldGlow, borderColor: C.goldBorder },
-  actionIcon:     { fontSize: 16 },
-  actionLabel:    { fontSize: 14, color: C.white, fontWeight: '600' },
-  actionChevron:  { fontSize: 22, color: C.muted, lineHeight: 26 },
+  actionIconGold: { backgroundColor: colors.goldGlow, borderColor: colors.border },
+  actionLabel:    { fontSize: fonts.size.md, color: colors.white, fontFamily: fonts.bodySemiBold },
 
   logoutBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-    backgroundColor: C.dangerBg, borderWidth: 1.5, borderColor: C.dangerBorder,
-    borderRadius: 14, paddingVertical: 16,
-    shadowColor: C.danger, shadowOffset: { width: 0, height: 4 },
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
+    backgroundColor: 'rgba(229, 57, 53, 0.1)', borderWidth: 1, borderColor: colors.red,
+    borderRadius: radius.md, paddingVertical: spacing.md,
+    shadowColor: colors.red, shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2, shadowRadius: 8, elevation: 4,
   },
   logoutBtnBusy: { opacity: 0.65 },
-  logoutIcon:    { fontSize: 20, color: C.danger },
-  logoutText:    { fontSize: 16, fontWeight: '800', color: C.danger, letterSpacing: 0.5 },
-  logoutHint:    { fontSize: 11, color: C.muted, textAlign: 'center', marginTop: 8, letterSpacing: 0.3 },
+  logoutText:    { fontSize: fonts.size.md, fontFamily: fonts.bodyBold, color: colors.red, letterSpacing: fonts.letterSpacing.normal },
+  logoutHint:    { fontSize: fonts.size.sm, color: colors.greyDark, textAlign: 'center', marginTop: spacing.sm, letterSpacing: fonts.letterSpacing.normal },
 
-  version: { fontSize: 11, color: C.muted, textAlign: 'center', marginTop: 36, letterSpacing: 0.5 },
+  version: { fontSize: fonts.size.sm, color: colors.greyDark, textAlign: 'center', marginTop: spacing.xl, letterSpacing: fonts.letterSpacing.normal },
 
   birthdayRow: {
     flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 16, paddingVertical: 14, gap: 14,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.md, gap: spacing.md,
   },
   birthdayIconWrap: {
-    width: 36, height: 36, borderRadius: 10, backgroundColor: C.goldGlow,
+    width: 36, height: 36, borderRadius: radius.sm, backgroundColor: colors.goldGlow,
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: C.goldBorder, flexShrink: 0,
+    borderWidth: 1, borderColor: colors.border, flexShrink: 0,
   },
 
   bModalOverlay: {
-    flex: 1, backgroundColor: '#000000AA', justifyContent: 'center', padding: 24,
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.67)', justifyContent: 'center', padding: spacing.lg,
   },
   bModalCard: {
-    backgroundColor: C.card, borderRadius: 16, borderWidth: 1, borderColor: C.divider,
-    padding: 20, maxHeight: '90%',
+    backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    padding: spacing.lg, maxHeight: '90%',
   },
-  bModalTitle:   { fontSize: 18, fontWeight: '800', color: C.white, marginBottom: 6 },
-  bModalSub:     { fontSize: 12, color: C.sub, marginBottom: 16, lineHeight: 17 },
-  bModalLabel:   { fontSize: 11, color: C.muted, fontWeight: '700', letterSpacing: 1, marginBottom: 8 },
-  bChipScroll:   { marginBottom: 14 },
-  bChip:         { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10, backgroundColor: C.elevated, borderWidth: 1, borderColor: C.divider, marginRight: 8 },
-  bChipSel:      { borderColor: C.gold, backgroundColor: C.goldGlow },
-  bChipText:     { fontSize: 13, fontWeight: '700', color: C.sub },
-  bChipTextSel:  { color: C.gold },
-  bDayGrid:      { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
-  bDayCell:      { width: (SW - 88) / 7 - 4, minWidth: 36, paddingVertical: 10, borderRadius: 10, backgroundColor: C.elevated, borderWidth: 1, borderColor: C.divider, alignItems: 'center' },
-  bDayCellSel:   { borderColor: C.gold, backgroundColor: C.goldGlow },
-  bDayText:      { fontSize: 14, fontWeight: '700', color: C.sub },
-  bDayTextSel:   { color: C.gold },
-  bModalActions: { flexDirection: 'row', gap: 12, justifyContent: 'flex-end' },
-  bModalCancel:  { paddingVertical: 12, paddingHorizontal: 18 },
-  bModalCancelText: { fontSize: 14, fontWeight: '700', color: C.sub },
-  bModalSave:    { backgroundColor: C.gold, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 22 },
-  bModalSaveText:{ fontSize: 14, fontWeight: '800', color: C.bg },
+  bModalTitle:   { fontSize: fonts.size.xl, fontFamily: fonts.bodyBold, color: colors.white, marginBottom: spacing.xs },
+  bModalSub:     { fontSize: fonts.size.sm, color: colors.grey, marginBottom: spacing.md, lineHeight: fonts.lineHeight.normal * fonts.size.sm },
+  bModalLabel:   { fontSize: fonts.size.xs, color: colors.greyDark, fontFamily: fonts.bodyBold, letterSpacing: fonts.letterSpacing.wide, marginBottom: spacing.sm, textTransform: 'uppercase' },
+  bChipScroll:   { marginBottom: spacing.md },
+  bChip:         { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.sm, backgroundColor: colors.surfaceRaised, borderWidth: 1, borderColor: colors.border, marginRight: spacing.sm },
+  bChipSel:      { borderColor: colors.gold, backgroundColor: colors.goldGlow },
+  bChipText:     { fontSize: fonts.size.md, fontFamily: fonts.bodyBold, color: colors.grey },
+  bChipTextSel:  { color: colors.gold },
+  bDayGrid:      { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginBottom: spacing.xl },
+  bDayCell:      { width: (SW - 88) / 7 - 4, minWidth: 36, paddingVertical: spacing.sm, borderRadius: radius.sm, backgroundColor: colors.surfaceRaised, borderWidth: 1, borderColor: colors.border, alignItems: 'center' },
+  bDayCellSel:   { borderColor: colors.gold, backgroundColor: colors.goldGlow },
+  bDayText:      { fontSize: fonts.size.md, fontFamily: fonts.bodyBold, color: colors.grey },
+  bDayTextSel:   { color: colors.gold },
+  bModalActions: { flexDirection: 'row', gap: spacing.sm, justifyContent: 'flex-end' },
+  bModalCancel:  { paddingVertical: spacing.md, paddingHorizontal: spacing.lg },
+  bModalCancelText: { fontSize: fonts.size.md, fontFamily: fonts.bodyBold, color: colors.grey },
+  bModalSave:    { backgroundColor: colors.gold, borderRadius: radius.md, paddingVertical: spacing.md, paddingHorizontal: spacing.lg },
+  bModalSaveText:{ fontSize: fonts.size.md, fontFamily: fonts.bodyBold, color: colors.background },
 
-  aiHint:         { fontSize: 13, color: C.sub, padding: 16, textAlign: 'center' },
-  aiPrimaryBtn:   { marginHorizontal: 16, marginTop: 14, marginBottom: 8, backgroundColor: C.gold, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
-  aiPrimaryBtnText: { fontSize: 15, fontWeight: '800', color: C.bg, letterSpacing: 0.3 },
-  aiPowered:      { fontSize: 11, color: C.muted, textAlign: 'center', paddingBottom: 14, letterSpacing: 0.3 },
+  aiHint:         { fontSize: fonts.size.md, color: colors.grey, padding: spacing.lg, textAlign: 'center' },
+  aiPrimaryBtn:   { marginHorizontal: spacing.lg, marginTop: spacing.md, marginBottom: spacing.sm, backgroundColor: colors.gold, borderRadius: radius['2xl'], paddingVertical: spacing.md, alignItems: 'center' },
+  aiPrimaryBtnText: { fontSize: fonts.size.md, fontFamily: fonts.bodyBold, color: colors.background, letterSpacing: fonts.letterSpacing.normal },
+  aiPowered:      { fontSize: fonts.size.xs, color: colors.greyDark, textAlign: 'center', paddingBottom: spacing.md, letterSpacing: fonts.letterSpacing.normal },
 });
