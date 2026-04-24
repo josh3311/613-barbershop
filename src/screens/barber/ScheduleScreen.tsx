@@ -20,8 +20,9 @@ import {
   Pressable,
   Animated,
   TextInput,
+  ActivityIndicator,
 } from 'react-native';
-import { Text, ActivityIndicator, Snackbar } from 'react-native-paper';
+import { Text, Snackbar } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { doc, getDoc } from 'firebase/firestore';
@@ -35,6 +36,7 @@ import {
   icons,
   animations,
 } from '@/theme';
+import { getAiBackendUrl } from '@/services/ai.service';
 import { BookingService } from '@/services/booking.service';
 import { AIBarberGuideService, type BarberCutStep } from '@/services/aiBarberGuide.service';
 import { db } from '@/config/firebase';
@@ -212,11 +214,13 @@ function BookingCard({
   booking,
   onPatchStatus,
   onCompleteToast,
+  onAIGuide,
   index,
 }: {
   booking: Booking;
   onPatchStatus: (id: string, status: BookingStatus) => void;
   onCompleteToast: () => void;
+  onAIGuide: (styleName: string, b: Booking) => void;
   index: number;
 }) {
   const [styleModal, setStyleModal] = useState(false);
@@ -236,6 +240,12 @@ function BookingCard({
   const time = formatTime(safeToDate(booking.scheduledAt));
   const svcName = SERVICE_NAMES[booking.serviceId] ?? booking.serviceId;
   const clientName = booking.clientName ?? booking.clientId.substring(0, 8);
+
+  // FIX 2 Part B: Debug log to verify requestedStyle is arriving in the card
+  // eslint-disable-next-line no-console
+  console.log('[schedule] booking requestedStyle:', booking.id, booking.requestedStyle?.name ?? 'NONE');
+  // eslint-disable-next-line no-console
+  console.log('[card] requestedStyle check:', booking.requestedStyle);
 
   const isTerminal =
     booking.status === 'completed' ||
@@ -421,28 +431,6 @@ function BookingCard({
           {/* Client */}
           <Text style={[styles.clientName, isTerminal && { color: C.greyDark }]}>{clientName}</Text>
 
-          {/* Requested Style */}
-          {booking.requestedStyle && (
-            <TouchableOpacity
-              style={styles.styleRow}
-              onPress={() => setStyleModal(true)}
-              activeOpacity={0.85}
-            >
-              <Image source={{ uri: booking.requestedStyle.photoURL }} style={styles.styleThumb} />
-              <View style={styles.styleTextCol}>
-                <Text style={styles.styleWantsText} numberOfLines={2}>
-                  Client wants: {booking.requestedStyle.name}
-                </Text>
-                {booking.requestedStyle.barberNotes ? (
-                  <Text style={styles.styleNotes} numberOfLines={3}>
-                    {booking.requestedStyle.barberNotes}
-                  </Text>
-                ) : null}
-              </View>
-              <Ionicons name={icons.forward} size={18} color={C.gold} />
-            </TouchableOpacity>
-          )}
-
           {/* Service Info */}
           <View style={styles.serviceRow}>
             <Ionicons name="cut-outline" size={12} color={C.grey} style={{ marginRight: 4 }} />
@@ -453,6 +441,70 @@ function BookingCard({
             <Text style={styles.dot}>·</Text>
             <Text style={[styles.serviceText, styles.priceText]}>${booking.price}</Text>
           </View>
+
+          {booking.requestedStyle?.name ? (
+            <View
+              style={{
+                marginTop: 8,
+                padding: 10,
+                backgroundColor: '#1A1A1A',
+                borderRadius: 8,
+                borderLeftWidth: 3,
+                borderLeftColor: '#D4AF37',
+              }}
+            >
+              <Text style={{ color: '#D4AF37', fontSize: 11, fontWeight: '700', marginBottom: 4 }}>
+                CLIENT WANTS
+              </Text>
+              <TouchableOpacity
+                onPress={() => setStyleModal(true)}
+                activeOpacity={0.85}
+                style={{ flexDirection: 'row', alignItems: 'center' }}
+              >
+                {booking.requestedStyle.photoURL ? (
+                  <Image
+                    source={{ uri: booking.requestedStyle.photoURL }}
+                    style={[styles.styleThumb, { marginRight: 8 }]}
+                  />
+                ) : null}
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '600' }}>{booking.requestedStyle.name}</Text>
+                </View>
+                <Ionicons name={icons.forward} size={16} color={C.gold} />
+              </TouchableOpacity>
+              {booking.requestedStyle.barberNotes ? (
+                <Text style={{ color: '#888888', fontSize: 12, marginTop: 4, lineHeight: 18 }}>
+                  {booking.requestedStyle.barberNotes}
+                </Text>
+              ) : null}
+              {booking.requestedStyle.description ? (
+                <Text style={{ color: '#888888', fontSize: 12, marginTop: 4, lineHeight: 18 }}>
+                  {booking.requestedStyle.description}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
+
+          {booking.requestedStyle && (
+            <TouchableOpacity
+              style={{
+                marginTop: 8,
+                borderWidth: 1,
+                borderColor: '#D4AF37',
+                borderRadius: 8,
+                padding: 10,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+              onPress={() => onAIGuide(booking.requestedStyle!.name, booking)}
+            >
+              <Ionicons name="bulb-outline" size={16} color="#D4AF37" />
+              <Text style={{ color: '#D4AF37', fontSize: 13, fontWeight: '600', marginLeft: 6 }}>
+                How do I do this cut?
+              </Text>
+            </TouchableOpacity>
+          )}
 
           {/* Action Buttons */}
           {busy ? (
@@ -720,6 +772,40 @@ export default function ScheduleScreen(): React.JSX.Element {
   const [loading, setLoading] = useState(true);
   const [completeSnack, setCompleteSnack] = useState(false);
 
+  const [aiGuideVisible, setAiGuideVisible] = useState(false);
+  const [aiGuideSteps, setAiGuideSteps] = useState<string>('');
+  const [aiGuideLoading, setAiGuideLoading] = useState(false);
+  const [aiGuideTitle, setAiGuideTitle] = useState('');
+
+  const handleAIGuide = async (styleName: string, booking: Booking) => {
+    setAiGuideTitle(styleName);
+    setAiGuideVisible(true);
+    setAiGuideLoading(true);
+    setAiGuideSteps('');
+    try {
+      const res = await fetch(`${getAiBackendUrl()}/api/barber-cut-guide`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          style_name: styleName,
+          hair_texture: booking.requestedStyle?.description?.trim() || 'coily',
+        }),
+      });
+      const data = (await res.json()) as { steps?: unknown; error?: string };
+      if (!res.ok) {
+        setAiGuideSteps(typeof data.error === 'string' && data.error ? data.error : 'Could not load guide. Please try again.');
+        return;
+      }
+      setAiGuideSteps(
+        typeof data.steps === 'string' ? data.steps : JSON.stringify(data.steps, null, 2),
+      );
+    } catch {
+      setAiGuideSteps('Could not load guide. Please try again.');
+    } finally {
+      setAiGuideLoading(false);
+    }
+  };
+
   const firstName = (appUser?.displayName ?? 'Barber').split(' ')[0];
 
   // Animation values
@@ -748,6 +834,15 @@ export default function ScheduleScreen(): React.JSX.Element {
     const unsubscribe = BookingService.onSnapshotByBarber(
       firebaseUser.uid,
       (bookings) => {
+        bookings.forEach((booking) => {
+          if (booking.requestedStyle) {
+            console.log(
+              '[schedule] RAW requestedStyle found on doc',
+              booking.id,
+              booking.requestedStyle,
+            );
+          }
+        });
         setAllBookings(bookings);
         setLoading(false);
       },
@@ -862,11 +957,107 @@ export default function ScheduleScreen(): React.JSX.Element {
               booking={booking}
               onPatchStatus={patchBookingStatus}
               onCompleteToast={() => setCompleteSnack(true)}
+              onAIGuide={handleAIGuide}
               index={index}
             />
           ))}
         </ScrollView>
       )}
+
+      <Modal visible={aiGuideVisible} animationType="slide" transparent>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', padding: 24, justifyContent: 'flex-end' }}>
+          <View style={{ backgroundColor: '#111111', borderRadius: 16, padding: 20, maxHeight: '80%' }}>
+            <View
+              style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}
+            >
+              <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700' }}>
+                How to do this cut
+              </Text>
+              <TouchableOpacity onPress={() => setAiGuideVisible(false)}>
+                <Ionicons name="close" size={24} color="#888" />
+              </TouchableOpacity>
+            </View>
+            <Text style={{ color: '#D4AF37', fontSize: 13, marginBottom: 16 }}>
+              {aiGuideTitle}
+            </Text>
+            {aiGuideLoading ? (
+              <ActivityIndicator size="large" color="#D4AF37" />
+            ) : (
+              (() => {
+                try {
+                  const parsed = JSON.parse(aiGuideSteps) as
+                    | Array<{ number?: number; title?: string; description?: string; tools?: string }>
+                    | { steps?: Array<{ number?: number; title?: string; description?: string; tools?: string }> };
+                  const steps = Array.isArray(parsed) ? parsed : parsed?.steps ?? [];
+                  return (
+                    <ScrollView showsVerticalScrollIndicator={false}>
+                      {steps.map((step, i) => (
+                        <View
+                          key={i}
+                          style={{
+                            backgroundColor: '#0A0A0A',
+                            borderRadius: 12,
+                            padding: 14,
+                            marginBottom: 12,
+                            borderLeftWidth: 3,
+                            borderLeftColor: '#D4AF37',
+                          }}
+                        >
+                          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                            <View
+                              style={{
+                                backgroundColor: '#D4AF37',
+                                borderRadius: 14,
+                                width: 28,
+                                height: 28,
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                marginRight: 10,
+                              }}
+                            >
+                              <Text style={{ color: '#0A0A0A', fontSize: 13, fontWeight: '800' }}>
+                                {step.number ?? i + 1}
+                              </Text>
+                            </View>
+                            <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '700', flex: 1 }}>
+                              {step.title ?? ''}
+                            </Text>
+                          </View>
+                          <Text style={{ color: '#CCCCCC', fontSize: 14, lineHeight: 22 }}>
+                            {step.description ?? ''}
+                          </Text>
+                          {step.tools ? (
+                            <View
+                              style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                marginTop: 10,
+                                backgroundColor: '#1A1A1A',
+                                borderRadius: 8,
+                                paddingHorizontal: 10,
+                                paddingVertical: 6,
+                              }}
+                            >
+                              <Ionicons name="construct-outline" size={13} color="#D4AF37" />
+                              <Text style={{ color: '#D4AF37', fontSize: 12, marginLeft: 6 }}>{step.tools}</Text>
+                            </View>
+                          ) : null}
+                        </View>
+                      ))}
+                    </ScrollView>
+                  );
+                } catch {
+                  return (
+                    <ScrollView>
+                      <Text style={{ color: '#FFFFFF', fontSize: 14, lineHeight: 22 }}>{aiGuideSteps}</Text>
+                    </ScrollView>
+                  );
+                }
+              })()
+            )}
+          </View>
+        </View>
+      </Modal>
 
       {/* Snackbar */}
       <Snackbar

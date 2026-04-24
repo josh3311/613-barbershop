@@ -10,6 +10,9 @@ import {
   Platform,
   Image,
   Animated,
+  Alert,
+  TextInput,
+  Modal,
 } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
@@ -154,6 +157,22 @@ export default function BookingConfirmationScreen({ route, navigation }: Props):
   const [savedStylePreview, setSavedStylePreview] = useState<RequestedStyle | null>(null);
   const [confirmedBooking, setConfirmedBooking] = useState<Booking | null>(null);
 
+  // Feature 2 — Style preference state
+  const [stylePreference, setStylePreference] = useState<{
+    name: string;
+    photoURL?: string;
+    description?: string;
+    barberNotes?: string;
+    beforePhotoURL?: string;
+  } | null>(null);
+  const [styleNoteInput, setStyleNoteInput] = useState('');
+  const [loadingSavedStyles, setLoadingSavedStyles] = useState(false);
+  const [stylePickerVisible, setStylePickerVisible] = useState(false);
+  const [savedStyleOptions, setSavedStyleOptions] = useState<Array<{
+    name: string;
+    photoURL?: string;
+  }>>([]);
+
   const confCode = bookingId ? bookingId.substring(0, 6).toUpperCase() : '';
 
   // Animations
@@ -188,17 +207,89 @@ export default function BookingConfirmationScreen({ route, navigation }: Props):
             photoURL: s.photoURL,
             description: s.description,
           });
+          // Feature 2: Also set as style preference if exists
+          setStylePreference({
+            name: s.name,
+            photoURL: s.photoURL,
+            description: s.description,
+            barberNotes: s.barberNotes,
+            beforePhotoURL: s.beforePhotoURL,
+          });
         } else {
           setSavedStylePreview(null);
+          setStylePreference(null);
         }
       } catch {
         setSavedStylePreview(null);
+        setStylePreference(null);
       }
     })();
     return () => {
       cancelled = true;
     };
   }, [firebaseUser, phase]);
+
+  // Feature 2 — Load and show saved styles for picker
+  const loadAndShowSavedStyles = useCallback(async (): Promise<void> => {
+    if (!firebaseUser) return;
+    setLoadingSavedStyles(true);
+    try {
+      const snap = await getDoc(doc(db, COLLECTIONS.USERS, firebaseUser.uid));
+      const data = snap.data();
+      const savedTryOns = data?.savedTryOns as Array<{ styleName?: string; resultUrl?: string }> | undefined;
+      const savedLooks = data?.savedLooks as Array<{ styleName?: string; afterUrl?: string }> | undefined;
+      const styleProfile = data?.styleProfile as
+        | {
+            recommendations?: Array<{ style_name?: string; photoURL?: string }>;
+            styles?: { recommendations?: Array<{ style_name?: string; photoURL?: string }> };
+          }
+        | undefined;
+
+      const options: Array<{ name: string; photoURL?: string }> = [];
+
+      if (savedTryOns?.length) {
+        savedTryOns.forEach((t) => {
+          if (t.styleName && !options.find((o) => o.name === t.styleName)) {
+            options.push({ name: t.styleName, photoURL: t.resultUrl });
+          }
+        });
+      }
+
+      if (savedLooks?.length) {
+        savedLooks.forEach((look) => {
+          if (look.styleName && !options.find((o) => o.name === look.styleName)) {
+            options.push({
+              name: look.styleName,
+              photoURL: look.afterUrl,
+            });
+          }
+        });
+      }
+
+      const recommendations =
+        styleProfile?.recommendations ?? styleProfile?.styles?.recommendations ?? [];
+      recommendations.forEach((rec) => {
+        if (rec.style_name && !options.find((o) => o.name === rec.style_name)) {
+          options.push({ name: rec.style_name, photoURL: rec.photoURL });
+        }
+      });
+
+      if (options.length === 0) {
+        Alert.alert(
+          'No saved styles',
+          'Go to the Style tab to analyze your photo and get recommendations first.',
+        );
+        return;
+      }
+
+      setSavedStyleOptions(options);
+      setStylePickerVisible(true);
+    } catch {
+      Alert.alert('Error', 'Could not load saved styles.');
+    } finally {
+      setLoadingSavedStyles(false);
+    }
+  }, [firebaseUser]);
 
   async function handleConfirm(): Promise<void> {
     if (!firebaseUser) {
@@ -220,7 +311,13 @@ export default function BookingConfirmationScreen({ route, navigation }: Props):
       durationMinutes: service.durationMinutes,
       price: service.price,
       notes: null,
-    });
+    }, stylePreference ? {
+      name: stylePreference.name,
+      photoURL: stylePreference.photoURL ?? '',
+      description: stylePreference.description ?? '',
+      barberNotes: styleNoteInput || stylePreference.barberNotes || '',
+      beforePhotoURL: stylePreference.beforePhotoURL,
+    } : undefined);
 
     if (!result.success) {
       const msg = result.error.toLowerCase();
@@ -483,8 +580,79 @@ export default function BookingConfirmationScreen({ route, navigation }: Props):
               {summaryCard}
             </FadeInView>
 
-            {/* Info strip */}
+            {/* Feature 2 — Style Preference Section */}
             <FadeInView delay={100}>
+              <View style={{
+                backgroundColor: '#111111',
+                borderRadius: 12,
+                padding: 16,
+                marginVertical: 12,
+                borderWidth: 1,
+                borderColor: '#2A2A2A',
+              }}>
+                <Text style={{ color: '#D4AF37', fontSize: 12, fontWeight: '700', letterSpacing: 1, marginBottom: 10 }}>
+                  STYLE PREFERENCE (OPTIONAL)
+                </Text>
+
+                {stylePreference ? (
+                  <View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      {stylePreference.photoURL ? (
+                        <Image
+                          source={{ uri: stylePreference.photoURL }}
+                          style={{ width: 50, height: 50, borderRadius: 8, marginRight: 10 }}
+                          resizeMode="cover"
+                        />
+                      ) : null}
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '600' }}>
+                          {stylePreference.name}
+                        </Text>
+                        <TouchableOpacity onPress={() => setStylePreference(null)}>
+                          <Text style={{ color: '#888', fontSize: 12, marginTop: 2 }}>Remove</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                    <TextInput
+                      style={{
+                        backgroundColor: '#1A1A1A',
+                        borderRadius: 8,
+                        padding: 10,
+                        color: '#FFFFFF',
+                        fontSize: 13,
+                        marginTop: 10,
+                        borderWidth: 1,
+                        borderColor: '#2A2A2A',
+                      }}
+                      placeholder="Add a note for your barber (optional)"
+                      placeholderTextColor="#555"
+                      value={styleNoteInput}
+                      onChangeText={setStyleNoteInput}
+                      multiline
+                      numberOfLines={2}
+                    />
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      paddingVertical: 8,
+                    }}
+                    onPress={() => loadAndShowSavedStyles()}
+                    disabled={loadingSavedStyles}
+                  >
+                    <Ionicons name="cut-outline" size={20} color="#D4AF37" />
+                    <Text style={{ color: '#D4AF37', fontSize: 14, marginLeft: 8 }}>
+                      {loadingSavedStyles ? 'Loading...' : 'Show barber a style reference'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </FadeInView>
+
+            {/* Info strip */}
+            <FadeInView delay={150}>
               <View style={styles.infoStrip}>
                 <Ionicons name={icons.information} size={15} color={colors.greyDark} style={{ marginRight: 6 }} />
                 <Text style={styles.infoStripText}>
@@ -529,6 +697,64 @@ export default function BookingConfirmationScreen({ route, navigation }: Props):
           </Text>
         </View>
       )}
+
+      <Modal visible={stylePickerVisible} animationType="slide" transparent>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' }}>
+          <View style={{
+            backgroundColor: '#111111',
+            borderTopLeftRadius: 20,
+            borderTopRightRadius: 20,
+            padding: 20,
+            maxHeight: '60%',
+          }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700' }}>
+                Pick a style reference
+              </Text>
+              <TouchableOpacity onPress={() => setStylePickerVisible(false)}>
+                <Ionicons name="close" size={24} color="#888" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView>
+              {savedStyleOptions.map((opt, i) => (
+                <TouchableOpacity
+                  key={`${opt.name}-${i}`}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    backgroundColor: '#1A1A1A',
+                    borderRadius: 10,
+                    padding: 12,
+                    marginBottom: 10,
+                    borderWidth: 1,
+                    borderColor: '#2A2A2A',
+                  }}
+                  onPress={() => {
+                    setStylePreference({ name: opt.name, photoURL: opt.photoURL });
+                    setStylePickerVisible(false);
+                  }}
+                >
+                  {opt.photoURL ? (
+                    <Image
+                      source={{ uri: opt.photoURL }}
+                      style={{ width: 44, height: 44, borderRadius: 8, marginRight: 12 }}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View style={{ width: 44, height: 44, borderRadius: 8, backgroundColor: '#2A2A2A', marginRight: 12, alignItems: 'center', justifyContent: 'center' }}>
+                      <Ionicons name="cut-outline" size={20} color="#D4AF37" />
+                    </View>
+                  )}
+                  <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '600', flex: 1 }}>
+                    {opt.name}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={16} color="#888" />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

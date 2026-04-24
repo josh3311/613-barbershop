@@ -4,7 +4,7 @@ For: Builder Agent (What to build, what's done, UI specs)
 > **Every session (humans + AI):** Follow **`START-HERE.md`** for the full read order. At minimum, read **this file** first for sprint/backlog/UI. Then **`PROJECT-HANDOFF-FOR-KIMI.md`** (security/store context) and **`REVIEWER_CHECKLIST.md`** (compliance) when touching infra or release. After shipping a meaningful feature, update **Last Updated** and the relevant checklists so the plan stays true.
 
 # 613 Barbershop - Project Status
-**Last Updated:** 2026-04-24 (All AI features complete: FLUX try-on, saved looks, barber preview, loyalty stamps; demo prep mode)  
+**Last Updated:** 2026-04-24 (Photo lookup reverted to Unsplash backend proxy with ethnicity-aware search; barber schedule now shows CLIENT WANTS + AI guide for bookings with requestedStyle)  
 **Stack:** Expo SDK ~54, React Native, TypeScript, Firebase, Go backend  
 **Theme:** Dark (#0A0A0A), Gold (#D4AF37), Bebas Neue + Inter typography
 
@@ -48,16 +48,24 @@ For: Builder Agent (What to build, what's done, UI specs)
       - role: 'admin' routes to AdminNavigator in RootNavigator
       - Firestore rules updated with isAdmin() function
 - [x] **AI Virtual Try-On with FLUX Kontext Pro** — Before/after comparison with draggable slider, saves to `users/{uid}.savedLooks`
-- [x] **Camera flow for style analysis** — Native `expo-camera` with preview modal, web fallback to `expo-image-picker`
-- [x] **Gallery upload flow for style analysis** — `expo-image-picker` with crop/preview, saves base64 selfie to Firestore
-- [x] **AI Chat Stylist fully rebuilt** — Strict focus mode, photo uploads trigger re-analysis, chat history in `users/{uid}/styleChats`, style profile context on open, `[BOOK_STYLE:Name]` booking integration
-- [x] **FLUX Kontext AI virtual try-on** — Before/after comparison with draggable slider, saves to `users/{uid}.savedLooks`, $0.04/generation
-- [x] **Saved looks gallery** — "YOUR LOOKS" horizontal scroll section on Style tab, before/after modal with Book + Remove
-- [x] **Barber sees client before/after + notes** — Schedule booking cards show requested style preview with barber notes and client notes
-- [x] **Client notes to barber** — Free-form text field when booking a style
-- [x] **Barber AI guide** — "How do I do this cut?" calls `/api/barber-cut-guide`, "Not sure about this style?" Q&A with AI
-- [x] **Loyalty stamps** — Connected to Complete button, visual stamps on profile
-- [x] **Full app audit** — Web compatibility fixes, Alert.cancel bug fixed, Reanimated issues identified
+- [x] **Camera flow for style analysis** — Native `expo-camera` with preview modal, web fallback to `expo-image-picker` ✅ VERIFIED
+- [x] **Gallery upload flow for style analysis** — `expo-image-picker` with crop/preview, saves base64 selfie to Firestore ✅ VERIFIED
+- [x] **AI Chat Stylist fully rebuilt** — Strict focus mode, photo uploads trigger re-analysis, chat history in `users/{uid}/styleChats`, style profile context on open, `[BOOK_STYLE:Name]` booking integration ✅ VERIFIED
+- [x] **Universal ethnicity support** — Style analysis works for ALL ethnicities (Black/African, White/Caucasian, Asian, South Asian, Latino/Hispanic, Middle Eastern, Mixed) with culturally appropriate recommendations ✅ VERIFIED
+- [x] **FLUX Kontext AI virtual try-on** — Before/after comparison with draggable slider, saves to `users/{uid}.savedLooks`, $0.04/generation ✅ VERIFIED
+- [x] **Saved looks gallery** — "YOUR LOOKS" horizontal scroll section on Style tab, before/after modal with Book + Remove ✅ VERIFIED
+- [x] **Barber sees client before/after + notes** — Schedule booking cards show requested style preview with barber notes and client notes ✅ VERIFIED
+- [x] **Client notes to barber** — Free-form text field when booking a style ✅ VERIFIED
+- [x] **Barber AI guide** — "How do I do this cut?" calls `/api/barber-cut-guide`, "Not sure about this style?" Q&A with AI ✅ VERIFIED
+- [x] **Loyalty stamps** — Connected to Complete button, visual stamps on profile ✅ VERIFIED
+- [x] **Full app audit** — Web compatibility fixes, Alert.cancel bug fixed ✅ VERIFIED, Reanimated issues identified
+- [x] **Ethnicity-aware Unsplash photo search** — Frontend passes full ethnicity keyword (e.g. "Low Skin Fade Black man haircut") to `/api/style-photo`; backend portrait search returns a matched reference photo
+- [x] **Barber AI cut guide button on booking cards** — "How do I do this cut?" visible on every schedule card that has a `requestedStyle`; opens modal with AI step-by-step
+- [x] **`requestedStyle` fully saved to booking doc** — `attachRequestedStyleForClient` writes `name`, `photoURL`, `description`, `barberNotes` to the booking document (not user profile); console-logs the write for verification
+- [x] **Booking picker modal in StyleChatScreen** — User chooses which specific appointment gets the style instead of auto-picking the next upcoming
+- [x] **Style preference option on booking confirmation screen** — Book screen shows optional style attachment UI letting users pick a saved look and add a barber note
+- [x] **Premium loading screen with cycling messages** — Animated loading during AI analysis with face preview
+- [x] **Style results redesigned** — Compact profile pills, fixed-height photo cards, match % badge, InfoPills, gold action buttons
 
 ## 🚧 ACTIVE SPRINT (Build These Now)
 
@@ -121,16 +129,18 @@ For: Builder Agent (What to build, what's done, UI specs)
 - `ANTHROPIC_API_KEY` — Claude API for analysis and chat
 - `REPLICATE_API_TOKEN` — Replicate — FLUX Kontext Pro try-on
 - `IMGBB_API_KEY` — imgbb.com — public image hosting for Replicate input
-- `UNSPLASH_ACCESS_KEY` — Unsplash API for style reference photos (backend only)
-- `EXPO_PUBLIC_UNSPLASH_KEY` — moved to backend only (frontend uses proxy)
+- `UNSPLASH_ACCESS_KEY` — Unsplash API for style reference photos (ethnicity-aware portrait search)
+
+**Deprecated (no longer used):**
+- `EXPO_PUBLIC_UNSPLASH_KEY` — Moved server-side; frontend no longer needs an Unsplash key
 - `LIGHTX_API_KEY` — LightX (paused, kept for reference)
 
 ### Backend Endpoints (Go)
 - `POST /api/analyze-profile` — Claude face + hair analysis
 - `POST /api/style-chat` — AI stylist chat with full conversation history
-- `POST /api/style-photo` — Unsplash photo proxy (ethnicity-aware queries)
+- `POST /api/style-photo` — Unsplash portrait search; body `{ style_name, ethnicity? }`. When `ethnicity` is present, server builds the ethnicity-aware query. Frontend already bakes the keyword into `style_name` for parallel `Promise.all` lookups
 - `POST /api/try-on-kontext` — FLUX Kontext hair try-on via Replicate
-- `POST /api/barber-cut-guide` — Barber AI step-by-step guide
+- `POST /api/barber-cut-guide` — Barber AI step-by-step guide (optional `question` for follow-ups)
 
 ## 🚨 CURRENT BLOCKERS
 - None

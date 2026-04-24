@@ -11,6 +11,7 @@ import {
   Image,
   Alert,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { Text } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
@@ -27,10 +28,9 @@ import type { ProfileAnalysisResult, StyleRecommendation } from '@/services/ai.s
 import { AIService } from '@/services/ai.service';
 import { BookingService } from '@/services/booking.service';
 import {
-  UnsplashService,
+  getStylePhoto,
   STYLE_PHOTO_PLACEHOLDER_URL,
   isStylePhotoPlaceholderUrl,
-  stylePhotoHintsFromProfileRecord,
 } from '@/services/unsplash.service';
 import { readImageAsBase64, inferImageMediaType } from '@/utils/imageBase64.utils';
 import BookingNoteModal from '@/components/BookingNoteModal';
@@ -63,7 +63,25 @@ export default function StyleOnboardingScreen({ navigation }: Props): React.JSX.
   const [removingLook, setRemovingLook] = useState(false);
   const [pendingBookLook, setPendingBookLook] = useState<SavedLook | null>(null);
   const [bookingFromLook, setBookingFromLook] = useState(false);
+  const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
   const spin = useRef(new Animated.Value(0)).current;
+
+  const loadingMessages = [
+    "Analyzing your face shape...",
+    "Detecting your hair texture...",
+    "Finding styles that suit you...",
+    "Matching trending cuts to your features...",
+    "Almost ready...",
+  ];
+
+  // Cycle messages every 2 seconds during loading
+  useEffect(() => {
+    if (!analyzing) return;
+    const interval = setInterval(() => {
+      setLoadingMessageIndex(i => (i + 1) % loadingMessages.length);
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [analyzing]);
 
   // Animation values for card entrance
   const card1Anim = useRef(new Animated.Value(0)).current;
@@ -162,33 +180,28 @@ export default function StyleOnboardingScreen({ navigation }: Props): React.JSX.
     return [...list].sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
   }, [savedAnalysis]);
 
+  // Async photo lookup — calls backend Unsplash proxy with ethnicity-aware query
   useEffect(() => {
     let cancelled = false;
-    async function loadPhotos(): Promise<void> {
-      if (savedRecs.length === 0) {
-        setSavedPhotos({});
-        setSavedPhotosLoading(false);
-        return;
-      }
-      setSavedPhotosLoading(true);
-      try {
-        const hints = savedAnalysis?.profile
-          ? stylePhotoHintsFromProfileRecord(savedAnalysis.profile)
-          : undefined;
-        const urls = await Promise.all(
-          savedRecs.map((r) => UnsplashService.getStylePhoto(r.style_name, hints)),
-        );
-        if (cancelled) return;
-        const map: Record<string, string> = {};
-        savedRecs.forEach((r, i) => {
-          map[r.style_name] = urls[i] ?? STYLE_PHOTO_PLACEHOLDER_URL;
-        });
-        setSavedPhotos(map);
-      } finally {
-        if (!cancelled) setSavedPhotosLoading(false);
-      }
+    if (savedRecs.length === 0) {
+      setSavedPhotos({});
+      setSavedPhotosLoading(false);
+      return;
     }
-    void loadPhotos();
+    setSavedPhotosLoading(true);
+    (async () => {
+      const eth = savedAnalysis?.profile?.ethnicity ?? '';
+      const urls = await Promise.all(
+        savedRecs.map((r) => getStylePhoto(r.style_name, eth)),
+      );
+      if (cancelled) return;
+      const map: Record<string, string> = {};
+      savedRecs.forEach((r, i) => {
+        map[r.style_name] = urls[i] ?? STYLE_PHOTO_PLACEHOLDER_URL;
+      });
+      setSavedPhotos(map);
+      setSavedPhotosLoading(false);
+    })();
     return () => {
       cancelled = true;
     };
@@ -664,14 +677,23 @@ export default function StyleOnboardingScreen({ navigation }: Props): React.JSX.
         </View>
       ) : null}
 
-      {/* Loading Overlay */}
+      {/* Loading Overlay with cycling messages */}
       <Modal visible={analyzing} transparent animationType="fade">
-        <View style={styles.overlay}>
-          <Animated.View style={[styles.spinnerWrap, { transform: [{ rotate: spinInterpolate }] }]}>
-            <View style={styles.spinnerRing} />
-          </Animated.View>
-          <Text style={styles.overlayTitle}>Analyzing your features...</Text>
-          <Text style={styles.overlayHint}>This takes about 10 seconds</Text>
+        <View style={{ flex: 1, backgroundColor: '#0A0A0A', alignItems: 'center', justifyContent: 'center', padding: 32 }}>
+          {capturedPhotoUri && (
+            <Image
+              source={{ uri: capturedPhotoUri }}
+              style={{ width: 90, height: 90, borderRadius: 45, borderWidth: 2, borderColor: '#D4AF37' }}
+              resizeMode="cover"
+            />
+          )}
+          <ActivityIndicator size="large" color="#D4AF37" style={{ marginTop: 28 }} />
+          <Text style={{ color: '#FFFFFF', fontSize: 18, fontWeight: '600', marginTop: 20, textAlign: 'center' }}>
+            {loadingMessages[loadingMessageIndex]}
+          </Text>
+          <Text style={{ color: '#666', fontSize: 14, marginTop: 8 }}>
+            This takes about 10 seconds
+          </Text>
         </View>
       </Modal>
 
@@ -793,9 +815,22 @@ export default function StyleOnboardingScreen({ navigation }: Props): React.JSX.
             <View style={styles.iconBtn} />
           </View>
 
-          {capturedPhotoUri && (
-            <Image source={{ uri: capturedPhotoUri }} style={styles.previewImage} resizeMode="cover" />
-          )}
+          {/* Preview image with contain to show full face */}
+          <View style={{ flex: 1, backgroundColor: '#0A0A0A', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+            {capturedPhotoUri && (
+              <Image
+                source={{ uri: capturedPhotoUri }}
+                style={{
+                  width: Dimensions.get('window').width - 32,
+                  height: Dimensions.get('window').height * 0.65,
+                }}
+                resizeMode="contain"
+              />
+            )}
+            <Text style={{ color: '#888', fontSize: 13, textAlign: 'center', marginTop: 12 }}>
+              Make sure your full face and hair are visible for best results
+            </Text>
+          </View>
 
           <View style={[styles.previewFooter, { paddingBottom: insets.bottom + 24 }]}>
             <TouchableOpacity

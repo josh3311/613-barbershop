@@ -56,24 +56,68 @@ func analyzeProfile(c *gin.Context) {
 			Content: []ClaudeContent{
 				{
 					Type: "text",
-					Text: `You are an AI style consultant for 613 Barbershop at 598 Rideau St, Ottawa, ON K1N 6A2, Canada.
-Analyze this photo and return ONLY valid JSON, no markdown, no backticks, no extra text:
+					Text: `Analyze this person's photo for personalized haircut recommendations at 613 Barbershop, 598 Rideau St, Ottawa, ON K1N 6A2, Canada.
+
+Identify and consider ALL of the following:
+- Face shape: oval, round, square, heart, diamond, oblong, triangle
+- Ethnicity/heritage (for culturally appropriate styles): Black/African, White/Caucasian, Asian (East/South/Southeast), Latino/Hispanic, Middle Eastern, South Asian, Mixed heritage
+- Hair texture: straight (Type 1), wavy (Type 2a/2b/2c), curly (Type 3a/3b/3c), coily/kinky (Type 4a/4b/4c)
+- Current hair length: shaved, short, medium, long
+- Hair density: thin, medium, thick
+- Head shape and size
+- Hairline type: straight, widows peak, receding, rounded
+- Forehead size: small, medium, large
+
+Return ONLY valid JSON, no markdown, no backticks, no extra text:
 
 {
-  "ethnicity": "Black",
-  "skin_tone": "deep",
   "face_shape": "oval",
-  "hair_texture": "coily",
-  "forehead": "average",
-  "jawline": "average",
-  "face_length": "average",
-  "current_style": "short natural"
+  "ethnicity": "Black/African",
+  "hair_texture": "coily type 4c",
+  "hair_length": "short",
+  "hair_density": "thick",
+  "hairline": "rounded",
+  "forehead": "medium",
+  "skin_tone": "deep",
+  "recommendations": [
+    {
+      "rank": 1,
+      "style_name": "Low Skin Fade with Shape-Up",
+      "why_it_fits": "Your round face benefits from the clean lines...",
+      "maintenance": "Easy to keep up",
+      "duration": "30 min appointment",
+      "visit_frequency": "Every 2-3 weeks",
+      "occasion_tags": ["everyday", "professional", "casual"],
+      "suitability_score": 96
+    }
+  ]
 }
 
-ethnicity must be one of: Black, White, Asian, Latino, Mixed, Other
-skin_tone must be one of: deep, medium-deep, medium, light-medium, light
-face_shape must be one of: oval, round, square, heart, diamond, oblong
-hair_texture must be one of: coily, kinky, wavy, straight, curly, unknown`,
+STYLE RECOMMENDATIONS BY ETHNICITY — give styles that are ACTUALLY worn by people of this background:
+
+Black/African clients:
+- Coily/kinky hair: temp fades, drop fades, high top fades, shape-ups with designs, 360 waves, twist outs, locs, Edgar cuts, Afros, Caesar cuts, taper fades, skin fades, bald fades, line-ups, coil outs, sponge twists
+- Wavy/curly: twist outs, wash and go, defined curls with fade
+
+White/Caucasian clients:
+- Straight/wavy hair: undercuts, pompadours, quiffs, side parts, textured crops, French crops, slick backs, ivy league cuts, faux hawks, buzz cuts, Caesar cuts, flow cuts
+
+Asian clients (East/Southeast):
+- Straight hair: two-block cuts, curtain bangs, textured crops, bowl cuts modern, undercuts, perms (for texture), kpop-inspired styles, wolf cuts, mullets modern
+
+South Asian clients:
+- Thick straight/wavy: undercuts, pompadours, side parts, textured fades, quiffs, slick backs
+
+Latino/Hispanic clients:
+- Wavy/curly: burst fades, Edgar cuts, temple fades, slick backs, textured tops, blow-out fades, line-ups
+
+Middle Eastern clients:
+- Thick straight/wavy: pompadours, slick backs, undercuts, side parts, quiffs, textured fades
+
+Mixed heritage:
+- Assess actual hair texture and face shape primarily, combine styles from relevant backgrounds
+
+NEVER recommend a style that doesn't naturally suit the person's actual hair texture. A person with Type 4 coily hair cannot wear a straight pompadour without chemical processing — never recommend that. Always recommend styles that work WITH their natural texture.`,
 				},
 				{
 					Type: "image",
@@ -111,23 +155,28 @@ hair_texture must be one of: coily, kinky, wavy, straight, curly, unknown`,
 		return
 	}
 
-	// Step 2: Get style recommendations based on profile
-	profileJSON, _ := json.Marshal(profile)
+	// Step 2: Get style recommendations based on profile (already included in Step 1)
+	// If profile doesn't have recommendations, generate them
+	if _, ok := profile["recommendations"]; !ok {
+		profileJSON, _ := json.Marshal(profile)
 
-	stylesMessages := []ClaudeMessage{
-		{
-			Role: "user",
-			Content: []ClaudeContent{
-				{
-					Type: "text",
-					Text: fmt.Sprintf(`You are an expert barber at 613 Barbershop, 598 Rideau St, Ottawa, ON K1N 6A2, Canada.
+		stylesMessages := []ClaudeMessage{
+			{
+				Role: "user",
+				Content: []ClaudeContent{
+					{
+						Type: "text",
+						Text: fmt.Sprintf(`You are an expert barber at 613 Barbershop, 598 Rideau St, Ottawa, ON K1N 6A2, Canada.
 
 Client profile: %s
 
 Recommend exactly 5 hairstyles. Rules:
-- For Black clients with coily/kinky hair: prioritize fades, tapers, waves, shape-ups, caesars, afros, locs, twists
-- For Asian clients: prioritize two-block cuts, textured crops, perms, undercuts
-- For White/Latino clients: prioritize tapers, pompadours, undercuts, textured crops
+- For Black/African clients with coily/kinky hair: prioritize temp fades, drop fades, high top fades, shape-ups with designs, 360 waves, twist outs, locs, Edgar cuts, taper fades, skin fades
+- For White/Caucasian clients: prioritize undercuts, pompadours, quiffs, textured crops, French crops, slick backs, ivy league cuts
+- For Asian clients: prioritize two-block cuts, textured crops, perms, curtain bangs, kpop-inspired styles
+- For South Asian clients: prioritize undercuts, pompadours, textured fades, quiffs
+- For Latino/Hispanic clients: prioritize burst fades, Edgar cuts, temple fades, slick backs, textured tops
+- For Middle Eastern clients: prioritize pompadours, slick backs, undercuts, textured fades
 - Always match hair texture — never recommend styles that dont work with their texture
 - Include why each style suits THIS specific person
 
@@ -152,34 +201,48 @@ Return ONLY valid JSON, no markdown, no backticks:
 maintenance_level: low, medium, or high
 best_for: everyday, professional, casual, or special occasion
 category: fade, taper, natural, loc, twist, classic, or modern`, string(profileJSON)),
+					},
 				},
 			},
-		},
-	}
+		}
 
-	stylesResult, err := callClaude(stylesMessages)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to get style recommendations: " + err.Error(),
-		})
-		return
-	}
+		stylesResult, err := callClaude(stylesMessages)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to get style recommendations: " + err.Error(),
+			})
+			return
+		}
 
-	// Clean response
-	stylesResult = strings.TrimSpace(stylesResult)
-	stylesResult = strings.TrimPrefix(stylesResult, "```json")
-	stylesResult = strings.TrimPrefix(stylesResult, "```")
-	stylesResult = strings.TrimSuffix(stylesResult, "```")
-	stylesResult = strings.TrimSpace(stylesResult)
+		// Clean response
+		stylesResult = strings.TrimSpace(stylesResult)
+		stylesResult = strings.TrimPrefix(stylesResult, "```json")
+		stylesResult = strings.TrimPrefix(stylesResult, "```")
+		stylesResult = strings.TrimSuffix(stylesResult, "```")
+		stylesResult = strings.TrimSpace(stylesResult)
 
-	var styles map[string]interface{}
-	if err := json.Unmarshal([]byte(stylesResult), &styles); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to parse styles response",
-			"raw":   stylesResult,
-		})
-		return
+		var styles map[string]interface{}
+		if err := json.Unmarshal([]byte(stylesResult), &styles); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to parse styles response",
+				"raw":   stylesResult,
+			})
+			return
+		}
+
+	c.JSON(http.StatusOK, ProfileAnalysisResponse{
+		Success: true,
+		Profile: profile,
+		Styles:  styles,
+	})
+	return
+}
+
+	// Profile already has recommendations, wrap in styles response
+	styles := map[string]interface{}{
+		"recommendations": profile["recommendations"],
 	}
+	delete(profile, "recommendations")
 
 	c.JSON(http.StatusOK, ProfileAnalysisResponse{
 		Success: true,
@@ -244,63 +307,51 @@ type unsplashSearchAPIResponse struct {
 	} `json:"results"`
 }
 
-// stylePhoto proxies Unsplash so the app (including web) never needs an Unsplash key.
 func stylePhoto(c *gin.Context) {
 	var req stylePhotoRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
-		return
-	}
-	name := strings.TrimSpace(req.StyleName)
-	if name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "style_name is required"})
+	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.StyleName) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "style_name required"})
 		return
 	}
 
-	key := strings.TrimSpace(os.Getenv("UNSPLASH_ACCESS_KEY"))
+	key := os.Getenv("UNSPLASH_ACCESS_KEY")
 	if key == "" {
-		c.JSON(http.StatusOK, gin.H{"photo_url": stylePhotoPlaceholderURL})
+		log.Printf("[stylePhoto] UNSPLASH_ACCESS_KEY not set — returning placeholder")
+		c.JSON(http.StatusOK, gin.H{"photo_url": ""})
 		return
 	}
 
-	q := buildStylePhotoUnsplashQuery(name, req.Ethnicity)
-	if q == "" {
-		q = strings.TrimSpace(name) + " haircut men"
+	// If the caller sent only style_name, enrich with ethnicity-aware keyword.
+	// If the caller already pre-baked the query (frontend does this), pass through.
+	query := strings.TrimSpace(req.StyleName)
+	if req.Ethnicity != "" {
+		query = buildStylePhotoUnsplashQuery(req.StyleName, req.Ethnicity)
 	}
-	vals := url.Values{}
-	vals.Set("query", q)
-	vals.Set("per_page", "1")
-	vals.Set("client_id", key)
-	full := "https://api.unsplash.com/search/photos?" + vals.Encode()
 
-	client := &http.Client{}
-	resp, err := client.Get(full)
+	escaped := url.QueryEscape(query)
+	apiURL := fmt.Sprintf(
+		"https://api.unsplash.com/search/photos?query=%s&per_page=1&client_id=%s&orientation=portrait",
+		escaped,
+		key,
+	)
+
+	httpClient := &http.Client{Timeout: 8 * time.Second}
+	resp, err := httpClient.Get(apiURL)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{"photo_url": stylePhotoPlaceholderURL})
+		log.Printf("[stylePhoto] unsplash request failed: %v", err)
+		c.JSON(http.StatusOK, gin.H{"photo_url": ""})
 		return
 	}
 	defer resp.Body.Close()
 
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil || resp.StatusCode != http.StatusOK {
-		c.JSON(http.StatusOK, gin.H{"photo_url": stylePhotoPlaceholderURL})
+	var result unsplashSearchAPIResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil || len(result.Results) == 0 {
+		log.Printf("[stylePhoto] unsplash decode/empty for query %q: %v", query, err)
+		c.JSON(http.StatusOK, gin.H{"photo_url": ""})
 		return
 	}
 
-	var data unsplashSearchAPIResponse
-	if err := json.Unmarshal(raw, &data); err != nil || len(data.Results) == 0 {
-		c.JSON(http.StatusOK, gin.H{"photo_url": stylePhotoPlaceholderURL})
-		return
-	}
-	u := strings.TrimSpace(data.Results[0].URLs.Regular)
-	if u == "" {
-		u = strings.TrimSpace(data.Results[0].URLs.Small)
-	}
-	if u == "" {
-		c.JSON(http.StatusOK, gin.H{"photo_url": stylePhotoPlaceholderURL})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"photo_url": u})
+	c.JSON(http.StatusOK, gin.H{"photo_url": result.Results[0].URLs.Regular})
 }
 
 type styleChatMessage struct {

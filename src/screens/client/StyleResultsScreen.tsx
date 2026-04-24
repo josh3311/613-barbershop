@@ -26,10 +26,9 @@ import type { ProfileRecord, StyleRecommendation } from '@/services/ai.service';
 import { TryOnService } from '@/services/tryon.service';
 import { readImageAsBase64, inferImageMediaType } from '@/utils/imageBase64.utils';
 import {
-  UnsplashService,
+  getStylePhoto,
   STYLE_PHOTO_PLACEHOLDER_URL,
   isStylePhotoPlaceholderUrl,
-  stylePhotoHintsFromProfileRecord,
 } from '@/services/unsplash.service';
 import {
   friendlyBestFor,
@@ -74,6 +73,7 @@ interface BeforeAfterModalProps {
   onBook: () => void;
   onSave: () => void;
   saving: boolean;
+  styleName?: string;
 }
 
 function BeforeAfterModal({
@@ -84,6 +84,7 @@ function BeforeAfterModal({
   onBook,
   onSave,
   saving,
+  styleName,
 }: BeforeAfterModalProps): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const halfWidth = SW / 2;
@@ -93,9 +94,8 @@ function BeforeAfterModal({
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
-          {/* Header */}
+          {/* Header with style name */}
           <View style={[styles.modalHeader, { paddingTop: insets.top + spacing.sm }]}>
-            <Text style={styles.modalTitle}>Your Style Preview</Text>
             <TouchableOpacity
               onPress={onClose}
               style={styles.modalCloseBtn}
@@ -104,13 +104,19 @@ function BeforeAfterModal({
             >
               <Ionicons name={icons.close} size={28} color={colors.white} />
             </TouchableOpacity>
+            <Text style={styles.modalTitle}>{styleName || 'Your Style Preview'}</Text>
+            <View style={styles.modalCloseBtn} />
           </View>
 
-          {/* Side-by-side images, exactly 50/50 of the full screen width */}
-          <View style={styles.comparisonContainer}>
+          {/* Side-by-side images, exactly 50/50 of the full screen width — FIX 1: taller container, contain mode */}
+          <View style={[styles.comparisonContainer, { height: Dimensions.get('window').height * 0.65 }]}>
             {/* Before — left half */}
             <View style={[styles.halfImageContainer, { width: halfWidth, left: 0 }]}>
-              <Image source={{ uri: originalPhoto }} style={styles.comparisonImage} resizeMode="cover" />
+              <Image
+                source={{ uri: originalPhoto }}
+                style={{ flex: 1, height: '100%' }}
+                resizeMode="contain"
+              />
               <View style={[styles.imageLabelOverlay, styles.imageLabelLeft]}>
                 <Text style={styles.imageLabel}>Before</Text>
               </View>
@@ -118,8 +124,12 @@ function BeforeAfterModal({
 
             {/* After — right half */}
             <View style={[styles.halfImageContainer, { width: halfWidth, left: halfWidth }]}>
-              <Image source={{ uri: resultPhoto }} style={styles.comparisonImage} resizeMode="cover" />
-              <View style={[styles.imageLabelOverlay, styles.imageLabelRight]}>
+              <Image
+                source={{ uri: resultPhoto }}
+                style={{ flex: 1, height: '100%' }}
+                resizeMode="contain"
+              />
+              <View style={[styles.imageLabelOverlay, { position: 'absolute', bottom: 16, right: 16, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 }]}>
                 <Text style={styles.imageLabel}>After</Text>
               </View>
             </View>
@@ -200,28 +210,22 @@ function BeforeAfterModal({
 // Loading Modal Component
 interface LoadingModalProps {
   visible: boolean;
-  spinValue: Animated.Value;
 }
 
-function LoadingModal({ visible, spinValue }: LoadingModalProps): React.JSX.Element {
+function LoadingModal({ visible }: LoadingModalProps): React.JSX.Element {
   const insets = useSafeAreaInsets();
-
-  const spin = spinValue.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '360deg'],
-  });
 
   return (
     <Modal visible={visible} animationType="fade" transparent>
       <View style={styles.loadingOverlay}>
         <View style={[styles.loadingContent, { paddingBottom: insets.bottom + spacing.lg }]}>
-          <Animated.View style={{ transform: [{ rotate: spin }] }}>
-            <View style={styles.spinnerContainer}>
-              <Ionicons name={icons.refresh} size={48} color={colors.gold} />
-            </View>
-          </Animated.View>
-          <Text style={styles.loadingText}>Applying style to your photo...</Text>
-          <Text style={styles.loadingSubtext}>this takes about 20 seconds</Text>
+          <ActivityIndicator size={60} color="#D4AF37" />
+          <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '600', marginTop: 20 }}>
+            Applying style to your photo...
+          </Text>
+          <Text style={{ color: '#888', fontSize: 13, marginTop: 6 }}>
+            This takes about 20 seconds
+          </Text>
         </View>
       </View>
     </Modal>
@@ -246,8 +250,6 @@ export default function StyleResultsScreen({ navigation, route }: Props): React.
   const { firebaseUser } = useAuth();
   const { analysis, readOnly, selfieUri, selfieDataUrl: routeSelfieDataUrl } = route.params;
   const [saving, setSaving] = React.useState(false);
-  const [photos, setPhotos] = useState<Record<string, string>>({});
-  const [photosLoading, setPhotosLoading] = useState(true);
   const [bookBusyStyle, setBookBusyStyle] = useState<string | null>(null);
 
   // Try-on state
@@ -260,11 +262,7 @@ export default function StyleResultsScreen({ navigation, route }: Props): React.
   const [currentTryOnStyle, setCurrentTryOnStyle] = useState<StyleRecommendation | null>(null);
 
   // Animation refs for cards
-  const summaryAnim = useRef(new Animated.Value(0)).current;
   const cardAnims = useRef<Animated.Value[]>([]).current;
-
-  // Spinner animation
-  const spinValue = useRef(new Animated.Value(0)).current;
 
   const recs: StyleRecommendation[] = useMemo(() => {
     const list = analysis.styles?.recommendations;
@@ -282,13 +280,6 @@ export default function StyleResultsScreen({ navigation, route }: Props): React.
 
   // Trigger entrance animations
   useEffect(() => {
-    // Animate summary card
-    Animated.timing(summaryAnim, {
-      toValue: 1,
-      duration: animations.normal,
-      useNativeDriver: true,
-    }).start();
-
     // Stagger animate recommendation cards
     const animations_list = cardAnims.map((anim, index) =>
       Animated.timing(anim, {
@@ -302,21 +293,6 @@ export default function StyleResultsScreen({ navigation, route }: Props): React.
     Animated.stagger(80, animations_list).start();
   }, [cardAnims]);
 
-  // Spinner animation
-  useEffect(() => {
-    if (tryOnLoading) {
-      Animated.loop(
-        Animated.timing(spinValue, {
-          toValue: 1,
-          duration: 1000,
-          useNativeDriver: true,
-        })
-      ).start();
-    } else {
-      spinValue.setValue(0);
-    }
-  }, [tryOnLoading, spinValue]);
-
   const getCardStyle = (animValue: Animated.Value) => ({
     opacity: animValue,
     transform: [
@@ -329,35 +305,28 @@ export default function StyleResultsScreen({ navigation, route }: Props): React.
     ],
   });
 
-  const photoHints = useMemo(() => stylePhotoHintsFromProfileRecord(analysis.profile), [analysis.profile]);
-
+  // Async photo lookup — calls backend Unsplash proxy with ethnicity-aware query
+  const [photos, setPhotos] = useState<Record<string, string>>({});
   useEffect(() => {
     let cancelled = false;
-    async function loadPhotos(): Promise<void> {
-      if (recs.length === 0) {
-        setPhotosLoading(false);
-        return;
-      }
-      setPhotosLoading(true);
-      try {
-        const urls = await Promise.all(
-          recs.map((r) => UnsplashService.getStylePhoto(r.style_name, photoHints)),
-        );
-        if (cancelled) return;
-        const map: Record<string, string> = {};
-        recs.forEach((r, i) => {
-          map[r.style_name] = urls[i] ?? STYLE_PHOTO_PLACEHOLDER_URL;
-        });
-        setPhotos(map);
-      } finally {
-        if (!cancelled) setPhotosLoading(false);
-      }
+    if (recs.length === 0) {
+      setPhotos({});
+      return;
     }
-    void loadPhotos();
+    (async () => {
+      const eth = analysis.profile?.ethnicity ?? '';
+      const urls = await Promise.all(recs.map((r) => getStylePhoto(r.style_name, eth)));
+      if (cancelled) return;
+      const map: Record<string, string> = {};
+      recs.forEach((r, i) => {
+        map[r.style_name] = urls[i] ?? STYLE_PHOTO_PLACEHOLDER_URL;
+      });
+      setPhotos(map);
+    })();
     return () => {
       cancelled = true;
     };
-  }, [recs, photoHints]);
+  }, [recs, analysis.profile?.ethnicity]);
 
   const p = analysis.profile;
 
@@ -519,11 +488,16 @@ export default function StyleResultsScreen({ navigation, route }: Props): React.
       }
 
       // Fix 6: Log and validate base64 length
-      console.log('[tryon] base64 length:', selfieBase64?.length);
+      // FIX 1: Log base64 length after extraction (web: strip data URL prefix, native: direct read)
+      console.log('[tryon] base64 length after fix:', selfieBase64?.length);
       if (!selfieBase64 || selfieBase64.length === 0) {
         Alert.alert('Photo needed', 'Please upload a photo first in the Style tab');
         setTryOnLoading(false);
         return;
+      }
+      // Warn if base64 seems too small (less than ~100KB = ~75KB after base64 = ~100k chars)
+      if (selfieBase64.length < 100000) {
+        console.warn('[tryon] WARNING: base64 seems small (< 100k chars), image may be low quality');
       }
 
       const stylePrompt = buildStylePrompt(item.style_name);
@@ -694,7 +668,7 @@ export default function StyleResultsScreen({ navigation, route }: Props): React.
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       {/* Loading Modal */}
-      <LoadingModal visible={tryOnLoading} spinValue={spinValue} />
+      <LoadingModal visible={tryOnLoading} />
 
       {/* Before/After Modal */}
       {originalPhoto && resultPhoto && (
@@ -714,6 +688,7 @@ export default function StyleResultsScreen({ navigation, route }: Props): React.
           }}
           onSave={() => void handleSaveLook()}
           saving={savingLook}
+          styleName={currentTryOnStyle?.style_name}
         />
       )}
 
@@ -732,7 +707,7 @@ export default function StyleResultsScreen({ navigation, route }: Props): React.
 
       <View style={styles.headerRow}>
         <TouchableOpacity
-          onPress={() => navigation.goBack()}
+          onPress={() => navigation.navigate('StyleOnboarding')}
           style={styles.backBtn}
           accessibilityRole="button"
           accessibilityLabel="Go back"
@@ -747,30 +722,21 @@ export default function StyleResultsScreen({ navigation, route }: Props): React.
         contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 120 }]}
         showsVerticalScrollIndicator={false}
       >
-        <Animated.View style={[styles.summaryCard, getCardStyle(summaryAnim)]}>
-          <SummaryRow label="Face shape" value={labelize(getProfileString(p, 'face_shape', 'faceShape'))} />
-          <View style={styles.divider} />
-          <SummaryRow label="Hair texture" value={labelize(getProfileString(p, 'hair_texture', 'hairTexture'))} />
-          <View style={styles.divider} />
-          <SummaryRow label="Skin tone" value={labelize(getProfileString(p, 'skin_tone', 'skinTone'))} />
-          <View style={styles.divider} />
-          <SummaryRow
-            label="Current style"
-            value={(() => {
-              const cur = getProfileString(p, 'current_style', 'currentStyle');
-              return cur ? labelize(cur) : '—';
-            })()}
-          />
-        </Animated.View>
+        {/* Profile pills — one horizontal scroll row */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ paddingHorizontal: 16, paddingVertical: 10 }}>
+          {[
+            analysis.profile?.face_shape && `${analysis.profile.face_shape} face`,
+            analysis.profile?.hair_texture,
+            analysis.profile?.skin_tone && `${analysis.profile.skin_tone} skin`,
+            analysis.profile?.ethnicity,
+          ].filter(Boolean).map((label, i) => (
+            <View key={i} style={{ backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: '#2A2A2A', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, marginRight: 8 }}>
+              <Text style={{ color: '#D4AF37', fontSize: 12 }}>{label}</Text>
+            </View>
+          ))}
+        </ScrollView>
 
         <Text style={styles.sectionLabel}>Recommended For You</Text>
-
-        {photosLoading && recs.length > 0 && (
-          <View style={styles.photosLoadingRow}>
-            <ActivityIndicator color={colors.gold} size="small" />
-            <Text style={styles.photosLoadingText}>Finding style photos...</Text>
-          </View>
-        )}
 
         {recs.map((item, index) => {
           const photoUri = photos[item.style_name];
@@ -779,77 +745,114 @@ export default function StyleResultsScreen({ navigation, route }: Props): React.
           const rankNum = item.rank ?? 0;
           const animValue = cardAnims[index] || new Animated.Value(1);
 
+          // Handle button actions
+          const handleTryOn = (rec: typeof item) => {
+            void handleTryThisOnMe(rec);
+          };
+          const handleBook = (rec: typeof item) => {
+            startBookFlow(rec);
+          };
+          const handleChat = () => {
+            openChat();
+          };
+
           return (
             <Animated.View key={`${item.rank}-${item.style_name}`} style={[styles.styleCard, getCardStyle(animValue)]}>
-              {/* Full-width 16:9 Photo */}
-              <View style={[styles.photoFrame, usePlaceholder && styles.photoFramePlaceholder]}>
-                {photoUri ? (
-                  <Image
-                    source={{ uri: photoUri }}
-                    style={[styles.photo, usePlaceholder && styles.photoMuted]}
-                    resizeMode="cover"
-                  />
-                ) : (
-                  <View style={styles.photoSolid} />
-                )}
-                {usePlaceholder ? (
-                  <View style={styles.photoOverlay} pointerEvents="none">
-                    <Text style={styles.photoOverlayText} numberOfLines={3}>
-                      {item.style_name}
-                    </Text>
+              {/* Card container */}
+              <View style={{
+                backgroundColor: '#111111',
+                borderRadius: 16,
+                marginBottom: 20,
+                overflow: 'hidden',
+                borderWidth: 1,
+                borderColor: '#2A2A2A',
+              }}>
+                {/* Photo — fixed height showing face + hair (top anchored) */}
+                <View style={{ width: '100%', height: 320, backgroundColor: '#1A1A1A' }}>
+                  {photoUri ? (
+                    <Image
+                      source={{ uri: photoUri }}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top center' } as any}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View style={styles.photoSolid} />
+                  )}
+                  {/* Rank badge — absolute top left */}
+                  <View style={{
+                    position: 'absolute', top: 12, left: 12,
+                    backgroundColor: '#D4AF37', borderRadius: 8,
+                    paddingHorizontal: 10, paddingVertical: 4,
+                  }}>
+                    <Text style={{ color: '#0A0A0A', fontWeight: '700', fontSize: 12 }}>#{rankNum}</Text>
                   </View>
-                ) : null}
+                  {/* Match score — absolute top right */}
+                  <View style={{
+                    position: 'absolute', top: 12, right: 12,
+                    backgroundColor: 'rgba(0,0,0,0.7)', borderRadius: 12,
+                    paddingHorizontal: 10, paddingVertical: 4,
+                  }}>
+                    <Text style={{ color: '#D4AF37', fontSize: 12, fontWeight: '600' }}>{item.suitability_score ?? 90}% match</Text>
+                  </View>
+                </View>
 
-                {/* Gold Rank Badge - Top Left */}
-                <View style={styles.rankBadgeGold}>
-                  <Text style={styles.rankBadgeTextGold}>#{rankNum}</Text>
+                {/* Card content */}
+                <View style={{ padding: 16 }}>
+                  {/* Style name */}
+                  <Text style={{ color: '#FFFFFF', fontSize: 18, fontWeight: '700' }}>{item.style_name}</Text>
+
+                  {/* Why it fits */}
+                  <Text style={{ color: '#888888', fontSize: 14, marginTop: 6, lineHeight: 20 }} numberOfLines={2}>
+                    {item.why_it_suits_you}
+                  </Text>
+
+                  {/* Info pills row */}
+                  <View style={{ flexDirection: 'row', marginTop: 10, gap: 8, flexWrap: 'wrap' }}>
+                    <InfoPill icon="time-outline" text={item.duration_minutes ? `${item.duration_minutes} min` : '30 min'} />
+                    <InfoPill icon="construct-outline" text={friendlyMaintenance(item.maintenance_level)} />
+                    <InfoPill icon="calendar-outline" text={friendlyBestFor(item.best_for)} />
+                  </View>
+
+                  {/* Occasion tags */}
+                  <View style={{ flexDirection: 'row', marginTop: 8, gap: 6, flexWrap: 'wrap' }}>
+                    {(item.best_for?.split(',') ?? []).slice(0, 3).map((tag: string) => (
+                      <View key={tag} style={{ backgroundColor: '#1A1A1A', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 }}>
+                        <Text style={{ color: '#666', fontSize: 11 }}>{tag.trim()}</Text>
+                      </View>
+                    ))}
+                  </View>
+
+                  {/* Try this on me — gold filled full width */}
+                  <TouchableOpacity
+                    style={{ backgroundColor: '#D4AF37', borderRadius: 24, height: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 14 }}
+                    onPress={() => handleTryOn(item)}
+                  >
+                    <Ionicons name="sparkles-outline" size={16} color="#0A0A0A" />
+                    <Text style={{ color: '#0A0A0A', fontWeight: '700', fontSize: 15, marginLeft: 6 }}>Try this on me</Text>
+                  </TouchableOpacity>
+
+                  {/* Book + Chat row */}
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                    <TouchableOpacity
+                      style={{ flex: 1, borderWidth: 1, borderColor: '#D4AF37', borderRadius: 24, height: 44, alignItems: 'center', justifyContent: 'center' }}
+                      onPress={() => handleBook(item)}
+                      disabled={bookingThis}
+                    >
+                      {bookingThis ? (
+                        <ActivityIndicator color={colors.gold} size="small" />
+                      ) : (
+                        <Text style={{ color: '#D4AF37', fontWeight: '600' }}>Book</Text>
+                      )}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={{ flex: 1, backgroundColor: '#1A1A1A', borderRadius: 24, height: 44, alignItems: 'center', justifyContent: 'center' }}
+                      onPress={handleChat}
+                    >
+                      <Text style={{ color: '#888888' }}>Chat about this</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
-
-              {/* Style Name - Bold White Inter */}
-              <Text style={styles.styleName}>{item.style_name}</Text>
-
-              {/* Great Match Gold Pill */}
-              <View style={styles.greatMatchPill}>
-                <Text style={styles.greatMatchPillText}>Great match</Text>
-              </View>
-
-              {/* Plain English Description */}
-              <Text style={styles.whyText}>{item.why_it_suits_you}</Text>
-
-              {/* Tags Row */}
-              <View style={styles.tagRow}>
-                <Tag text={friendlyMaintenance(item.maintenance_level)} />
-                <Tag text={`About ${item.duration_minutes} min`} />
-                {friendlyBestFor(item.best_for) ? (
-                  <Tag text={friendlyBestFor(item.best_for)} />
-                ) : null}
-              </View>
-
-              {/* Three Stacked Buttons */}
-              {renderPressableButton(
-                () => void handleTryThisOnMe(item),
-                'Try this on me',
-                'primary',
-                photosLoading,
-                `try-${item.style_name}`,
-              )}
-
-              {renderPressableButton(
-                () => startBookFlow(item),
-                bookingThis ? <ActivityIndicator color={colors.gold} size="small" /> : 'Book this style',
-                'outline',
-                photosLoading || bookingThis,
-                `book-${item.style_name}`,
-              )}
-
-              {renderPressableButton(
-                () => openChat(),
-                'Chat about this style',
-                'dark-outline',
-                false,
-                `chat-${item.style_name}`,
-              )}
             </Animated.View>
           );
         })}
@@ -894,6 +897,13 @@ function Tag({ text }: { text: string }): React.JSX.Element {
     </View>
   );
 }
+
+const InfoPill = ({ icon, text }: { icon: string; text: string }) => (
+  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A1A1A', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4 }}>
+    <Ionicons name={icon as any} size={12} color="#D4AF37" />
+    <Text style={{ color: '#888', fontSize: 11, marginLeft: 4 }}>{text}</Text>
+  </View>
+);
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },

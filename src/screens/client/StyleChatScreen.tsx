@@ -34,9 +34,8 @@ import {
 import { BookingService } from '@/services/booking.service';
 import { useAuth } from '@/hooks/useAuth';
 import {
-  UnsplashService,
+  getStylePhoto,
   STYLE_PHOTO_PLACEHOLDER_URL,
-  stylePhotoHintsFromProfileRecord,
 } from '@/services/unsplash.service';
 import {
   createStyleChatSession,
@@ -141,10 +140,30 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
     return [...list].sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
   }, [liveAnalysis.styles]);
 
-  const photoHints = React.useMemo(
-    () => stylePhotoHintsFromProfileRecord(liveAnalysis.profile),
-    [liveAnalysis.profile],
-  );
+  // Async photo lookup — calls backend Unsplash proxy with ethnicity-aware query
+  useEffect(() => {
+    let cancelled = false;
+    if (recs.length === 0) return;
+    (async () => {
+      const eth = liveAnalysis.profile?.ethnicity ?? '';
+      const urls = await Promise.all(
+        recs.map((r) => getStylePhoto(r.style_name, eth)),
+      );
+      if (cancelled) return;
+      setRecommendationPhotos((prev) => {
+        const next: Record<string, string> = { ...prev };
+        recs.forEach((r, i) => {
+          if (!next[r.style_name] || next[r.style_name] === STYLE_PHOTO_PLACEHOLDER_URL) {
+            next[r.style_name] = urls[i] ?? STYLE_PHOTO_PLACEHOLDER_URL;
+          }
+        });
+        return next;
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [recs, liveAnalysis.profile?.ethnicity]);
 
   const [messages, setMessages] = useState<StyleChatTurn[]>([]);
   const [chatId, setChatId] = useState<string | null>(null);
@@ -173,6 +192,21 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
     styleName: string;
     assistantRaw?: string;
     look?: SavedLook;
+  } | null>(null);
+
+  // Feature 1 — Booking picker modal state
+  const [bookingPickerVisible, setBookingPickerVisible] = useState(false);
+  const [upcomingBookings, setUpcomingBookings] = useState<Array<{
+    id: string;
+    serviceName: string;
+    scheduledAt: Date;
+    barberName?: string;
+  }>>([]);
+  const [pendingStyleForBooking, setPendingStyleForBooking] = useState<{
+    name: string;
+    photoURL: string;
+    description: string;
+    barberNotes: string;
   } | null>(null);
 
   // Animation values for message bubbles
@@ -270,32 +304,6 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
       cancelled = true;
     };
   }, [firebaseUser?.uid, routeAnalysis]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (recs.length === 0) {
-      setRecommendationPhotos({});
-      return;
-    }
-    (async () => {
-      try {
-        const urls = await Promise.all(
-          recs.map((r) => UnsplashService.getStylePhoto(r.style_name, photoHints)),
-        );
-        if (cancelled) return;
-        const map: Record<string, string> = {};
-        recs.forEach((r, i) => {
-          map[r.style_name] = urls[i] ?? STYLE_PHOTO_PLACEHOLDER_URL;
-        });
-        setRecommendationPhotos(map);
-      } catch {
-        if (!cancelled) setRecommendationPhotos({});
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [recs, photoHints]);
 
   // Initialize or load chat session
   useEffect(() => {
@@ -547,11 +555,112 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
     const pending = pendingBook;
     setPendingBook(null);
     if (!pending) return;
-    await addStyleToBooking(pending.styleName, pending.assistantRaw, {
-      look: pending.look,
-      clientNote: note,
-    });
+    // Feature 1: Open booking picker instead of auto-attaching
+    await openBookingPicker(pending.styleName, pending.assistantRaw, pending.look, note);
   }
+
+  // Feature 1 — Open booking picker with upcoming bookings
+  async function openBookingPicker(
+    styleName: string,
+    assistantRaw?: string,
+    look?: SavedLook,
+    clientNote?: string,
+  ): Promise<void> {
+    if (!firebaseUser?.uid) return;
+
+    const reco = findRecommendationByBookName(styleName, recs);
+    const photoURL =
+      look?.afterUrl ??
+      recommendationPhotos[styleName] ??
+      recommendationPhotos[reco?.style_name ?? ''] ??
+      STYLE_PHOTO_PLACEHOLDER_URL;
+    const description =
+      look?.styleDescription ||
+      reco?.why_it_suits_you?.trim() ||
+      `The look you picked: ${styleName}. Your barber can fine-tune it with you in the chair.`;
+    const barberNotes =
+      look?.barberNotes ||
+      (typeof assistantRaw === 'string' ? extractBarberNotesFromAssistantReply(assistantRaw) : '');
+
+    // Store the style data for later
+    setPendingStyleForBooking({
+      name: look?.styleName ?? reco?.style_name ?? styleName,
+      photoURL,
+      description,
+      barberNotes: barberNotes ?? '',
+    });
+
+    setBookingBusy(true);
+    try {
+      // Fetch upcoming bookings
+      const listRes = await BookingService.getByClient(firebaseUser.uid);
+      if (!listRes.success) {
+        Alert.alert('Error', 'Could not load your bookings.');
+        return;
+      }
+
+      const now = Date.now();
+      const eligible = listRes.data
+        .filter((b) => {
+          if (b.status !== 'pending' && b.status !== 'confirmed' && b.status !== 'in_progress') {
+            return false;
+          }
+          const start = b.scheduledAt ? safeToDate(b.scheduledAt).getTime() : 0;
+          return start >= now || b.status === 'in_progress';
+        })
+        .sort((a, b) => safeToDate(a.scheduledAt).getTime() - safeToDate(b.scheduledAt).getTime())
+        .map((b) => ({
+          id: b.id,
+          serviceName: b.serviceId === 's1' ? 'Fade' : b.serviceId === 's2' ? 'Lineup' : b.serviceId === 's3' ? 'Beard Trim' : b.serviceId === 's4' ? 'Haircut' : b.serviceId === 's5' ? 'Beard + Haircut' : 'Service',
+          scheduledAt: safeToDate(b.scheduledAt),
+          barberName: b.barberName,
+        }));
+
+      if (eligible.length === 0) {
+        Alert.alert(
+          'No Upcoming Bookings',
+          'No upcoming bookings found. Book an appointment first, then you can add your style preference.',
+        );
+        setPendingStyleForBooking(null);
+        return;
+      }
+
+      setUpcomingBookings(eligible);
+      setBookingPickerVisible(true);
+    } catch (e) {
+      Alert.alert('Error', 'Could not load your bookings.');
+    } finally {
+      setBookingBusy(false);
+    }
+  }
+
+  // Feature 1 — Handle attaching style to selected booking
+  const handleAttachStyleToBooking = async (bookingId: string): Promise<void> => {
+    if (!pendingStyleForBooking) return;
+    setBookingPickerVisible(false);
+    setBookingBusy(true);
+    try {
+      await BookingService.attachRequestedStyleToBooking(bookingId, {
+        name: pendingStyleForBooking.name,
+        photoURL: pendingStyleForBooking.photoURL,
+        description: pendingStyleForBooking.description,
+        barberNotes: pendingStyleForBooking.barberNotes,
+      });
+      setPendingStyleForBooking(null);
+      // Show success message in chat
+      const successMsg: StyleChatTurn = {
+        role: 'assistant',
+        content: `Done! "${pendingStyleForBooking.name}" has been added to your booking. Your barber will see it when you arrive.`,
+      };
+      const nextMessages = [...messages, successMsg];
+      setMessages(nextMessages);
+      await persistChat(nextMessages);
+    } catch (e) {
+      Alert.alert('Error', 'Could not save style to booking. Please try again.');
+    } finally {
+      setBookingBusy(false);
+    }
+  };
 
   async function processPhotoAfterPick(
     uri: string,
@@ -1127,6 +1236,87 @@ export default function StyleChatScreen({ navigation, route }: Props): React.JSX
         onConfirm={(note) => void confirmBookWithNote(note)}
         onCancel={() => setPendingBook(null)}
       />
+
+      {/* Feature 1 — Booking picker modal */}
+      <Modal visible={bookingPickerVisible} animationType="slide" transparent>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' }}>
+          <View style={{
+            backgroundColor: '#111111',
+            borderTopLeftRadius: 20,
+            borderTopRightRadius: 20,
+            padding: 20,
+            maxHeight: '70%',
+          }}>
+            {/* Header */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <Text style={{ color: '#FFFFFF', fontSize: 18, fontWeight: '700' }}>
+                Add to which booking?
+              </Text>
+              <TouchableOpacity onPress={() => setBookingPickerVisible(false)}>
+                <Ionicons name="close" size={24} color="#888" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Style preview */}
+            {pendingStyleForBooking && (
+              <View style={{
+                backgroundColor: '#1A1A1A',
+                borderRadius: 10,
+                padding: 12,
+                marginBottom: 16,
+                borderLeftWidth: 3,
+                borderLeftColor: '#D4AF37',
+              }}>
+                <Text style={{ color: '#D4AF37', fontSize: 11, fontWeight: '700' }}>STYLE TO ADD</Text>
+                <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '600', marginTop: 4 }}>
+                  {pendingStyleForBooking.name}
+                </Text>
+                {pendingStyleForBooking.barberNotes ? (
+                  <Text style={{ color: '#888', fontSize: 12, marginTop: 3 }}>
+                    {pendingStyleForBooking.barberNotes}
+                  </Text>
+                ) : null}
+              </View>
+            )}
+
+            {/* Booking list */}
+            <ScrollView>
+              {upcomingBookings.map((booking) => (
+                <TouchableOpacity
+                  key={booking.id}
+                  style={{
+                    backgroundColor: '#1A1A1A',
+                    borderRadius: 12,
+                    padding: 14,
+                    marginBottom: 10,
+                    borderWidth: 1,
+                    borderColor: '#2A2A2A',
+                  }}
+                  onPress={() => handleAttachStyleToBooking(booking.id)}
+                >
+                  <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '600' }}>
+                    {booking.serviceName}
+                  </Text>
+                  <Text style={{ color: '#888', fontSize: 12, marginTop: 4 }}>
+                    {booking.scheduledAt.toLocaleDateString('en-CA', {
+                      weekday: 'short',
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </Text>
+                  {booking.barberName ? (
+                    <Text style={{ color: '#D4AF37', fontSize: 12, marginTop: 2 }}>
+                      with {booking.barberName}
+                    </Text>
+                  ) : null}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       {/* Toast */}
       <Portal>

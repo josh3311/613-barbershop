@@ -299,15 +299,20 @@ export const BookingService = {
     );
   },
 
-  async create(payload: CreateBookingPayload): Promise<FirestoreResult<Booking>> {
+  async create(
+    payload: CreateBookingPayload,
+    requestedStyle?: RequestedStyle
+  ): Promise<FirestoreResult<Booking>> {
     try {
       const userSnap = await getDoc(doc(db, COLLECTIONS.USERS, payload.clientId));
       const saved = userSnap.data()?.savedStyle as RequestedStyle & { savedAt?: unknown } | undefined;
+
+      // Feature 2: Use provided requestedStyle first, fallback to savedStyle
+      const styleToUse = requestedStyle || (saved?.name ? saved : undefined);
       const hasSaved =
-        saved &&
-        typeof saved.name === 'string' &&
-        typeof saved.photoURL === 'string' &&
-        typeof saved.description === 'string';
+        styleToUse &&
+        typeof styleToUse.name === 'string' &&
+        typeof styleToUse.photoURL === 'string';
 
       const bookingPayload: Record<string, unknown> = {
         ...payload,
@@ -324,17 +329,17 @@ export const BookingService = {
 
       if (hasSaved) {
         bookingPayload.requestedStyle = {
-          name: saved.name,
-          photoURL: saved.photoURL,
-          description: saved.description,
-          ...(typeof saved.beforePhotoURL === 'string' && saved.beforePhotoURL.trim().length > 0
-            ? { beforePhotoURL: saved.beforePhotoURL.trim() }
+          name: styleToUse.name,
+          photoURL: styleToUse.photoURL,
+          description: styleToUse.description ?? '',
+          ...(typeof styleToUse.beforePhotoURL === 'string' && styleToUse.beforePhotoURL.trim().length > 0
+            ? { beforePhotoURL: styleToUse.beforePhotoURL.trim() }
             : {}),
-          ...(typeof saved.barberNotes === 'string' && saved.barberNotes.trim().length > 0
-            ? { barberNotes: saved.barberNotes.trim() }
+          ...(typeof styleToUse.barberNotes === 'string' && styleToUse.barberNotes.trim().length > 0
+            ? { barberNotes: styleToUse.barberNotes.trim() }
             : {}),
-          ...(typeof saved.clientNote === 'string' && saved.clientNote.trim().length > 0
-            ? { clientNote: saved.clientNote.trim() }
+          ...(typeof styleToUse.clientNote === 'string' && styleToUse.clientNote.trim().length > 0
+            ? { clientNote: styleToUse.clientNote.trim() }
             : {}),
         };
       }
@@ -344,7 +349,8 @@ export const BookingService = {
         doc(db, 'bookings', ref.id).withConverter(bookingConverter),
       );
 
-      if (hasSaved) {
+      // Only clear savedStyle if we used it (not if we used the passed-in requestedStyle)
+      if (hasSaved && !requestedStyle && saved?.name) {
         await updateDoc(doc(db, COLLECTIONS.USERS, payload.clientId), {
           savedStyle: deleteField(),
         });
@@ -469,19 +475,55 @@ export const BookingService = {
       }
       const next = findNextUpcomingBooking(listRes.data);
       if (next) {
+        // FIX 2 Part A: Debug log RIGHT BEFORE updateDoc
+        console.log('[booking] about to save requestedStyle to booking:', next.id, {
+          name: cleaned.name,
+          photoURL: cleaned.photoURL,
+          barberNotes: cleaned.barberNotes,
+        });
         await updateDoc(doc(db, COLLECTIONS.BOOKINGS, next.id), {
           requestedStyle: cleaned,
           updatedAt: serverTimestamp(),
         });
+        // FIX 2 Part A: Debug log RIGHT AFTER updateDoc
+        console.log('[booking] requestedStyle SAVED successfully to booking:', next.id);
+        console.log('[booking] requestedStyle saved to booking:', next.id, cleaned.name);
         return { success: true, data: { mode: 'booking', bookingId: next.id } };
       }
       await updateDoc(doc(db, COLLECTIONS.USERS, clientId), {
         savedStyle: { ...cleaned, savedAt: serverTimestamp() },
       });
+      console.log('[booking] no upcoming booking — requestedStyle saved to user savedStyle:', clientId, cleaned.name);
       return { success: true, data: { mode: 'saved' } };
     } catch (e) {
       console.error('[attachRequestedStyleForClient] FAILED:', e);
       return { success: false, error: String(e) };
     }
+  },
+
+  /**
+   * Feature 1 — Attach a requested style directly to a specific booking by ID.
+   * Used by the booking picker in StyleChatScreen.
+   */
+  async attachRequestedStyleToBooking(
+    bookingId: string,
+    style: {
+      name: string;
+      photoURL?: string;
+      description?: string;
+      barberNotes?: string;
+    }
+  ): Promise<void> {
+    const ref = doc(db, 'bookings', bookingId);
+    await updateDoc(ref, {
+      requestedStyle: {
+        name: style.name,
+        photoURL: style.photoURL ?? '',
+        description: style.description ?? '',
+        barberNotes: style.barberNotes ?? '',
+      },
+      updatedAt: serverTimestamp(),
+    });
+    console.log('[booking] requestedStyle SAVED successfully to booking:', bookingId, style.name);
   },
 } as const;
