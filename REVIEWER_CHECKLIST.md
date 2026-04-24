@@ -14,6 +14,10 @@
 - [x] **Security:** No hardcoded API keys in source (check `firebase.ts` uses `process.env`)
 - [x] **Security:** `.env` is in `.gitignore` (never commit secrets)
 - [x] **Security:** Firestore rules deployed and restrictive (no public read/write) — verify in Firebase Console after each rules change
+- [x] **Security:** `REPLICATE_API_TOKEN` is in `backend/.env` and NOT in any frontend file
+- [x] **Security:** `IMGBB_API_KEY` is in `backend/.env` only
+- [x] **Security:** All new API calls go through Go backend, no keys exposed to frontend
+- [x] **Security:** `savedLooks` array in Firestore is protected by auth rules (only owner can read/write)
 - [x] **iOS:** `NSCameraUsageDescription` present in `app.json`
 - [x] **iOS:** `NSPhotoLibraryUsageDescription` present in `app.json`
 - [x] **iOS:** `NSPhotoLibraryAddUsageDescription` present in `app.json` (required if saving photos to library)
@@ -32,6 +36,9 @@
 - [ ] **Performance:** Images optimized (audit any remote URIs / large assets before release)
 - [ ] **Memory:** Image pickers close properly (audit screens using `expo-image-picker` / `expo-camera` when those flows ship)
 - [ ] **Accessibility:** All interactive elements have `accessibilityLabel` / hints (spot-check new screens)
+- [ ] **Data:** `savedLooks` base64 data URLs — audit size, Firestore documents have 1MB limit. If selfie base64 is too large, migrate to Firebase Storage before production
+- [ ] **Data:** FLUX Kontext result URLs are `replicate.delivery` CDN links that expire — save them to Firebase Storage before production release
+- [ ] **Data:** imgbb public URLs are permanent but unprotected — consider migrating to Firebase Storage for production
 - [x] **Network:** Firebase / Google APIs use HTTPS (default)
 - [x] **Build:** `eas.json` exists with production profile
 - [x] **Dependencies:** `@expo/metro-runtime` in `devDependencies` (not `dependencies`)
@@ -68,6 +75,9 @@ Always check these on every review:
 - [ ] Test **Android back** / predictive back where enabled
 - [ ] Verify **deep links** (if implemented)
 - [ ] **Dark mode** consistent (app is dark-themed; verify no accidental light flashes)
+- [ ] Test **FLUX Kontext try-on** on real device (not just web)
+- [ ] Verify **expo-camera** permissions work on iOS physical device
+- [ ] Verify **expo-image-picker** permissions work on Android physical device
 
 ---
 

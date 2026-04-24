@@ -4,7 +4,7 @@ For: Builder Agent (What to build, what's done, UI specs)
 > **Every session (humans + AI):** Follow **`START-HERE.md`** for the full read order. At minimum, read **this file** first for sprint/backlog/UI. Then **`PROJECT-HANDOFF-FOR-KIMI.md`** (security/store context) and **`REVIEWER_CHECKLIST.md`** (compliance) when touching infra or release. After shipping a meaningful feature, update **Last Updated** and the relevant checklists so the plan stays true.
 
 # 613 Barbershop - Project Status
-**Last Updated:** 2026-04-23 (Style tab fully rebuilt with AI try-on, chat, camera flows; post-Redesign sprint)  
+**Last Updated:** 2026-04-24 (All AI features complete: FLUX try-on, saved looks, barber preview, loyalty stamps; demo prep mode)  
 **Stack:** Expo SDK ~54, React Native, TypeScript, Firebase, Go backend  
 **Theme:** Dark (#0A0A0A), Gold (#D4AF37), Bebas Neue + Inter typography
 
@@ -51,10 +51,17 @@ For: Builder Agent (What to build, what's done, UI specs)
 - [x] **Camera flow for style analysis** — Native `expo-camera` with preview modal, web fallback to `expo-image-picker`
 - [x] **Gallery upload flow for style analysis** — `expo-image-picker` with crop/preview, saves base64 selfie to Firestore
 - [x] **AI Chat Stylist fully rebuilt** — Strict focus mode, photo uploads trigger re-analysis, chat history in `users/{uid}/styleChats`, style profile context on open, `[BOOK_STYLE:Name]` booking integration
+- [x] **FLUX Kontext AI virtual try-on** — Before/after comparison with draggable slider, saves to `users/{uid}.savedLooks`, $0.04/generation
+- [x] **Saved looks gallery** — "YOUR LOOKS" horizontal scroll section on Style tab, before/after modal with Book + Remove
+- [x] **Barber sees client before/after + notes** — Schedule booking cards show requested style preview with barber notes and client notes
+- [x] **Client notes to barber** — Free-form text field when booking a style
+- [x] **Barber AI guide** — "How do I do this cut?" calls `/api/barber-cut-guide`, "Not sure about this style?" Q&A with AI
+- [x] **Loyalty stamps** — Connected to Complete button, visual stamps on profile
+- [x] **Full app audit** — Web compatibility fixes, Alert.cancel bug fixed, Reanimated issues identified
 
 ## 🚧 ACTIVE SPRINT (Build These Now)
 
-**Current Sprint Status:** "Style tab fully rebuilt — analysis, try-on, chat all working. Next: fix Reanimated → built-in Animated, full design polish."
+**Current Sprint Status:** "AI features complete. Next: fix Reanimated Book tab crash, design polish, EAS build."
 
    Priority 1: Web compatibility and design polish
    - Replace all `react-native-reanimated` with React Native's built-in `Animated` API
@@ -71,6 +78,12 @@ For: Builder Agent (What to build, what's done, UI specs)
 - **Booking tab crash on web:** Same root cause as Reanimated error
 - **Design polish incomplete:** Some screens still need full `theme.ts` integration (Bebas Neue headers, 3D card shadows, consistent spacing)
 - **Post-Reanimated testing:** Verify all client + barber + admin flows work correctly after animation library swap
+
+### Known Issues (AI Features)
+- Reanimated web crash on Book tab — replace with built-in Animated API
+- BebasNeue fonts not loading on all screens
+- Firebase Storage not enabled (Blaze plan needed) — base64 workaround in place
+- Push notifications disabled in Expo Go (need EAS dev build)
 
 ## 📋 BACKLOG (Future Sprints)
 - [ ] Cancel window enforcement (e.g., no cancel within 2 hours)
@@ -106,14 +119,18 @@ For: Builder Agent (What to build, what's done, UI specs)
 
 ### Environment Variables (Backend)
 - `ANTHROPIC_API_KEY` — Claude API for analysis and chat
-- `REPLICATE_API_TOKEN` — Replicate API — FLUX Kontext Pro try-on + any future models
+- `REPLICATE_API_TOKEN` — Replicate — FLUX Kontext Pro try-on
 - `IMGBB_API_KEY` — imgbb.com — public image hosting for Replicate input
-- `UNSPLASH_ACCESS_KEY` — Unsplash API for style reference photos
+- `UNSPLASH_ACCESS_KEY` — Unsplash API for style reference photos (backend only)
+- `EXPO_PUBLIC_UNSPLASH_KEY` — moved to backend only (frontend uses proxy)
+- `LIGHTX_API_KEY` — LightX (paused, kept for reference)
 
 ### Backend Endpoints (Go)
-- `POST /api/analyze-profile` — Photo analysis + initial recommendations
+- `POST /api/analyze-profile` — Claude face + hair analysis
 - `POST /api/style-chat` — AI stylist chat with full conversation history
+- `POST /api/style-photo` — Unsplash photo proxy (ethnicity-aware queries)
 - `POST /api/try-on-kontext` — FLUX Kontext hair try-on via Replicate
+- `POST /api/barber-cut-guide` — Barber AI step-by-step guide
 
 ## 🚨 CURRENT BLOCKERS
 - None
