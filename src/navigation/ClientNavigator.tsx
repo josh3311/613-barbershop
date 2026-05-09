@@ -3,12 +3,10 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme';
-
-// Screens
 import HomeScreen from '../screens/client/HomeScreen';
-
-// Placeholders for tabs we'll build next
+import ServiceSelectionScreen from '../screens/client/ServiceSelectionScreen';
 import { View, Text } from 'react-native';
+
 const Placeholder = ({ name }: { name: string }) => (
   <View style={{ flex: 1, backgroundColor: theme.colors.background,
     alignItems: 'center', justifyContent: 'center' }}>
@@ -48,10 +46,10 @@ function ClientTabs() {
             active: keyof typeof Ionicons.glyphMap;
             inactive: keyof typeof Ionicons.glyphMap;
           }> = {
-            Home:    { active: 'home',          inactive: 'home-outline'          },
-            Book:    { active: 'calendar',      inactive: 'calendar-outline'      },
-            History: { active: 'time',          inactive: 'time-outline'          },
-            Profile: { active: 'person',        inactive: 'person-outline'        },
+            Home:    { active: 'home',     inactive: 'home-outline'     },
+            Book:    { active: 'calendar', inactive: 'calendar-outline' },
+            History: { active: 'time',     inactive: 'time-outline'     },
+            Profile: { active: 'person',   inactive: 'person-outline'   },
           };
           const icon = icons[route.name];
           return (
@@ -75,7 +73,10 @@ function ClientTabs() {
 export default function ClientNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="ClientTabs" component={ClientTabs} />
+      <Stack.Screen name="ClientTabs"       component={ClientTabs} />
+      <Stack.Screen name="BookingFlow"      component={ServiceSelectionScreen} />
+      <Stack.Screen name="BarberSelection"  component={() =>
+        <Placeholder name="Pick a Barber" />} />
     </Stack.Navigator>
   );
 }

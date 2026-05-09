@@ -11,7 +11,7 @@ import { theme } from '../../theme';
 
 const { width } = Dimensions.get('window');
 
-export default function HomeScreen() {
+export default function HomeScreen({ navigation }: { navigation: any }) {
   const { user } = useAuth();
   const fadeAnim  = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -70,7 +70,10 @@ export default function HomeScreen() {
           <Text style={styles.heroNumber}>613</Text>
           <Text style={styles.heroTitle}>BARBERSHOP</Text>
           <Text style={styles.heroSubtitle}>Ottawa's finest cuts</Text>
-          <TouchableOpacity style={styles.bookBtn}>
+          <TouchableOpacity
+            style={styles.bookBtn}
+            onPress={() => navigation.navigate('BookingFlow')}
+          >
             <Text style={styles.bookBtnText}>BOOK NOW</Text>
             <Ionicons
               name="arrow-forward"
@@ -136,10 +139,10 @@ export default function HomeScreen() {
 }
 
 const QUICK_ACTIONS = [
-  { label: 'Book Cut',   icon: 'calendar-outline'   },
+  { label: 'Book Cut',   icon: 'calendar-outline'      },
   { label: 'My Styles',  icon: 'color-palette-outline' },
-  { label: 'History',    icon: 'time-outline'        },
-  { label: 'Chat',       icon: 'chatbubble-outline'  },
+  { label: 'History',    icon: 'time-outline'           },
+  { label: 'Chat',       icon: 'chatbubble-outline'     },
 ] as const;
 
 const styles = StyleSheet.create({
