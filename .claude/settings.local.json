@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(npx expo *)",
+      "Bash(netstat -ano -p tcp)",
+      "Bash(awk '{print $5}')",
+      "Bash(netstat -ano)",
+      "Bash(cmd.exe /c \"netstat -ano | findstr :8081\")",
+      "Bash(tasklist.exe)",
+      "Bash(powershell.exe -NoProfile -Command 'Get-NetTCPConnection -LocalPort 8081 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue; '\\\\''Killed PID '\\\\'' + $_.OwningProcess }; '\\\\''done'\\\\''')",
+      "Bash(RCT_METRO_PORT=8082 npx expo start --port 8082 --clear)",
+      "Bash(RCT_METRO_PORT=8090 npx expo start --port 8090 --clear)",
+      "Bash(rm -rf \"/c/Users/Admin/AppData/Local/Temp/metro-\"* \"/c/Users/Admin/AppData/Local/Temp/haste-map-\"*)",
+      "Read(//c/Users/Admin/AppData/Local/Temp//**)",
+      "Bash(RCT_METRO_PORT=8095 npx expo start --port 8095 --clear)",
+      "Bash(taskkill.exe //IM node.exe //F)",
+      "Bash(/c/Windows/System32/taskkill.exe //IM node.exe //F)"
+    ]
+  }
+}
