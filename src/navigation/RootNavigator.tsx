@@ -4,19 +4,17 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useAuth } from '../context/AuthContext';
 import { theme } from '../theme';
-
-// Placeholder screens — we'll replace these one by one
 import AuthNavigator   from './AuthNavigator';
 import ClientNavigator from './ClientNavigator';
 import BarberNavigator from './BarberNavigator';
 import AdminNavigator  from './AdminNavigator';
+import RoleSelectScreen from '../screens/auth/RoleSelectScreen';
 
 const Stack = createNativeStackNavigator();
 
 export default function RootNavigator() {
   const { user, loading, profileLoaded } = useAuth();
 
-  // Show spinner while Firebase loads
   if (loading || !profileLoaded) {
     return (
       <View style={{
@@ -34,15 +32,15 @@ export default function RootNavigator() {
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!user ? (
-          // Not logged in → Auth screens
-          <Stack.Screen name="Auth" component={AuthNavigator} />
+          <Stack.Screen name="Auth"       component={AuthNavigator} />
+        ) : !user.role ? (
+          <Stack.Screen name="RoleSelect" component={RoleSelectScreen} />
         ) : user.role === 'barber' ? (
-          <Stack.Screen name="Barber" component={BarberNavigator} />
+          <Stack.Screen name="Barber"     component={BarberNavigator} />
         ) : user.role === 'admin' ? (
-          <Stack.Screen name="Admin" component={AdminNavigator} />
+          <Stack.Screen name="Admin"      component={AdminNavigator} />
         ) : (
-          // Default → Client
-          <Stack.Screen name="Client" component={ClientNavigator} />
+          <Stack.Screen name="Client"     component={ClientNavigator} />
         )}
       </Stack.Navigator>
     </NavigationContainer>
