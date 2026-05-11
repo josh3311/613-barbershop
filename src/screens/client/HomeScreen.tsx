@@ -35,6 +35,24 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
 
   const firstName = user?.displayName?.split(' ')[0] ?? 'there';
 
+  const handleQuickAction = (label: string) => {
+    switch (label) {
+      case 'Book Cut':
+        navigation.navigate('BookingFlow');
+        break;
+      case 'History':
+        navigation.navigate('History');
+        break;
+      case 'Chat':
+        // Chat requires a bookingId — send to History to pick a booking
+        navigation.navigate('History');
+        break;
+      case 'My Styles':
+        // Coming Day 10 — AI Style feature
+        break;
+    }
+  };
+
   return (
     <View style={styles.container}>
       <ScrollView
@@ -87,7 +105,11 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
         <Text style={styles.sectionTitle}>QUICK ACTIONS</Text>
         <View style={styles.actions}>
           {QUICK_ACTIONS.map((action, i) => (
-            <TouchableOpacity key={i} style={styles.actionCard}>
+            <TouchableOpacity
+              key={i}
+              style={styles.actionCard}
+              onPress={() => handleQuickAction(action.label)}
+            >
               <View style={styles.actionIcon}>
                 <Ionicons
                   name={action.icon}
@@ -139,10 +161,10 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
 }
 
 const QUICK_ACTIONS = [
-  { label: 'Book Cut',   icon: 'calendar-outline'      },
-  { label: 'My Styles',  icon: 'color-palette-outline' },
-  { label: 'History',    icon: 'time-outline'           },
-  { label: 'Chat',       icon: 'chatbubble-outline'     },
+  { label: 'Book Cut',  icon: 'calendar-outline'       },
+  { label: 'My Styles', icon: 'color-palette-outline'  },
+  { label: 'History',   icon: 'time-outline'            },
+  { label: 'Chat',      icon: 'chatbubble-outline'      },
 ] as const;
 
 const styles = StyleSheet.create({

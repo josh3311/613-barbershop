@@ -13,6 +13,7 @@ import BookingConfirmScreen    from '../screens/client/BookingConfirmScreen';
 import BookingSuccessScreen    from '../screens/client/BookingSuccessScreen';
 import BookingHistoryScreen    from '../screens/client/BookingHistoryScreen';
 import ProfileScreen           from '../screens/client/ProfileScreen';
+import ChatScreen              from '../screens/chat/ChatScreen';
 
 const Placeholder = ({ name }: { name: string }) => (
   <View style={{ flex: 1, backgroundColor: theme.colors.background,
@@ -85,6 +86,7 @@ export default function ClientNavigator() {
       <Stack.Screen name="DateTimeSelection" component={DateTimeSelectionScreen} />
       <Stack.Screen name="BookingConfirm"    component={BookingConfirmScreen}    />
       <Stack.Screen name="BookingSuccess"    component={BookingSuccessScreen}    />
+      <Stack.Screen name="Chat"              component={ChatScreen}              />
     </Stack.Navigator>
   );
 }

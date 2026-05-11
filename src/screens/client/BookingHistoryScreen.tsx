@@ -14,9 +14,13 @@ import { COLLECTIONS } from '../../constants/collections';
 import { Booking, BookingStatus } from '../../types';
 import { theme } from '../../theme';
 
+interface Props {
+  navigation: any;
+}
+
 type FilterType = 'all' | BookingStatus;
 
-export default function BookingHistoryScreen() {
+export default function BookingHistoryScreen({ navigation }: Props) {
   const { user } = useAuth();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading,  setLoading]  = useState(true);
@@ -175,25 +179,46 @@ export default function BookingHistoryScreen() {
                 </Text>
               </View>
 
-              {/* Status badge */}
-              <View style={[
-                styles.statusBadge,
-                {
-                  backgroundColor: getStatusColor(booking.status) + '20',
-                  borderColor:     getStatusColor(booking.status),
-                }
-              ]}>
-                <Ionicons
-                  name={getStatusIcon(booking.status)}
-                  size={12}
-                  color={getStatusColor(booking.status)}
-                />
-                <Text style={[
-                  styles.statusText,
-                  { color: getStatusColor(booking.status) }
+              {/* Status + Chat Row */}
+              <View style={styles.cardBottom}>
+                <View style={[
+                  styles.statusBadge,
+                  {
+                    backgroundColor: getStatusColor(booking.status) + '20',
+                    borderColor:     getStatusColor(booking.status),
+                  }
                 ]}>
-                  {booking.status.toUpperCase()}
-                </Text>
+                  <Ionicons
+                    name={getStatusIcon(booking.status)}
+                    size={12}
+                    color={getStatusColor(booking.status)}
+                  />
+                  <Text style={[
+                    styles.statusText,
+                    { color: getStatusColor(booking.status) }
+                  ]}>
+                    {booking.status.toUpperCase()}
+                  </Text>
+                </View>
+
+                {/* Chat Button — only for pending/confirmed */}
+                {(booking.status === 'pending' ||
+                  booking.status === 'confirmed') && (
+                  <TouchableOpacity
+                    style={styles.chatBtn}
+                    onPress={() => navigation.navigate('Chat', {
+                      bookingId:     booking.id,
+                      recipientName: booking.barberName,
+                    })}
+                  >
+                    <Ionicons
+                      name="chatbubble-outline"
+                      size={14}
+                      color={theme.colors.gold}
+                    />
+                    <Text style={styles.chatBtnText}>CHAT</Text>
+                  </TouchableOpacity>
+                )}
               </View>
 
             </View>
@@ -324,11 +349,15 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSizes.xs,
     color: theme.colors.textMuted,
   },
+  cardBottom: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.spacing.xs,
-    alignSelf: 'flex-start',
     paddingVertical: 4,
     paddingHorizontal: theme.spacing.sm,
     borderRadius: theme.radius.full,
@@ -337,6 +366,23 @@ const styles = StyleSheet.create({
   statusText: {
     fontFamily: theme.fonts.medium,
     fontSize: theme.fontSizes.xs,
+    letterSpacing: 1,
+  },
+  chatBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.xs,
+    backgroundColor: theme.colors.goldMuted,
+    borderWidth: 1,
+    borderColor: theme.colors.gold,
+    borderRadius: theme.radius.full,
+    paddingVertical: 4,
+    paddingHorizontal: theme.spacing.sm,
+  },
+  chatBtnText: {
+    fontFamily: theme.fonts.medium,
+    fontSize: theme.fontSizes.xs,
+    color: theme.colors.gold,
     letterSpacing: 1,
   },
 });
