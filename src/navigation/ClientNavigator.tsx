@@ -11,6 +11,7 @@ import BarberSelectionScreen   from '../screens/client/BarberSelectionScreen';
 import DateTimeSelectionScreen from '../screens/client/DateTimeSelectionScreen';
 import BookingConfirmScreen    from '../screens/client/BookingConfirmScreen';
 import BookingSuccessScreen    from '../screens/client/BookingSuccessScreen';
+import BookingHistoryScreen    from '../screens/client/BookingHistoryScreen';
 
 const Placeholder = ({ name }: { name: string }) => (
   <View style={{ flex: 1, backgroundColor: theme.colors.background,
@@ -21,7 +22,6 @@ const Placeholder = ({ name }: { name: string }) => (
 );
 
 const BookScreen    = () => <Placeholder name="Book" />;
-const HistoryScreen = () => <Placeholder name="History" />;
 const ProfileScreen = () => <Placeholder name="Profile" />;
 
 const Tab   = createBottomTabNavigator();
@@ -68,10 +68,10 @@ function ClientTabs() {
         },
       })}
     >
-      <Tab.Screen name="Home"    component={HomeScreen}    />
-      <Tab.Screen name="Book"    component={BookScreen}    />
-      <Tab.Screen name="History" component={HistoryScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+      <Tab.Screen name="Home"    component={HomeScreen}           />
+      <Tab.Screen name="Book"    component={BookScreen}           />
+      <Tab.Screen name="History" component={BookingHistoryScreen} />
+      <Tab.Screen name="Profile" component={ProfileScreen}        />
     </Tab.Navigator>
   );
 }
