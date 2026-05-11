@@ -2,10 +2,13 @@ import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { theme } from '../theme';
-import HomeScreen from '../screens/client/HomeScreen';
-import ServiceSelectionScreen from '../screens/client/ServiceSelectionScreen';
 import { View, Text } from 'react-native';
+import { theme } from '../theme';
+
+// Screens
+import HomeScreen             from '../screens/client/HomeScreen';
+import ServiceSelectionScreen from '../screens/client/ServiceSelectionScreen';
+import BarberSelectionScreen  from '../screens/client/BarberSelectionScreen';
 
 const Placeholder = ({ name }: { name: string }) => (
   <View style={{ flex: 1, backgroundColor: theme.colors.background,
@@ -14,9 +17,11 @@ const Placeholder = ({ name }: { name: string }) => (
       fontFamily: theme.fonts.heading, fontSize: 24 }}>{name}</Text>
   </View>
 );
-const BookScreen    = () => <Placeholder name="Book" />;
-const HistoryScreen = () => <Placeholder name="History" />;
-const ProfileScreen = () => <Placeholder name="Profile" />;
+
+const BookScreen        = () => <Placeholder name="Book" />;
+const HistoryScreen     = () => <Placeholder name="History" />;
+const ProfileScreen     = () => <Placeholder name="Profile" />;
+const DateTimeScreen    = () => <Placeholder name="Pick Date & Time" />;
 
 const Tab   = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -43,7 +48,7 @@ function ClientTabs() {
         },
         tabBarIcon: ({ focused, color, size }) => {
           const icons: Record<string, {
-            active: keyof typeof Ionicons.glyphMap;
+            active:   keyof typeof Ionicons.glyphMap;
             inactive: keyof typeof Ionicons.glyphMap;
           }> = {
             Home:    { active: 'home',     inactive: 'home-outline'     },
@@ -73,10 +78,10 @@ function ClientTabs() {
 export default function ClientNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="ClientTabs"       component={ClientTabs} />
+      <Stack.Screen name="ClientTabs"       component={ClientTabs}             />
       <Stack.Screen name="BookingFlow"      component={ServiceSelectionScreen} />
-      <Stack.Screen name="BarberSelection"  component={() =>
-        <Placeholder name="Pick a Barber" />} />
+      <Stack.Screen name="BarberSelection"  component={BarberSelectionScreen}  />
+      <Stack.Screen name="DateTimeSelection" component={DateTimeScreen}        />
     </Stack.Navigator>
   );
 }
