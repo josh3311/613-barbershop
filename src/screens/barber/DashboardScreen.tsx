@@ -3,7 +3,10 @@ import {
   View, Text, StyleSheet, ScrollView,
   TouchableOpacity, Animated,
 } from 'react-native';
-import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
+import {
+  collection, query, where, onSnapshot,
+  orderBy, updateDoc, doc,
+} from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '../../config/firebase';
@@ -64,12 +67,24 @@ export default function BarberDashboardScreen() {
     }) ?? '';
   };
 
+  const updateBookingStatus = async (
+    bookingId: string,
+    status: 'confirmed' | 'cancelled'
+  ) => {
+    try {
+      await updateDoc(doc(db, COLLECTIONS.BOOKINGS, bookingId), { status });
+    } catch (e) {
+      console.error('Failed to update booking:', e);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <ScrollView
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
+
         {/* Header */}
         <Animated.View style={[styles.header, {
           opacity: fadeAnim, transform: [{ translateY: slideAnim }]
@@ -131,11 +146,24 @@ export default function BarberDashboardScreen() {
                 </View>
                 <View style={styles.bookingRight}>
                   <Text style={styles.bookingPrice}>${booking.servicePrice}</Text>
-                  <Ionicons
-                    name="chevron-forward"
-                    size={16}
-                    color={theme.colors.textMuted}
-                  />
+                </View>
+
+                {/* Action Buttons */}
+                <View style={styles.actionBtns}>
+                  <TouchableOpacity
+                    style={styles.declineBtn}
+                    onPress={() => updateBookingStatus(booking.id, 'cancelled')}
+                  >
+                    <Ionicons name="close" size={18} color={theme.colors.error} />
+                    <Text style={styles.declineBtnText}>DECLINE</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.confirmBtn}
+                    onPress={() => updateBookingStatus(booking.id, 'confirmed')}
+                  >
+                    <Ionicons name="checkmark" size={18} color={theme.colors.textInverse} />
+                    <Text style={styles.confirmBtnText}>CONFIRM</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
             ))}
@@ -273,9 +301,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
     padding: theme.spacing.lg,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     marginBottom: theme.spacing.md,
     ...theme.shadows.md,
   },
@@ -321,11 +346,55 @@ const styles = StyleSheet.create({
   bookingRight: {
     alignItems: 'flex-end',
     gap: theme.spacing.xs,
+    position: 'absolute',
+    right: theme.spacing.lg,
+    top: theme.spacing.lg,
   },
   bookingPrice: {
     fontFamily: theme.fonts.heading,
     fontSize: theme.fontSizes.lg,
     color: theme.colors.gold,
+  },
+  actionBtns: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+    marginTop: theme.spacing.md,
+    paddingTop: theme.spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+  },
+  declineBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing.xs,
+    padding: theme.spacing.sm,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.error,
+  },
+  declineBtnText: {
+    fontFamily: theme.fonts.heading,
+    fontSize: theme.fontSizes.xs,
+    color: theme.colors.error,
+    letterSpacing: 1,
+  },
+  confirmBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing.xs,
+    padding: theme.spacing.sm,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.gold,
+  },
+  confirmBtnText: {
+    fontFamily: theme.fonts.heading,
+    fontSize: theme.fontSizes.xs,
+    color: theme.colors.textInverse,
+    letterSpacing: 1,
   },
   emptyState: {
     alignItems: 'center',
