@@ -5,10 +5,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { View, Text } from 'react-native';
 import { theme } from '../theme';
 
-// Screens
-import HomeScreen             from '../screens/client/HomeScreen';
-import ServiceSelectionScreen from '../screens/client/ServiceSelectionScreen';
-import BarberSelectionScreen  from '../screens/client/BarberSelectionScreen';
+import HomeScreen              from '../screens/client/HomeScreen';
+import ServiceSelectionScreen  from '../screens/client/ServiceSelectionScreen';
+import BarberSelectionScreen   from '../screens/client/BarberSelectionScreen';
+import DateTimeSelectionScreen from '../screens/client/DateTimeSelectionScreen';
 
 const Placeholder = ({ name }: { name: string }) => (
   <View style={{ flex: 1, backgroundColor: theme.colors.background,
@@ -18,10 +18,9 @@ const Placeholder = ({ name }: { name: string }) => (
   </View>
 );
 
-const BookScreen        = () => <Placeholder name="Book" />;
-const HistoryScreen     = () => <Placeholder name="History" />;
-const ProfileScreen     = () => <Placeholder name="Profile" />;
-const DateTimeScreen    = () => <Placeholder name="Pick Date & Time" />;
+const BookScreen    = () => <Placeholder name="Book" />;
+const HistoryScreen = () => <Placeholder name="History" />;
+const ProfileScreen = () => <Placeholder name="Profile" />;
 
 const Tab   = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -78,10 +77,12 @@ function ClientTabs() {
 export default function ClientNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="ClientTabs"       component={ClientTabs}             />
-      <Stack.Screen name="BookingFlow"      component={ServiceSelectionScreen} />
-      <Stack.Screen name="BarberSelection"  component={BarberSelectionScreen}  />
-      <Stack.Screen name="DateTimeSelection" component={DateTimeScreen}        />
+      <Stack.Screen name="ClientTabs"        component={ClientTabs}              />
+      <Stack.Screen name="BookingFlow"       component={ServiceSelectionScreen}  />
+      <Stack.Screen name="BarberSelection"   component={BarberSelectionScreen}   />
+      <Stack.Screen name="DateTimeSelection" component={DateTimeSelectionScreen} />
+      <Stack.Screen name="BookingConfirm"    component={() =>
+        <Placeholder name="Confirm Booking" />}                                  />
     </Stack.Navigator>
   );
 }
