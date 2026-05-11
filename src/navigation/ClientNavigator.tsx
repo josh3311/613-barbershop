@@ -12,6 +12,7 @@ import DateTimeSelectionScreen from '../screens/client/DateTimeSelectionScreen';
 import BookingConfirmScreen    from '../screens/client/BookingConfirmScreen';
 import BookingSuccessScreen    from '../screens/client/BookingSuccessScreen';
 import BookingHistoryScreen    from '../screens/client/BookingHistoryScreen';
+import ProfileScreen           from '../screens/client/ProfileScreen';
 
 const Placeholder = ({ name }: { name: string }) => (
   <View style={{ flex: 1, backgroundColor: theme.colors.background,
@@ -21,8 +22,7 @@ const Placeholder = ({ name }: { name: string }) => (
   </View>
 );
 
-const BookScreen    = () => <Placeholder name="Book" />;
-const ProfileScreen = () => <Placeholder name="Profile" />;
+const BookScreen = () => <Placeholder name="Book" />;
 
 const Tab   = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
