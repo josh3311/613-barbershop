@@ -38,27 +38,27 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
 
     try {
       await addDoc(collection(db, COLLECTIONS.BOOKINGS), {
-        clientId:      user.id,
-        clientName:    user.displayName,
+        clientId:       user.id,
+        clientName:     user.displayName,
         clientPhotoURL: user.photoURL ?? null,
-        barberId:      barber.id,
-        barberName:    barber.displayName,
-        serviceId:     service.id,
-        serviceName:   service.name,
-        servicePrice:  service.price,
-        status:        'pending',
-        scheduledAt:   scheduled,
-        createdAt:     serverTimestamp(),
-        notes:         null,
+        barberId:       barber.id,
+        barberName:     barber.displayName,
+        serviceId:      service.id,
+        serviceName:    service.name,
+        servicePrice:   service.price,
+        status:         'pending',
+        scheduledAt:    scheduled,
+        createdAt:      serverTimestamp(),
+        notes:          null,
         requestedStyle: null,
-        rating:        null,
-        review:        null,
+        rating:         null,
+        review:         null,
       });
 
-      // Navigate to success screen
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'ClientTabs' }],
+      navigation.replace('BookingSuccess', {
+        serviceName: service.name,
+        barberName:  barber.displayName,
+        scheduledAt: scheduled.toISOString(),
       });
 
     } catch (e) {
@@ -88,7 +88,7 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
         </View>
       </View>
 
-      {/* Progress Bar — full */}
+      {/* Progress Bar */}
       <View style={styles.progressBar}>
         <View style={[styles.progressFill, { width: '100%' }]} />
       </View>
@@ -97,7 +97,6 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-
         {/* Summary Card */}
         <View style={styles.summaryCard}>
 
@@ -110,7 +109,6 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
 
           <View style={styles.divider} />
 
-          {/* Booking details */}
           <View style={styles.detailRow}>
             <View style={styles.detailIcon}>
               <Ionicons name="cut-outline" size={18} color={theme.colors.gold} />
@@ -164,7 +162,6 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
 
           <View style={styles.divider} />
 
-          {/* Total */}
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>TOTAL</Text>
             <Text style={styles.totalPrice}>${service.price} CAD</Text>
@@ -180,7 +177,7 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
             color={theme.colors.textMuted}
           />
           <Text style={styles.infoText}>
-            Your booking will be confirmed by the barber. 
+            Your booking will be confirmed by the barber.
             You'll be notified once confirmed.
           </Text>
         </View>
