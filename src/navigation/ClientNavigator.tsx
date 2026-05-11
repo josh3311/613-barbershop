@@ -9,6 +9,7 @@ import HomeScreen              from '../screens/client/HomeScreen';
 import ServiceSelectionScreen  from '../screens/client/ServiceSelectionScreen';
 import BarberSelectionScreen   from '../screens/client/BarberSelectionScreen';
 import DateTimeSelectionScreen from '../screens/client/DateTimeSelectionScreen';
+import BookingConfirmScreen    from '../screens/client/BookingConfirmScreen';
 
 const Placeholder = ({ name }: { name: string }) => (
   <View style={{ flex: 1, backgroundColor: theme.colors.background,
@@ -81,8 +82,7 @@ export default function ClientNavigator() {
       <Stack.Screen name="BookingFlow"       component={ServiceSelectionScreen}  />
       <Stack.Screen name="BarberSelection"   component={BarberSelectionScreen}   />
       <Stack.Screen name="DateTimeSelection" component={DateTimeSelectionScreen} />
-      <Stack.Screen name="BookingConfirm"    component={() =>
-        <Placeholder name="Confirm Booking" />}                                  />
+      <Stack.Screen name="BookingConfirm"    component={BookingConfirmScreen}    />
     </Stack.Navigator>
   );
 }
