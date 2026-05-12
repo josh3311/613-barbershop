@@ -48,7 +48,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
         navigation.navigate('History');
         break;
       case 'My Styles':
-        // Coming Day 10 — AI Style feature
+        navigation.navigate('BookingFlow');
         break;
     }
   };
@@ -86,7 +86,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
           { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
         ]}>
           <Text style={styles.heroNumber}>613</Text>
-          <Text style={styles.heroTitle}>BARBERSHOP</Text>
+          <Text style={styles.heroTitle} adjustsFontSizeToFit numberOfLines={1}>BARBERSHOP</Text>
           <Text style={styles.heroSubtitle}>Ottawa's finest cuts</Text>
           <TouchableOpacity
             style={styles.bookBtn}
@@ -214,7 +214,7 @@ const styles = StyleSheet.create({
   },
   heroTitle: {
     fontFamily: theme.fonts.heading,
-    fontSize: theme.fontSizes.xxl,
+    fontSize: theme.fontSizes.xl,
     color: theme.colors.textPrimary,
     letterSpacing: 6,
   },

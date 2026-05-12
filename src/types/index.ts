@@ -1,6 +1,9 @@
 // ─── User ────────────────────────────────────────────────
 export type UserRole = 'client' | 'barber' | 'admin';
 
+// Barber approval lifecycle. Missing field is treated as 'pending'.
+export type UserStatus = 'pending' | 'active' | 'declined';
+
 export interface User {
   id:            string;
   email:         string;
@@ -9,6 +12,9 @@ export interface User {
   role:          UserRole;
   phone:         string | null;
   createdAt:     Date;
+
+  // Approval status (barbers only — clients/admins are implicitly active)
+  status?:       UserStatus;
 
   // Client-only
   loyaltyStamps?: number;
