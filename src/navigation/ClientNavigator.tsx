@@ -2,7 +2,6 @@ import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { View, Text } from 'react-native';
 import { theme } from '../theme';
 
 import HomeScreen              from '../screens/client/HomeScreen';
@@ -15,19 +14,21 @@ import BookingHistoryScreen    from '../screens/client/BookingHistoryScreen';
 import ProfileScreen           from '../screens/client/ProfileScreen';
 import ChatScreen              from '../screens/chat/ChatScreen';
 
-const Placeholder = ({ name }: { name: string }) => (
-  <View style={{ flex: 1, backgroundColor: theme.colors.background,
-    alignItems: 'center', justifyContent: 'center' }}>
-    <Text style={{ color: theme.colors.gold,
-      fontFamily: theme.fonts.heading, fontSize: 24 }}>{name}</Text>
-  </View>
-);
-
-const BookScreen = () => <Placeholder name="Book" />;
-
 const Tab   = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
+// ── Tab icon map ──────────────────────────────────────────────
+const TAB_ICONS: Record<string, {
+  active:   keyof typeof Ionicons.glyphMap;
+  inactive: keyof typeof Ionicons.glyphMap;
+}> = {
+  Home:    { active: 'home',     inactive: 'home-outline'     },
+  Book:    { active: 'calendar', inactive: 'calendar-outline' },
+  History: { active: 'time',     inactive: 'time-outline'     },
+  Profile: { active: 'person',   inactive: 'person-outline'   },
+};
+
+// ── Bottom tabs ───────────────────────────────────────────────
 function ClientTabs() {
   return (
     <Tab.Navigator
@@ -49,16 +50,7 @@ function ClientTabs() {
           marginTop:  2,
         },
         tabBarIcon: ({ focused, color, size }) => {
-          const icons: Record<string, {
-            active:   keyof typeof Ionicons.glyphMap;
-            inactive: keyof typeof Ionicons.glyphMap;
-          }> = {
-            Home:    { active: 'home',     inactive: 'home-outline'     },
-            Book:    { active: 'calendar', inactive: 'calendar-outline' },
-            History: { active: 'time',     inactive: 'time-outline'     },
-            Profile: { active: 'person',   inactive: 'person-outline'   },
-          };
-          const icon = icons[route.name];
+          const icon = TAB_ICONS[route.name];
           return (
             <Ionicons
               name={focused ? icon.active : icon.inactive}
@@ -70,17 +62,26 @@ function ClientTabs() {
       })}
     >
       <Tab.Screen name="Home"    component={HomeScreen}           />
-      <Tab.Screen name="Book"    component={BookScreen}           />
-      <Tab.Screen name="History" component={BookingHistoryScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen}        />
+      {/*
+        Book tab now shows ServiceSelectionScreen directly.
+        The back button inside ServiceSelectionScreen is hidden
+        when there is nothing to go back to (tab root).
+      */}
+      <Tab.Screen name="Book"    component={ServiceSelectionScreen} />
+      <Tab.Screen name="History" component={BookingHistoryScreen}   />
+      <Tab.Screen name="Profile" component={ProfileScreen}          />
     </Tab.Navigator>
   );
 }
 
+// ── Root stack (tabs + full-screen booking flow) ──────────────
 export default function ClientNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="ClientTabs"        component={ClientTabs}              />
+      {/* Tab shell */}
+      <Stack.Screen name="ClientTabs" component={ClientTabs} />
+
+      {/* Full-screen booking flow pushed on top of tabs */}
       <Stack.Screen name="BookingFlow"       component={ServiceSelectionScreen}  />
       <Stack.Screen name="BarberSelection"   component={BarberSelectionScreen}   />
       <Stack.Screen name="DateTimeSelection" component={DateTimeSelectionScreen} />
