@@ -24,11 +24,11 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
   const scheduled = new Date(scheduledAt);
 
   const formatDate = (date: Date) => date.toLocaleDateString([], {
-    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
+    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
   });
 
   const formatTime = (date: Date) => date.toLocaleTimeString([], {
-    hour: '2-digit', minute: '2-digit'
+    hour: '2-digit', minute: '2-digit',
   });
 
   const handleConfirm = async () => {
@@ -36,12 +36,16 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
     setLoading(true);
     setError(null);
 
+    // ── Use barber.userId (auth UID) so Dashboard/Schedule queries match ──
+    // Falls back to barber.id if userId isn't set yet on the barbers document
+    const barberId = barber.userId ?? barber.id;
+
     try {
       await addDoc(collection(db, COLLECTIONS.BOOKINGS), {
         clientId:       user.id,
         clientName:     user.displayName,
         clientPhotoURL: user.photoURL ?? null,
-        barberId:       barber.id,
+        barberId,
         barberName:     barber.displayName,
         serviceId:      service.id,
         serviceName:    service.name,
@@ -76,11 +80,7 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
           style={styles.backBtn}
           onPress={() => navigation.goBack()}
         >
-          <Ionicons
-            name="arrow-back"
-            size={24}
-            color={theme.colors.textPrimary}
-          />
+          <Ionicons name="arrow-back" size={24} color={theme.colors.textPrimary} />
         </TouchableOpacity>
         <View>
           <Text style={styles.stepText}>STEP 4 OF 4</Text>
@@ -100,7 +100,6 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
         {/* Summary Card */}
         <View style={styles.summaryCard}>
 
-          {/* Barbershop header */}
           <View style={styles.shopHeader}>
             <Text style={styles.shopName}>613</Text>
             <Text style={styles.shopSub}>BARBERSHOP</Text>

@@ -52,9 +52,8 @@ export default function BarberDashboardScreen() {
   const confirmed = bookings.filter(b => b.status === 'confirmed');
   const firstName = user?.displayName?.split(' ')[0] ?? 'Barber';
 
-  const formatTime = (date: Date) => date?.toLocaleTimeString([], {
-    hour: '2-digit', minute: '2-digit'
-  }) ?? '';
+  const formatTime = (date: Date) =>
+    date?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) ?? '';
 
   const formatDate = (date: Date) => {
     const today    = new Date();
@@ -63,13 +62,13 @@ export default function BarberDashboardScreen() {
     if (date?.toDateString() === today.toDateString())    return 'Today';
     if (date?.toDateString() === tomorrow.toDateString()) return 'Tomorrow';
     return date?.toLocaleDateString([], {
-      weekday: 'short', month: 'short', day: 'numeric'
+      weekday: 'short', month: 'short', day: 'numeric',
     }) ?? '';
   };
 
   const updateBookingStatus = async (
     bookingId: string,
-    status: 'confirmed' | 'cancelled'
+    status: 'confirmed' | 'cancelled',
   ) => {
     try {
       await updateDoc(doc(db, COLLECTIONS.BOOKINGS, bookingId), { status });
@@ -78,56 +77,54 @@ export default function BarberDashboardScreen() {
     }
   };
 
+  // ── Stat cards — shortened labels, fontSize 8, no wrapping ──
+  const STATS = [
+    { label: 'PEND.',  value: pending.length,   gold: false },
+    { label: 'CONF.',  value: confirmed.length, gold: true  },
+    { label: 'TOTAL',  value: bookings.length,  gold: false },
+  ];
+
   return (
     <View style={styles.container}>
       <ScrollView
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-
-        {/* Header */}
+        {/* ── Header ── */}
         <Animated.View style={[styles.header, {
-          opacity: fadeAnim, transform: [{ translateY: slideAnim }]
+          opacity: fadeAnim, transform: [{ translateY: slideAnim }],
         }]}>
           <View>
             <Text style={styles.greeting}>Welcome back,</Text>
             <Text style={styles.name}>{firstName.toUpperCase()}</Text>
           </View>
-          <TouchableOpacity
-            style={styles.signOutBtn}
-            onPress={() => signOut(auth)}
-          >
-            <Ionicons
-              name="log-out-outline"
-              size={24}
-              color={theme.colors.textSecondary}
-            />
+          <TouchableOpacity style={styles.signOutBtn} onPress={() => signOut(auth)}>
+            <Ionicons name="log-out-outline" size={24} color={theme.colors.textSecondary} />
           </TouchableOpacity>
         </Animated.View>
 
-        {/* Stats Row */}
+        {/* ── Stats Row ── */}
         <Animated.View style={[styles.statsRow, {
-          opacity: fadeAnim, transform: [{ translateY: slideAnim }]
+          opacity: fadeAnim, transform: [{ translateY: slideAnim }],
         }]}>
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>{pending.length}</Text>
-            <Text style={styles.statLabel}>PENDING</Text>
-          </View>
-          <View style={[styles.statCard, styles.statCardGold]}>
-            <Text style={[styles.statNumber, styles.statNumberGold]}>
-              {confirmed.length}
-            </Text>
-            <Text style={[styles.statLabel, styles.statLabelGold]}>
-              CONFIRMED
-            </Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>{bookings.length}</Text>
-            <Text style={styles.statLabel}>TOTAL</Text>
-          </View>
+          {STATS.map(s => (
+            <View
+              key={s.label}
+              style={[styles.statCard, s.gold && styles.statCardGold]}
+            >
+              <Text style={[styles.statNumber, s.gold && styles.statNumberGold]}>
+                {s.value}
+              </Text>
+              {/* Fixed: fontSize 8 + numberOfLines={1} — never wraps */}
+              <Text style={[styles.statLabel, s.gold && styles.statLabelGold]}
+                numberOfLines={1}>
+                {s.label}
+              </Text>
+            </View>
+          ))}
         </Animated.View>
 
-        {/* Pending Bookings */}
+        {/* ── Pending Bookings ── */}
         {pending.length > 0 && (
           <>
             <Text style={styles.sectionTitle}>NEEDS CONFIRMATION</Text>
@@ -147,8 +144,6 @@ export default function BarberDashboardScreen() {
                 <View style={styles.bookingRight}>
                   <Text style={styles.bookingPrice}>${booking.servicePrice}</Text>
                 </View>
-
-                {/* Action Buttons */}
                 <View style={styles.actionBtns}>
                   <TouchableOpacity
                     style={styles.declineBtn}
@@ -170,7 +165,7 @@ export default function BarberDashboardScreen() {
           </>
         )}
 
-        {/* Confirmed Bookings */}
+        {/* ── Confirmed / Upcoming ── */}
         {confirmed.length > 0 && (
           <>
             <Text style={styles.sectionTitle}>UPCOMING</Text>
@@ -188,29 +183,19 @@ export default function BarberDashboardScreen() {
                 </View>
                 <View style={styles.bookingRight}>
                   <Text style={styles.bookingPrice}>${booking.servicePrice}</Text>
-                  <Ionicons
-                    name="chevron-forward"
-                    size={16}
-                    color={theme.colors.textMuted}
-                  />
+                  <Ionicons name="chevron-forward" size={16} color={theme.colors.textMuted} />
                 </View>
               </View>
             ))}
           </>
         )}
 
-        {/* Empty state */}
+        {/* ── Empty state ── */}
         {!loading && bookings.length === 0 && (
           <View style={styles.emptyState}>
-            <Ionicons
-              name="calendar-outline"
-              size={48}
-              color={theme.colors.textMuted}
-            />
+            <Ionicons name="calendar-outline" size={48} color={theme.colors.textMuted} />
             <Text style={styles.emptyTitle}>No bookings yet</Text>
-            <Text style={styles.emptySubtitle}>
-              New bookings will appear here
-            </Text>
+            <Text style={styles.emptySubtitle}>New bookings will appear here</Text>
           </View>
         )}
 
@@ -276,11 +261,12 @@ const styles = StyleSheet.create({
   statNumberGold: {
     color: theme.colors.gold,
   },
+  // Fixed: fontSize 8 + numberOfLines={1} → never wraps
   statLabel: {
     fontFamily: theme.fonts.medium,
-    fontSize: theme.fontSizes.xs,
+    fontSize: 8,
     color: theme.colors.textMuted,
-    letterSpacing: 1,
+    letterSpacing: 0,
     marginTop: 2,
     textAlign: 'center',
   },

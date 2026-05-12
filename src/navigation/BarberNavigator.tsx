@@ -1,43 +1,24 @@
 import React from 'react';
-import { View, Text } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../theme';
 
-import DashboardScreen from '../screens/barber/DashboardScreen';
-
-// ── Placeholder screens (to be built next) ───────────────────
-const ScheduleScreen = () => (
-  <View style={{ flex: 1, backgroundColor: theme.colors.background,
-    alignItems: 'center', justifyContent: 'center' }}>
-    <Ionicons name="calendar-outline" size={48} color={theme.colors.textMuted} />
-    <Text style={{ color: theme.colors.textMuted, fontFamily: theme.fonts.heading,
-      fontSize: 16, marginTop: 12, letterSpacing: 2 }}>SCHEDULE</Text>
-    <Text style={{ color: theme.colors.textMuted, fontFamily: theme.fonts.body,
-      fontSize: 13, marginTop: 6 }}>Coming soon</Text>
-  </View>
-);
-
-const BarberProfileScreen = () => (
-  <View style={{ flex: 1, backgroundColor: theme.colors.background,
-    alignItems: 'center', justifyContent: 'center' }}>
-    <Ionicons name="person-outline" size={48} color={theme.colors.textMuted} />
-    <Text style={{ color: theme.colors.textMuted, fontFamily: theme.fonts.heading,
-      fontSize: 16, marginTop: 12, letterSpacing: 2 }}>PROFILE</Text>
-    <Text style={{ color: theme.colors.textMuted, fontFamily: theme.fonts.body,
-      fontSize: 13, marginTop: 6 }}>Coming soon</Text>
-  </View>
-);
+import DashboardScreen  from '../screens/barber/DashboardScreen';
+import ScheduleScreen   from '../screens/barber/BarberScheduleScreen';
+import ProfileScreen    from '../screens/barber/BarberProfileScreen';
+import ChatsScreen      from '../screens/barber/BarberChatsScreen';
+import ChatScreen       from '../screens/chat/ChatScreen';
 
 // ── Tab icon map ──────────────────────────────────────────────
 const TAB_ICONS: Record<string, {
   active:   keyof typeof Ionicons.glyphMap;
   inactive: keyof typeof Ionicons.glyphMap;
 }> = {
-  Dashboard: { active: 'grid',     inactive: 'grid-outline'     },
-  Schedule:  { active: 'calendar', inactive: 'calendar-outline' },
-  Profile:   { active: 'person',   inactive: 'person-outline'   },
+  Dashboard: { active: 'grid',            inactive: 'grid-outline'            },
+  Schedule:  { active: 'calendar',        inactive: 'calendar-outline'        },
+  Messages:  { active: 'chatbubbles',     inactive: 'chatbubbles-outline'     },
+  Profile:   { active: 'person',          inactive: 'person-outline'          },
 };
 
 const Tab   = createBottomTabNavigator();
@@ -76,18 +57,21 @@ function BarberTabs() {
         },
       })}
     >
-      <Tab.Screen name="Dashboard" component={DashboardScreen}     />
-      <Tab.Screen name="Schedule"  component={ScheduleScreen}      />
-      <Tab.Screen name="Profile"   component={BarberProfileScreen} />
+      <Tab.Screen name="Dashboard" component={DashboardScreen} />
+      <Tab.Screen name="Schedule"  component={ScheduleScreen}  />
+      <Tab.Screen name="Messages"  component={ChatsScreen}     />
+      <Tab.Screen name="Profile"   component={ProfileScreen}   />
     </Tab.Navigator>
   );
 }
 
-// ── Root stack (tabs + future full-screen views) ──────────────
+// ── Root stack (tabs + full-screen chat) ──────────────────────
 export default function BarberNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="BarberTabs" component={BarberTabs} />
+      <Stack.Screen name="BarberTabs"  component={BarberTabs}  />
+      {/* Full-screen chat pushed on top of the tabs */}
+      <Stack.Screen name="BarberChat"  component={ChatScreen}  />
     </Stack.Navigator>
   );
 }

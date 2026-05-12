@@ -10,6 +10,7 @@ import { theme } from '../../theme';
 
 interface Barber {
   id:          string;
+  userId:      string | null; // barber's Firebase Auth UID
   displayName: string;
   bio:         string;
   specialties: string[];
@@ -34,7 +35,7 @@ export default function BarberSelectionScreen({ navigation, route }: Props) {
     const fetchBarbers = async () => {
       const q    = query(
         collection(db, 'barbers'),
-        where('isAvailable', '==', true)
+        where('isAvailable', '==', true),
       );
       const snap = await getDocs(q);
       setBarbers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Barber)));
@@ -101,7 +102,7 @@ export default function BarberSelectionScreen({ navigation, route }: Props) {
                 {/* Avatar */}
                 <View style={[
                   styles.avatar,
-                  isSelected && styles.avatarSelected
+                  isSelected && styles.avatarSelected,
                 ]}>
                   {barber.photoURL ? (
                     <Image
@@ -123,14 +124,14 @@ export default function BarberSelectionScreen({ navigation, route }: Props) {
                 <View style={styles.cardInfo}>
                   <Text style={[
                     styles.barberName,
-                    isSelected && styles.barberNameSelected
+                    isSelected && styles.barberNameSelected,
                   ]}>
                     {barber.displayName.toUpperCase()}
                   </Text>
 
                   {/* Rating */}
                   <View style={styles.ratingRow}>
-                    {[1,2,3,4,5].map(star => (
+                    {[1, 2, 3, 4, 5].map(star => (
                       <Ionicons
                         key={star}
                         name={star <= barber.rating ? 'star' : 'star-outline'}
@@ -192,6 +193,13 @@ export default function BarberSelectionScreen({ navigation, route }: Props) {
     </View>
   );
 }
+
+// ── BookingConfirmScreen will receive barber.userId as barberId ──
+// Export a helper so BookingConfirmScreen always uses the correct ID
+export const getBarberBookingId = (barber: {
+  id: string;
+  userId?: string | null;
+}): string => barber.userId ?? barber.id;
 
 const styles = StyleSheet.create({
   container: {
