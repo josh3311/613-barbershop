@@ -34,6 +34,11 @@
     },
     "plugins": [
       "expo-notifications"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "a97422c4-5a6f-4026-9d9c-fe0acc152c1e"
+      }
+    }
   }
 }
