@@ -1,27 +1,39 @@
 {
   "expo": {
-    "name": "barbershop-613-v2",
-    "slug": "barbershop-613-v2",
+    "name": "613 Barbershop",
+    "slug": "barbershop-613",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "image": "./assets/splash.png",
+      "resizeMode": "cover",
+      "backgroundColor": "#000000"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "bundleIdentifier": "com.barbershop613.app",
+      "buildNumber": "1"
     },
     "android": {
+      "package": "com.barbershop613.app",
+      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#000000"
       }
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "notification": {
+      "icon": "./assets/icon.png",
+      "color": "#C9A84C",
+      "androidMode": "default"
+    },
+    "plugins": [
+      "expo-notifications"
+    ]
   }
 }

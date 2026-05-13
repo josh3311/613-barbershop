@@ -1,17 +1,43 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, Alert,
+  TouchableOpacity, Alert, TextInput, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { signOut } from 'firebase/auth';
-import { auth } from '../../config/firebase';
+import { doc, updateDoc } from 'firebase/firestore';
+import { auth, db } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
+import { COLLECTIONS } from '../../constants/collections';
 import { theme } from '../../theme';
+
+const BIRTHDAY_REGEX = /^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 
 export default function ProfileScreen() {
   const { user } = useAuth();
   const [signingOut, setSigningOut] = useState(false);
+  const [editingBirthday, setEditingBirthday] = useState(false);
+  const [birthday, setBirthday] = useState(user?.birthday ?? '');
+  const [savingBirthday, setSavingBirthday] = useState(false);
+
+  const handleSaveBirthday = async () => {
+    if (!user) return;
+    const trimmed = birthday.trim();
+    if (!BIRTHDAY_REGEX.test(trimmed)) {
+      Alert.alert('Invalid format', 'Please enter birthday as MM-DD (e.g. 05-13).');
+      return;
+    }
+    try {
+      setSavingBirthday(true);
+      await updateDoc(doc(db, COLLECTIONS.USERS, user.id), { birthday: trimmed });
+      setEditingBirthday(false);
+      Alert.alert('Saved', 'Your birthday has been updated.');
+    } catch {
+      Alert.alert('Error', 'Could not save birthday. Please try again.');
+    } finally {
+      setSavingBirthday(false);
+    }
+  };
 
   const handleSignOut = () => {
     Alert.alert(
@@ -170,6 +196,75 @@ export default function ProfileScreen() {
                 </Text>
               </View>
             </View>
+
+            <View style={styles.divider} />
+
+            <TouchableOpacity
+              style={styles.infoRow}
+              onPress={() => {
+                setBirthday(user?.birthday ?? '');
+                setEditingBirthday(true);
+              }}
+              disabled={editingBirthday}
+            >
+              <View style={styles.infoIcon}>
+                <Ionicons
+                  name="gift-outline"
+                  size={18}
+                  color={theme.colors.gold}
+                />
+              </View>
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>BIRTHDAY</Text>
+                {editingBirthday ? (
+                  <View style={styles.birthdayEditRow}>
+                    <TextInput
+                      style={styles.birthdayInput}
+                      value={birthday}
+                      onChangeText={setBirthday}
+                      placeholder="MM-DD"
+                      placeholderTextColor={theme.colors.textMuted}
+                      maxLength={5}
+                      keyboardType="numbers-and-punctuation"
+                      autoFocus
+                      editable={!savingBirthday}
+                    />
+                    <TouchableOpacity
+                      style={styles.birthdaySaveBtn}
+                      onPress={handleSaveBirthday}
+                      disabled={savingBirthday}
+                    >
+                      {savingBirthday ? (
+                        <ActivityIndicator size="small" color={theme.colors.textInverse} />
+                      ) : (
+                        <Text style={styles.birthdaySaveText}>SAVE</Text>
+                      )}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.birthdayCancelBtn}
+                      onPress={() => {
+                        setEditingBirthday(false);
+                        setBirthday(user?.birthday ?? '');
+                      }}
+                      disabled={savingBirthday}
+                    >
+                      <Ionicons name="close" size={18} color={theme.colors.textMuted} />
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <Text style={styles.infoValue}>
+                    {user?.birthday ?? 'Not set'}
+                  </Text>
+                )}
+              </View>
+              {!editingBirthday && (
+                <Ionicons
+                  name="create-outline"
+                  size={16}
+                  color={theme.colors.textMuted}
+                />
+              )}
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -453,5 +548,41 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSizes.xs,
     color: theme.colors.textMuted,
     textAlign: 'center',
+  },
+  birthdayEditRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    marginTop: theme.spacing.xs,
+  },
+  birthdayInput: {
+    flex: 1,
+    fontFamily: theme.fonts.medium,
+    fontSize: theme.fontSizes.md,
+    color: theme.colors.textPrimary,
+    backgroundColor: theme.colors.background,
+    borderWidth: 1,
+    borderColor: theme.colors.gold,
+    borderRadius: theme.radius.sm,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 6,
+  },
+  birthdaySaveBtn: {
+    backgroundColor: theme.colors.gold,
+    borderRadius: theme.radius.sm,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 60,
+  },
+  birthdaySaveText: {
+    fontFamily: theme.fonts.heading,
+    fontSize: theme.fontSizes.sm,
+    color: theme.colors.textInverse,
+    letterSpacing: 2,
+  },
+  birthdayCancelBtn: {
+    padding: theme.spacing.xs,
   },
 });

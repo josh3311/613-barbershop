@@ -4,6 +4,7 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
 import { COLLECTIONS } from '../constants/collections';
 import { User } from '../types';
+import { registerForPushNotificationsAsync } from '../services/notifications';
 
 interface AuthContextType {
   user:          User | null;
@@ -45,6 +46,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
 
       const userRef = doc(db, COLLECTIONS.USERS, fbUser.uid);
+      let pushRegistered = false;
       unsubProfile = onSnapshot(userRef, (snap) => {
         if (snap.exists()) {
           setUser({ id: snap.id, ...snap.data() } as User);
@@ -53,6 +55,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         }
         setProfileLoaded(true);
         setLoading(false);
+
+        // Register for push notifications once per session — failures
+        // must never block auth, so swallow them silently.
+        if (snap.exists() && !pushRegistered) {
+          pushRegistered = true;
+          registerForPushNotificationsAsync(snap.id).catch(e => {
+            console.log('Push registration failed (non-critical):', e);
+          });
+        }
       });
     });
 

@@ -16,7 +16,9 @@
       "Bash(RCT_METRO_PORT=8095 npx expo start --port 8095 --clear)",
       "Bash(taskkill.exe //IM node.exe //F)",
       "Bash(/c/Windows/System32/taskkill.exe //IM node.exe //F)",
-      "Bash(firebase --version)"
+      "Bash(firebase --version)",
+      "Bash(eas *)",
+      "Bash(firebase deploy *)"
     ]
   }
 }

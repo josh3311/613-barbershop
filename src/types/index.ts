@@ -16,9 +16,13 @@ export interface User {
   // Approval status (barbers only — clients/admins are implicitly active)
   status?:       UserStatus;
 
+  // Expo push notification token (set on login from notifications service)
+  expoPushToken?: string;
+
   // Client-only
   loyaltyStamps?: number;
   preferredBarberId?: string;
+  birthday?:     string; // ISO format: "MM-DD" (e.g. "05-13")
 
   // Barber-only
   bio?:          string;
@@ -75,6 +79,9 @@ export interface Booking {
   // Rating (filled after completion)
   rating:         number | null;
   review:         string | null;
+
+  // Birthday free haircut applied at booking time
+  birthdayDiscount?: boolean;
 }
 
 // ─── Message (real-time chat) ────────────────────────────

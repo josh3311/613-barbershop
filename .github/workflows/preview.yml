@@ -1,0 +1,25 @@
+name: EAS Preview Build
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-preview:
+    name: EAS Preview
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Build preview
+        run: eas build --platform all --profile preview --non-interactive

@@ -5,9 +5,10 @@ import {
   ActivityIndicator, ScrollView,
 } from 'react-native';
 import {
-  collection, query, where, onSnapshot, getDocs,
+  collection, query, where, getDocs,
 } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
+import Markdown from 'react-native-markdown-display';
 import { db } from '../../config/firebase';
 import { COLLECTIONS } from '../../constants/collections';
 import { Booking } from '../../types';
@@ -197,12 +198,35 @@ Answer questions about business performance, projections, and recommendations. B
           styles.bubble,
           mine ? styles.bubbleMe : styles.bubbleThem,
         ]}>
-          <Text style={[
-            styles.bubbleText,
-            mine ? styles.bubbleTextMe : styles.bubbleTextThem,
-          ]}>
-            {item.content}
-          </Text>
+          {mine ? (
+            <Text style={[
+              styles.bubbleText,
+              styles.bubbleTextMe,
+            ]}>
+              {item.content}
+            </Text>
+          ) : (
+            <Markdown style={{
+              body: {
+                color: theme.colors.textPrimary,
+                fontFamily: theme.fonts.body,
+                fontSize: theme.fontSizes.md,
+              },
+              strong: {
+                color: theme.colors.gold,
+                fontFamily: theme.fonts.bold,
+              },
+              heading1: {
+                color: theme.colors.gold,
+                fontFamily: theme.fonts.heading,
+                fontSize: theme.fontSizes.lg,
+                letterSpacing: 2,
+              },
+              bullet_list: { color: theme.colors.textPrimary },
+            }}>
+              {item.content}
+            </Markdown>
+          )}
         </View>
       </View>
     );
@@ -414,9 +438,6 @@ const styles = StyleSheet.create({
   },
   bubbleTextMe: {
     color: theme.colors.textInverse,
-  },
-  bubbleTextThem: {
-    color: theme.colors.textPrimary,
   },
   loadingRow: {
     flexDirection: 'row',

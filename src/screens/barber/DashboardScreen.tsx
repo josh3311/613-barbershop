@@ -5,13 +5,14 @@ import {
 } from 'react-native';
 import {
   collection, query, where, onSnapshot,
-  orderBy, updateDoc, doc,
+  orderBy, updateDoc, doc, getDoc, runTransaction,
 } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
 import { COLLECTIONS } from '../../constants/collections';
+import { sendPushNotification } from '../../services/notifications';
 import { Booking } from '../../types';
 import { theme } from '../../theme';
 
@@ -68,12 +69,49 @@ export default function BarberDashboardScreen() {
 
   const updateBookingStatus = async (
     bookingId: string,
-    status: 'confirmed' | 'cancelled',
+    status: 'confirmed' | 'cancelled' | 'completed',
   ) => {
+    // Capture the booking now — onSnapshot may remove it from state after the update.
+    const booking = bookings.find(b => b.id === bookingId);
+
     try {
       await updateDoc(doc(db, COLLECTIONS.BOOKINGS, bookingId), { status });
     } catch (e) {
       console.error('Failed to update booking:', e);
+      return;
+    }
+
+    // Notify client when the barber confirms (non-critical)
+    if (status === 'confirmed' && booking?.clientId) {
+      try {
+        const clientDocSnap = await getDoc(doc(db, COLLECTIONS.USERS, booking.clientId));
+        const clientToken = clientDocSnap.data()?.expoPushToken;
+        if (clientToken) {
+          await sendPushNotification(
+            clientToken,
+            'Booking Confirmed ✅',
+            `Your ${booking.serviceName} is confirmed!`,
+            { bookingId },
+          );
+        }
+      } catch (e) {
+        console.log('Client notification failed:', e);
+      }
+    }
+
+    // Increment loyalty stamps on completion — 10 stamps wraps back to 0
+    if (status === 'completed' && booking?.clientId) {
+      try {
+        await runTransaction(db, async (transaction) => {
+          const clientRef = doc(db, COLLECTIONS.USERS, booking.clientId);
+          const clientSnap = await transaction.get(clientRef);
+          const current = (clientSnap.data()?.loyaltyStamps as number | undefined) ?? 0;
+          const newStamps = current >= 9 ? 0 : current + 1;
+          transaction.update(clientRef, { loyaltyStamps: newStamps });
+        });
+      } catch (e) {
+        console.log('Loyalty stamp update failed:', e);
+      }
     }
   };
 
@@ -185,6 +223,17 @@ export default function BarberDashboardScreen() {
                   <Text style={styles.bookingPrice}>${booking.servicePrice}</Text>
                   <Ionicons name="chevron-forward" size={16} color={theme.colors.textMuted} />
                 </View>
+                <TouchableOpacity
+                  style={styles.completeBtn}
+                  onPress={() => updateBookingStatus(booking.id, 'completed')}
+                >
+                  <Ionicons
+                    name="checkmark-done"
+                    size={16}
+                    color={theme.colors.textInverse}
+                  />
+                  <Text style={styles.completeBtnText}>MARK COMPLETE</Text>
+                </TouchableOpacity>
               </View>
             ))}
           </>
@@ -381,6 +430,22 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSizes.xs,
     color: theme.colors.textInverse,
     letterSpacing: 1,
+  },
+  completeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing.xs,
+    backgroundColor: theme.colors.gold,
+    borderRadius: theme.radius.md,
+    padding: theme.spacing.sm,
+    marginTop: theme.spacing.md,
+  },
+  completeBtnText: {
+    fontFamily: theme.fonts.heading,
+    fontSize: theme.fontSizes.xs,
+    color: theme.colors.textInverse,
+    letterSpacing: 2,
   },
   emptyState: {
     alignItems: 'center',

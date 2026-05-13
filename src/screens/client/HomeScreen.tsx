@@ -35,6 +35,14 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
 
   const firstName = user?.displayName?.split(' ')[0] ?? 'there';
 
+  const isBirthday = (): boolean => {
+    if (!user?.birthday) return false;
+    const today = new Date();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    return user.birthday === `${mm}-${dd}`;
+  };
+
   const handleQuickAction = (label: string) => {
     switch (label) {
       case 'Book Cut':
@@ -79,6 +87,18 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
             />
           </TouchableOpacity>
         </Animated.View>
+
+        {isBirthday() && (
+          <View style={styles.birthdayBanner}>
+            <Text style={styles.birthdayEmoji}>🎂</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.birthdayTitle}>HAPPY BIRTHDAY!</Text>
+              <Text style={styles.birthdaySubtitle}>
+                Your next haircut is FREE today only!
+              </Text>
+            </View>
+          </View>
+        )}
 
         {/* Hero Card */}
         <Animated.View style={[
@@ -325,5 +345,31 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSizes.xs,
     color: theme.colors.textMuted,
     marginTop: theme.spacing.xs,
+  },
+  birthdayBanner: {
+    backgroundColor: theme.colors.goldMuted,
+    borderWidth: 1,
+    borderColor: theme.colors.gold,
+    borderRadius: theme.radius.lg,
+    padding: theme.spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+    marginBottom: theme.spacing.md,
+  },
+  birthdayEmoji: {
+    fontSize: 32,
+  },
+  birthdayTitle: {
+    fontFamily: theme.fonts.heading,
+    fontSize: theme.fontSizes.md,
+    color: theme.colors.gold,
+    letterSpacing: 2,
+  },
+  birthdaySubtitle: {
+    fontFamily: theme.fonts.body,
+    fontSize: theme.fontSizes.xs,
+    color: theme.colors.textSecondary,
+    marginTop: 2,
   },
 });

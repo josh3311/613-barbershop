@@ -3,11 +3,15 @@ import {
   View, Text, StyleSheet, ScrollView,
   TouchableOpacity, ActivityIndicator,
 } from 'react-native';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import {
+  collection, addDoc, serverTimestamp,
+  doc, getDoc,
+} from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import { db } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
 import { COLLECTIONS } from '../../constants/collections';
+import { sendPushNotification } from '../../services/notifications';
 import { theme } from '../../theme';
 
 interface Props {
@@ -22,6 +26,17 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
   const [error,   setError]   = useState<string | null>(null);
 
   const scheduled = new Date(scheduledAt);
+
+  const isBirthday = (): boolean => {
+    if (!user?.birthday) return false;
+    const today = new Date();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    return user.birthday === `${mm}-${dd}`;
+  };
+
+  const birthdayDiscount = isBirthday();
+  const finalPrice = birthdayDiscount ? 0 : service.price;
 
   const formatDate = (date: Date) => date.toLocaleDateString([], {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
@@ -41,7 +56,7 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
     const barberId = barber.userId ?? barber.id;
 
     try {
-      await addDoc(collection(db, COLLECTIONS.BOOKINGS), {
+      const newBookingRef = await addDoc(collection(db, COLLECTIONS.BOOKINGS), {
         clientId:       user.id,
         clientName:     user.displayName,
         clientPhotoURL: user.photoURL ?? null,
@@ -49,7 +64,8 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
         barberName:     barber.displayName,
         serviceId:      service.id,
         serviceName:    service.name,
-        servicePrice:   service.price,
+        servicePrice:   finalPrice,
+        birthdayDiscount,
         status:         'pending',
         scheduledAt:    scheduled,
         createdAt:      serverTimestamp(),
@@ -58,6 +74,22 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
         rating:         null,
         review:         null,
       });
+
+      // Fire-and-forget push to the barber — must not affect booking flow
+      try {
+        const barberDocSnap = await getDoc(doc(db, COLLECTIONS.USERS, barberId));
+        const barberToken = barberDocSnap.data()?.expoPushToken;
+        if (barberToken) {
+          await sendPushNotification(
+            barberToken,
+            'New Booking Request 💈',
+            `${user.displayName} booked ${service.name}`,
+            { bookingId: newBookingRef.id },
+          );
+        }
+      } catch (e) {
+        console.log('Barber notification failed:', e);
+      }
 
       navigation.replace('BookingSuccess', {
         serviceName: service.name,
@@ -116,8 +148,25 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
               <Text style={styles.detailLabel}>SERVICE</Text>
               <Text style={styles.detailValue}>{service.name}</Text>
             </View>
-            <Text style={styles.detailPrice}>${service.price}</Text>
+            <Text style={styles.detailPrice}>${finalPrice}</Text>
           </View>
+
+          {birthdayDiscount && (
+            <View style={styles.detailRow}>
+              <View style={styles.detailIcon}>
+                <Text style={{ fontSize: 16 }}>🎂</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.detailLabel}>BIRTHDAY DISCOUNT</Text>
+                <Text style={[styles.detailValue, { color: theme.colors.success }]}>
+                  FREE HAIRCUT APPLIED!
+                </Text>
+              </View>
+              <Text style={[styles.detailPrice, { color: theme.colors.success }]}>
+                -${service.price}
+              </Text>
+            </View>
+          )}
 
           <View style={styles.detailRow}>
             <View style={styles.detailIcon}>
@@ -163,7 +212,14 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
 
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>TOTAL</Text>
-            <Text style={styles.totalPrice}>${service.price} CAD</Text>
+            {birthdayDiscount && (
+              <Text style={styles.originalPrice}>
+                Was ${service.price} CAD
+              </Text>
+            )}
+            <Text style={styles.totalPrice}>
+              ${finalPrice} CAD
+            </Text>
           </View>
 
         </View>
@@ -335,6 +391,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingTop: theme.spacing.sm,
+  },
+  originalPrice: {
+    fontFamily: theme.fonts.body,
+    fontSize: theme.fontSizes.sm,
+    color: theme.colors.textMuted,
+    textDecorationLine: 'line-through',
+    textAlign: 'right',
   },
   totalLabel: {
     fontFamily: theme.fonts.heading,

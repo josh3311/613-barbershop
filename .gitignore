@@ -40,3 +40,9 @@ yarn-error.*
 /ios
 /android
 .env
+
+# CI / store credentials
+.github/secrets/
+google-services.json
+GoogleService-Info.plist
+google-service-account.json
