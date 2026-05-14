@@ -129,3 +129,98 @@ Middle Eastern hair:
 - No direct Firestore calls from components
 - No Claude or Replicate API calls from frontend
 - No hardcoded model names — always reference this file
+
+## Current App Status (v2-rebuild)
+All features below are BUILT and WORKING:
+- Full auth flow (Login, Register, RoleSelect)
+- Three roles: Client, Barber, Admin
+- Client: Home, Book, History, Profile, Chat
+- Barber: Dashboard, Schedule, Chats, Profile
+- Admin: Dashboard (Overview/Barbers/Bookings/Profile), AI Assistant
+- Full booking flow (Service → Barber → DateTime → Confirm → Success)
+- Real-time chat per booking (client ↔ barber)
+- Push notifications (expo-notifications)
+  - Barber notified on new booking
+  - Client notified on booking confirm
+- Loyalty stamps (10 stamps = free haircut)
+  - Auto-increments via Firestore transaction on MARK COMPLETE
+- Birthday free haircut feature
+  - Stored as MM-DD in user.birthday
+  - Banner shows on HomeScreen on birthday
+  - Price set to $0 in BookingConfirmScreen
+- Barber approval flow
+  - New barbers see PendingApprovalScreen
+  - Admin approves/declines from Profile tab
+- Admin AI Business Intelligence
+  - Calls Anthropic directly (claude-3-5-haiku-20241022)
+  - Real Firestore stats injected into system prompt
+  - Markdown rendering via react-native-markdown-display
+
+## Firestore Rules (deployed)
+- users: owner + admin full access
+  barber can READ all users + UPDATE loyaltyStamps only
+- services/barbers: public read, admin write
+- bookings: client/barber/admin read; anyone create;
+  barber/client/admin update
+- messages: authenticated read/write
+- ratings: public read, authenticated write
+
+## Key Technical Decisions
+- barberId stored as barber.userId (auth UID), NOT barbers doc ID
+- Loyalty stamps use runTransaction to prevent race conditions
+- All notification calls wrapped in try/catch — never block main flow
+- expo-notifications SDK 54 requires shouldShowBanner + shouldShowList
+  (NOT shouldShowAlert)
+- Admin AI calls Anthropic directly from client — deviation from
+  "ALL AI calls through Go backend" rule — acceptable for admin only
+- Birthday stored as "MM-DD" string format
+
+## Environment Variables Required
+EXPO_PUBLIC_FIREBASE_API_KEY
+EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN
+EXPO_PUBLIC_FIREBASE_PROJECT_ID
+EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET
+EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+EXPO_PUBLIC_FIREBASE_APP_ID
+EXPO_PUBLIC_ANTHROPIC_API_KEY
+REPLICATE_API_TOKEN
+LIGHTX_API_KEY
+IMGBB_API_KEY
+EXPO_PUBLIC_UNSPLASH_ACCESS_KEY
+
+## EAS Build
+- Bundle ID: com.barbershop613.app
+- Android package: com.barbershop613.app
+- Version: 1.0.0 (versionCode: 1)
+- Preview APK built and tested ✅
+- Production build pending Apple Developer Account
+
+## What Is NOT Built Yet
+- Barber AI Cut Guide screen
+- Client My Styles Tab:
+  - Selfie upload
+  - Face shape + ethnicity analysis (Claude Haiku)
+  - Style recommendations
+  - Virtual try-on (FLUX.1 Kontext on Replicate)
+  - AI stylist chat
+  - Book from result
+- Apple Developer Account (iOS TestFlight)
+- Google Play Console (Android store submission)
+
+## CI/CD Pipeline
+- ci.yml: TypeScript check on push to v2-rebuild/main
+- preview.yml: EAS preview build on PRs to main
+- deploy.yml: Production build + store submit on push to main
+- pr-checks.yml: Quality gate + PR comment
+- Branch strategy:
+  v2-rebuild → active development
+  main → production (triggers store deployment)
+
+## PRE-LAUNCH CHECKLIST
+- [ ] Unsplash Production Access — current plan is
+  demo tier (50 requests/hour). Before launch, apply
+  at unsplash.com/oauth/applications for Production
+  access (5000 requests/hour, free). Requires showing
+  the live app. Each "Analyze My Face" uses 3 requests.
+
+Last Updated: 2026-05-14

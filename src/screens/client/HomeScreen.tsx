@@ -52,11 +52,10 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
         navigation.navigate('History');
         break;
       case 'Chat':
-        // Chat requires a bookingId — send to History to pick a booking
         navigation.navigate('History');
         break;
       case 'My Styles':
-        navigation.navigate('BookingFlow');
+        navigation.navigate('Styles');
         break;
     }
   };
@@ -302,9 +301,10 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.xl,
     borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderColor: theme.colors.gold,       // ← gold border
     padding: theme.spacing.lg,
     marginBottom: theme.spacing.xl,
+    ...theme.shadows.gold,                // ← gold glow
   },
   loyaltyHeader: {
     flexDirection: 'row',
@@ -324,6 +324,7 @@ const styles = StyleSheet.create({
   },
   stampsRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: theme.spacing.xs,
     marginBottom: theme.spacing.sm,
   },

@@ -9,6 +9,7 @@ import ScheduleScreen   from '../screens/barber/BarberScheduleScreen';
 import ProfileScreen    from '../screens/barber/BarberProfileScreen';
 import ChatsScreen      from '../screens/barber/BarberChatsScreen';
 import ChatScreen       from '../screens/chat/ChatScreen';
+import CutGuideScreen   from '../screens/barber/CutGuideScreen';
 
 // ── Tab icon map ──────────────────────────────────────────────
 const TAB_ICONS: Record<string, {
@@ -72,6 +73,7 @@ export default function BarberNavigator() {
       <Stack.Screen name="BarberTabs"  component={BarberTabs}  />
       {/* Full-screen chat pushed on top of the tabs */}
       <Stack.Screen name="BarberChat"  component={ChatScreen}  />
+      <Stack.Screen name="CutGuide"    component={CutGuideScreen} />
     </Stack.Navigator>
   );
 }

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, ActivityIndicator,
+  TouchableOpacity, ActivityIndicator, Image,
 } from 'react-native';
 import {
   collection, addDoc, serverTimestamp,
@@ -22,10 +22,20 @@ interface Props {
 export default function BookingConfirmScreen({ navigation, route }: Props) {
   const { service, barber, scheduledAt } = route.params;
   const { user } = useAuth();
-  const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState<string | null>(null);
+  const [loading,      setLoading]      = useState(false);
+  const [error,        setError]        = useState<string | null>(null);
+  const [includeStyle, setIncludeStyle] = useState(true);
 
   const scheduled = new Date(scheduledAt);
+
+  const stylePayload = route.params?.savedStyle ?? user?.savedStyle;
+  const hasSavedStyle =
+    stylePayload && typeof stylePayload.name === 'string';
+
+  const styleImageUrl =
+    stylePayload?.generatedImageUrl ??
+    stylePayload?.tryOnImageUrl ??
+    null;
 
   const isBirthday = (): boolean => {
     if (!user?.birthday) return false;
@@ -51,9 +61,18 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
     setLoading(true);
     setError(null);
 
-    // ── Use barber.userId (auth UID) so Dashboard/Schedule queries match ──
-    // Falls back to barber.id if userId isn't set yet on the barbers document
     const barberId = barber.userId ?? barber.id;
+
+    const requestedStyle =
+      hasSavedStyle && includeStyle
+        ? {
+            name:              stylePayload.name,
+            description:       stylePayload.description       ?? null,
+            referenceImageUrl: stylePayload.referenceImageUrl ?? null,
+            tryOnImageUrl:     stylePayload.tryOnImageUrl     ?? null,
+            generatedImageUrl: stylePayload.generatedImageUrl ?? null,
+          }
+        : null;
 
     try {
       const newBookingRef = await addDoc(collection(db, COLLECTIONS.BOOKINGS), {
@@ -70,12 +89,11 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
         scheduledAt:    scheduled,
         createdAt:      serverTimestamp(),
         notes:          null,
-        requestedStyle: null,
+        requestedStyle,
         rating:         null,
         review:         null,
       });
 
-      // Fire-and-forget push to the barber — must not affect booking flow
       try {
         const barberDocSnap = await getDoc(doc(db, COLLECTIONS.USERS, barberId));
         const barberToken = barberDocSnap.data()?.expoPushToken;
@@ -86,9 +104,17 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
             `${user.displayName} booked ${service.name}`,
             { bookingId: newBookingRef.id },
           );
+          if (requestedStyle) {
+            await sendPushNotification(
+              barberToken,
+              'Client Added a Style Request 💈',
+              `${user.displayName} wants ${requestedStyle.name}`,
+              { bookingId: newBookingRef.id },
+            );
+          }
         }
-      } catch (e) {
-        console.log('Barber notification failed:', e);
+      } catch {
+        // Push failure must never block booking
       }
 
       navigation.replace('BookingSuccess', {
@@ -97,7 +123,7 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
         scheduledAt: scheduled.toISOString(),
       });
 
-    } catch (e) {
+    } catch {
       setError('Something went wrong. Please try again.');
       setLoading(false);
     }
@@ -106,7 +132,6 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
   return (
     <View style={styles.container}>
 
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backBtn}
@@ -120,7 +145,6 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
         </View>
       </View>
 
-      {/* Progress Bar */}
       <View style={styles.progressBar}>
         <View style={[styles.progressFill, { width: '100%' }]} />
       </View>
@@ -131,7 +155,6 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
       >
         {/* Summary Card */}
         <View style={styles.summaryCard}>
-
           <View style={styles.shopHeader}>
             <Text style={styles.shopName}>613</Text>
             <Text style={styles.shopSub}>BARBERSHOP</Text>
@@ -217,12 +240,83 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
                 Was ${service.price} CAD
               </Text>
             )}
-            <Text style={styles.totalPrice}>
-              ${finalPrice} CAD
-            </Text>
+            <Text style={styles.totalPrice}>${finalPrice} CAD</Text>
           </View>
-
         </View>
+
+        {/* ── STYLE REQUEST CARD ── */}
+        {hasSavedStyle && (
+          <View style={[
+            styles.styleCard,
+            !includeStyle && styles.styleCardDisabled,
+          ]}>
+
+            {/* Header with toggle */}
+            <View style={styles.styleCardHeader}>
+              <View style={styles.styleCardTitleRow}>
+                <Ionicons
+                  name="color-palette-outline"
+                  size={16}
+                  color={theme.colors.gold}
+                />
+                <Text style={styles.styleCardLabel}>STYLE REQUEST</Text>
+              </View>
+              <TouchableOpacity
+                style={[
+                  styles.styleToggle,
+                  includeStyle && styles.styleToggleActive,
+                ]}
+                onPress={() => setIncludeStyle(prev => !prev)}
+              >
+                <Text style={[
+                  styles.styleToggleText,
+                  includeStyle && styles.styleToggleTextActive,
+                ]}>
+                  {includeStyle ? 'INCLUDED ✓' : '+ ADD'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Full width image or placeholder */}
+            {styleImageUrl ? (
+              <Image
+                source={{ uri: styleImageUrl }}
+                style={styles.styleImageFull}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={styles.styleImagePlaceholder}>
+                <Ionicons name="cut-outline" size={28} color="#444" />
+                <Text style={styles.placeholderText}>
+                  No preview — save a style from the Styles tab
+                </Text>
+              </View>
+            )}
+
+            {/* Style name + description */}
+            <Text style={styles.styleName} numberOfLines={2}>
+              {stylePayload.name.toUpperCase()}
+            </Text>
+            {stylePayload.description ? (
+              <Text style={styles.styleDesc} numberOfLines={3}>
+                {stylePayload.description}
+              </Text>
+            ) : null}
+
+            {includeStyle && (
+              <View style={styles.styleNoteRow}>
+                <Ionicons
+                  name="checkmark-circle"
+                  size={14}
+                  color={theme.colors.gold}
+                />
+                <Text style={styles.styleNote}>
+                  Your barber will see this with your booking.
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
 
         {/* Info note */}
         <View style={styles.infoBox}>
@@ -245,7 +339,6 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
 
       </ScrollView>
 
-      {/* Confirm Button */}
       <View style={styles.footer}>
         <TouchableOpacity
           style={[styles.button, loading && styles.buttonDisabled]}
@@ -397,7 +490,6 @@ const styles = StyleSheet.create({
     fontSize: theme.fontSizes.sm,
     color: theme.colors.textMuted,
     textDecorationLine: 'line-through',
-    textAlign: 'right',
   },
   totalLabel: {
     fontFamily: theme.fonts.heading,
@@ -409,6 +501,106 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.heading,
     fontSize: theme.fontSizes.xxl,
     color: theme.colors.gold,
+  },
+  styleCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.xl,
+    borderWidth: 1,
+    borderColor: theme.colors.gold,
+    padding: theme.spacing.md,
+    marginTop: theme.spacing.md,
+    overflow: 'hidden',
+    ...theme.shadows.gold,
+  },
+  styleCardDisabled: {
+    borderColor: theme.colors.border,
+    opacity: 0.45,
+  },
+  styleCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: theme.spacing.sm,
+  },
+  styleCardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  styleCardLabel: {
+    fontFamily: theme.fonts.heading,
+    fontSize: theme.fontSizes.xs,
+    color: theme.colors.gold,
+    letterSpacing: 3,
+  },
+  styleToggle: {
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radius.full,
+    paddingVertical: 5,
+    paddingHorizontal: 14,
+  },
+  styleToggleActive: {
+    borderColor: theme.colors.gold,
+    backgroundColor: theme.colors.goldMuted,
+  },
+  styleToggleText: {
+    fontFamily: theme.fonts.heading,
+    fontSize: 11,
+    color: theme.colors.textMuted,
+    letterSpacing: 1,
+  },
+  styleToggleTextActive: {
+    color: theme.colors.gold,
+  },
+  styleImageFull: {
+    width: '100%',
+    height: 180,
+    borderRadius: 10,
+    marginBottom: theme.spacing.sm,
+  },
+  styleImagePlaceholder: {
+    width: '100%',
+    height: 90,
+    borderRadius: 10,
+    backgroundColor: '#111',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: theme.spacing.sm,
+    gap: 6,
+  },
+  placeholderText: {
+    fontFamily: theme.fonts.body,
+    fontSize: 11,
+    color: '#555',
+    textAlign: 'center',
+    paddingHorizontal: 16,
+  },
+  styleName: {
+    fontFamily: theme.fonts.heading,
+    fontSize: theme.fontSizes.md,
+    color: theme.colors.textPrimary,
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  styleDesc: {
+    fontFamily: theme.fonts.body,
+    fontSize: theme.fontSizes.xs,
+    color: theme.colors.textMuted,
+    lineHeight: 18,
+    marginBottom: theme.spacing.sm,
+  },
+  styleNoteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
+  },
+  styleNote: {
+    fontFamily: theme.fonts.body,
+    fontSize: theme.fontSizes.xs,
+    color: theme.colors.textSecondary,
+    flex: 1,
   },
   infoBox: {
     flexDirection: 'row',

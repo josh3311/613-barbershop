@@ -23,6 +23,21 @@ export interface User {
   loyaltyStamps?: number;
   preferredBarberId?: string;
   birthday?:     string; // ISO format: "MM-DD" (e.g. "05-13")
+  savedStyle?: {
+    name:               string;
+    description:        string;
+    // ── Current shape (set by StylesScreen v2 — FLUX face-preserved flow) ──
+    whyItFits?:         string;
+    fluxPrompt?:        string;
+    generatedImageUrl?: string;
+    originalSelfieRef?: string;
+    // ── Legacy fields (older saves from the Unsplash/two-image flow) ──
+    prompt?:            string;
+    imageQuery?:        string;
+    referenceImageUrl?: string;
+    tryOnImageUrl?:     string;
+    savedAt?:           Date;
+  };
 
   // Barber-only
   bio?:          string;
@@ -42,13 +57,22 @@ export interface Service {
 }
 
 // ─── Style (AI feature — client's requested look) ────────
+// Attached to a booking via Booking.requestedStyle, and mirrored on
+// User.savedStyle (see below). All fields except `name` are optional
+// because Claude/Replicate-attached styles only carry a subset.
 export interface HaircutStyle {
-  id:           string;
-  name:         string;
-  photoURL:     string | null;
-  description:  string | null;
-  barberNotes:  string | null;
-  aiGenerated:  boolean;
+  name:               string;
+  description?:       string | null;
+  prompt?:            string;
+  imageQuery?:        string;
+  referenceImageUrl?: string;
+  tryOnImageUrl?:     string;
+
+  // Legacy fields kept optional for compatibility with the original schema.
+  id?:           string;
+  photoURL?:     string | null;
+  barberNotes?:  string | null;
+  aiGenerated?:  boolean;
 }
 
 // ─── Booking ─────────────────────────────────────────────
@@ -118,4 +142,22 @@ export interface AppNotification {
 export interface FirestoreResult<T> {
   data:  T | null;
   error: string | null;
+}
+
+// ─── AI Styles tab ───────────────────────────────────────
+export interface FaceAnalysis {
+  faceShape:    string;
+  headSize:     string;
+  hairTexture:  string;
+  skinTone:     string;
+  currentStyle: string;
+  faceSummary:  string;
+}
+
+export interface StyleRecommendation {
+  name:             string;
+  year:             string;
+  shortDescription: string;
+  whyItFits:        string;
+  fluxPrompt:       string;
 }

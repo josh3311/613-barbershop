@@ -15,8 +15,15 @@ import { COLLECTIONS } from '../../constants/collections';
 import { sendPushNotification } from '../../services/notifications';
 import { Booking } from '../../types';
 import { theme } from '../../theme';
+import ClientWantsSection from '../../components/ClientWantsSection';
 
-export default function BarberDashboardScreen() {
+interface Props {
+  navigation: {
+    navigate: (screen: string, params?: object) => void;
+  };
+}
+
+export default function BarberDashboardScreen({ navigation }: Props) {
   const { user }  = useAuth();
   const fadeAnim  = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
@@ -182,6 +189,9 @@ export default function BarberDashboardScreen() {
                 <View style={styles.bookingRight}>
                   <Text style={styles.bookingPrice}>${booking.servicePrice}</Text>
                 </View>
+                {booking.requestedStyle && booking.requestedStyle.name ? (
+                  <ClientWantsSection style={booking.requestedStyle} />
+                ) : null}
                 <View style={styles.actionBtns}>
                   <TouchableOpacity
                     style={styles.declineBtn}
@@ -223,6 +233,9 @@ export default function BarberDashboardScreen() {
                   <Text style={styles.bookingPrice}>${booking.servicePrice}</Text>
                   <Ionicons name="chevron-forward" size={16} color={theme.colors.textMuted} />
                 </View>
+                {booking.requestedStyle && booking.requestedStyle.name ? (
+                  <ClientWantsSection style={booking.requestedStyle} />
+                ) : null}
                 <TouchableOpacity
                   style={styles.completeBtn}
                   onPress={() => updateBookingStatus(booking.id, 'completed')}
@@ -233,6 +246,19 @@ export default function BarberDashboardScreen() {
                     color={theme.colors.textInverse}
                   />
                   <Text style={styles.completeBtnText}>MARK COMPLETE</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.cutGuideBtn}
+                  onPress={() => navigation.navigate('CutGuide', {
+                    bookingId:   booking.id,
+                    serviceName: booking.serviceName,
+                    clientName:  booking.clientName,
+                    scheduledAt: booking.scheduledAt?.toISOString() ?? '',
+                  })}
+                >
+                  <Ionicons name="bulb-outline" size={16}
+                    color={theme.colors.gold} />
+                  <Text style={styles.cutGuideBtnText}>CUT GUIDE</Text>
                 </TouchableOpacity>
               </View>
             ))}
@@ -445,6 +471,25 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.heading,
     fontSize: theme.fontSizes.xs,
     color: theme.colors.textInverse,
+    letterSpacing: 2,
+  },
+  cutGuideBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing.xs,
+    backgroundColor: theme.colors.goldMuted,
+    borderWidth: 1,
+    borderColor: theme.colors.gold,
+    borderRadius: theme.radius.md,
+    padding: theme.spacing.sm,
+    marginTop: theme.spacing.md,
+  },
+  cutGuideBtnText: {
+    fontFamily: theme.fonts.heading,
+    fontSize: theme.fontSizes.xs,
+    color: theme.colors.gold,
     letterSpacing: 2,
   },
   emptyState: {

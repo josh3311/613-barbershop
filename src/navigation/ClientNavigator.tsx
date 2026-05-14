@@ -12,6 +12,9 @@ import BookingConfirmScreen    from '../screens/client/BookingConfirmScreen';
 import BookingSuccessScreen    from '../screens/client/BookingSuccessScreen';
 import BookingHistoryScreen    from '../screens/client/BookingHistoryScreen';
 import ProfileScreen           from '../screens/client/ProfileScreen';
+import StylesScreen            from '../screens/client/StylesScreen';
+import StyleChatScreen         from '../screens/client/StyleChatScreen';
+import AddToBookingScreen      from '../screens/client/AddToBookingScreen';
 import ChatScreen              from '../screens/chat/ChatScreen';
 
 const Tab   = createBottomTabNavigator();
@@ -24,6 +27,7 @@ const TAB_ICONS: Record<string, {
 }> = {
   Home:    { active: 'home',     inactive: 'home-outline'     },
   Book:    { active: 'calendar', inactive: 'calendar-outline' },
+  Styles:  { active: 'cut',      inactive: 'cut-outline'      },
   History: { active: 'time',     inactive: 'time-outline'     },
   Profile: { active: 'person',   inactive: 'person-outline'   },
 };
@@ -68,6 +72,7 @@ function ClientTabs() {
         when there is nothing to go back to (tab root).
       */}
       <Tab.Screen name="Book"    component={ServiceSelectionScreen} />
+      <Tab.Screen name="Styles"  component={StylesScreen}            />
       <Tab.Screen name="History" component={BookingHistoryScreen}   />
       <Tab.Screen name="Profile" component={ProfileScreen}          />
     </Tab.Navigator>
@@ -88,6 +93,8 @@ export default function ClientNavigator() {
       <Stack.Screen name="BookingConfirm"    component={BookingConfirmScreen}    />
       <Stack.Screen name="BookingSuccess"    component={BookingSuccessScreen}    />
       <Stack.Screen name="Chat"              component={ChatScreen}              />
+      <Stack.Screen name="StyleChat"         component={StyleChatScreen}         />
+      <Stack.Screen name="AddToBooking"      component={AddToBookingScreen}      />
     </Stack.Navigator>
   );
 }

@@ -35,6 +35,12 @@ export type BarberStackParams = {
   BarberTabs:     undefined;
   BookingDetail:  { bookingId: string };
   Chat:           { bookingId: string; recipientName: string };
+  CutGuide: {
+    bookingId:    string;
+    serviceName:  string;
+    clientName:   string;
+    scheduledAt:  string;
+  };
 };
 
 // ─── Admin Stack ──────────────────────────────────────────

@@ -18,7 +18,9 @@
       "Bash(/c/Windows/System32/taskkill.exe //IM node.exe //F)",
       "Bash(firebase --version)",
       "Bash(eas *)",
-      "Bash(firebase deploy *)"
+      "Bash(firebase deploy *)",
+      "Bash(echo \"EXIT CODE: $?\")",
+      "Bash(echo \"EXIT_CODE=$?\")"
     ]
   }
 }
