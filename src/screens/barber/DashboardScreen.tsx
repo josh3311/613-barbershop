@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, Animated,
+  TouchableOpacity, Animated, Image,
 } from 'react-native';
 import {
   collection, query, where, onSnapshot,
@@ -15,7 +15,6 @@ import { COLLECTIONS } from '../../constants/collections';
 import { sendPushNotification } from '../../services/notifications';
 import { Booking } from '../../types';
 import { theme } from '../../theme';
-import ClientWantsSection from '../../components/ClientWantsSection';
 
 interface Props {
   navigation: {
@@ -23,6 +22,123 @@ interface Props {
   };
 }
 
+// Resolve the best available image URL from a requestedStyle object.
+// LightX saves under generatedImageUrl; old FLUX flow used tryOnImageUrl.
+function resolveAfterUrl(style: Booking['requestedStyle']): string | null {
+  return style?.generatedImageUrl ?? style?.tryOnImageUrl ?? null;
+}
+
+function resolveBeforeUrl(style: Booking['requestedStyle']): string | null {
+  return style?.selfieUrl ?? style?.referenceImageUrl ?? null;
+}
+
+// ── Inline CLIENT WANTS section ──────────────────────────────────────────────
+function ClientWantsCard({ style }: { style: NonNullable<Booking['requestedStyle']> }) {
+  const afterUrl  = resolveAfterUrl(style);
+  const beforeUrl = resolveBeforeUrl(style);
+
+  return (
+    <View style={cwStyles.wrapper}>
+      <Text style={cwStyles.label}>CLIENT WANTS</Text>
+      <Text style={cwStyles.styleName}>{style.name}</Text>
+
+      {style.description ? (
+        <Text style={cwStyles.description} numberOfLines={2}>
+          {style.description}
+        </Text>
+      ) : null}
+
+      {/* Show before/after images only when URLs exist — no placeholder icons */}
+      {(beforeUrl || afterUrl) ? (
+        <View style={cwStyles.imagesRow}>
+          {beforeUrl ? (
+            <View style={cwStyles.imageBlock}>
+              <Text style={cwStyles.imageLabel}>BEFORE</Text>
+              <Image
+                source={{ uri: beforeUrl }}
+                style={cwStyles.image}
+                resizeMode="cover"
+              />
+            </View>
+          ) : null}
+          {afterUrl ? (
+            <View style={cwStyles.imageBlock}>
+              <Text style={[cwStyles.imageLabel, cwStyles.imageLabelGold]}>
+                AI TRY-ON
+              </Text>
+              <Image
+                source={{ uri: afterUrl }}
+                style={[cwStyles.image, cwStyles.imageAfter]}
+                resizeMode="cover"
+              />
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+const cwStyles = StyleSheet.create({
+  wrapper: {
+    marginTop: theme.spacing.md,
+    borderWidth: 1,
+    borderColor: theme.colors.gold,
+    borderRadius: theme.radius.md,
+    padding: theme.spacing.md,
+    backgroundColor: theme.colors.goldMuted,
+  },
+  label: {
+    fontFamily: theme.fonts.heading,
+    fontSize: theme.fontSizes.xs,
+    color: theme.colors.gold,
+    letterSpacing: 3,
+    marginBottom: theme.spacing.xs,
+  },
+  styleName: {
+    fontFamily: theme.fonts.heading,
+    fontSize: theme.fontSizes.lg,
+    color: theme.colors.textPrimary,
+    letterSpacing: 1,
+  },
+  description: {
+    fontFamily: theme.fonts.body,
+    fontSize: theme.fontSizes.xs,
+    color: theme.colors.textSecondary,
+    marginTop: 4,
+  },
+  imagesRow: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+    marginTop: theme.spacing.sm,
+  },
+  imageBlock: {
+    flex: 1,
+    gap: 4,
+  },
+  imageLabel: {
+    fontFamily: theme.fonts.heading,
+    fontSize: 10,
+    color: theme.colors.textMuted,
+    letterSpacing: 2,
+  },
+  imageLabelGold: {
+    color: theme.colors.gold,
+  },
+  image: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: theme.radius.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  imageAfter: {
+    borderColor: theme.colors.gold,
+    borderWidth: 1.5,
+  },
+});
+
+// ── Main screen ───────────────────────────────────────────────────────────────
 export default function BarberDashboardScreen({ navigation }: Props) {
   const { user }  = useAuth();
   const fadeAnim  = useRef(new Animated.Value(0)).current;
@@ -78,7 +194,6 @@ export default function BarberDashboardScreen({ navigation }: Props) {
     bookingId: string,
     status: 'confirmed' | 'cancelled' | 'completed',
   ) => {
-    // Capture the booking now — onSnapshot may remove it from state after the update.
     const booking = bookings.find(b => b.id === bookingId);
 
     try {
@@ -88,7 +203,6 @@ export default function BarberDashboardScreen({ navigation }: Props) {
       return;
     }
 
-    // Notify client when the barber confirms (non-critical)
     if (status === 'confirmed' && booking?.clientId) {
       try {
         const clientDocSnap = await getDoc(doc(db, COLLECTIONS.USERS, booking.clientId));
@@ -106,14 +220,13 @@ export default function BarberDashboardScreen({ navigation }: Props) {
       }
     }
 
-    // Increment loyalty stamps on completion — 10 stamps wraps back to 0
     if (status === 'completed' && booking?.clientId) {
       try {
         await runTransaction(db, async (transaction) => {
-          const clientRef = doc(db, COLLECTIONS.USERS, booking.clientId);
+          const clientRef  = doc(db, COLLECTIONS.USERS, booking.clientId);
           const clientSnap = await transaction.get(clientRef);
-          const current = (clientSnap.data()?.loyaltyStamps as number | undefined) ?? 0;
-          const newStamps = current >= 9 ? 0 : current + 1;
+          const current    = (clientSnap.data()?.loyaltyStamps as number | undefined) ?? 0;
+          const newStamps  = current >= 9 ? 0 : current + 1;
           transaction.update(clientRef, { loyaltyStamps: newStamps });
         });
       } catch (e) {
@@ -122,7 +235,6 @@ export default function BarberDashboardScreen({ navigation }: Props) {
     }
   };
 
-  // ── Stat cards — shortened labels, fontSize 8, no wrapping ──
   const STATS = [
     { label: 'PEND.',  value: pending.length,   gold: false },
     { label: 'CONF.',  value: confirmed.length, gold: true  },
@@ -153,14 +265,10 @@ export default function BarberDashboardScreen({ navigation }: Props) {
           opacity: fadeAnim, transform: [{ translateY: slideAnim }],
         }]}>
           {STATS.map(s => (
-            <View
-              key={s.label}
-              style={[styles.statCard, s.gold && styles.statCardGold]}
-            >
+            <View key={s.label} style={[styles.statCard, s.gold && styles.statCardGold]}>
               <Text style={[styles.statNumber, s.gold && styles.statNumberGold]}>
                 {s.value}
               </Text>
-              {/* Fixed: fontSize 8 + numberOfLines={1} — never wraps */}
               <Text style={[styles.statLabel, s.gold && styles.statLabelGold]}
                 numberOfLines={1}>
                 {s.label}
@@ -169,7 +277,7 @@ export default function BarberDashboardScreen({ navigation }: Props) {
           ))}
         </Animated.View>
 
-        {/* ── Pending Bookings ── */}
+        {/* ── Pending ── */}
         {pending.length > 0 && (
           <>
             <Text style={styles.sectionTitle}>NEEDS CONFIRMATION</Text>
@@ -189,9 +297,12 @@ export default function BarberDashboardScreen({ navigation }: Props) {
                 <View style={styles.bookingRight}>
                   <Text style={styles.bookingPrice}>${booking.servicePrice}</Text>
                 </View>
-                {booking.requestedStyle && booking.requestedStyle.name ? (
-                  <ClientWantsSection style={booking.requestedStyle} />
+
+                {/* CLIENT WANTS — only render when name exists */}
+                {booking.requestedStyle?.name ? (
+                  <ClientWantsCard style={booking.requestedStyle} />
                 ) : null}
+
                 <View style={styles.actionBtns}>
                   <TouchableOpacity
                     style={styles.declineBtn}
@@ -233,31 +344,32 @@ export default function BarberDashboardScreen({ navigation }: Props) {
                   <Text style={styles.bookingPrice}>${booking.servicePrice}</Text>
                   <Ionicons name="chevron-forward" size={16} color={theme.colors.textMuted} />
                 </View>
-                {booking.requestedStyle && booking.requestedStyle.name ? (
-                  <ClientWantsSection style={booking.requestedStyle} />
+
+                {/* CLIENT WANTS — only render when name exists */}
+                {booking.requestedStyle?.name ? (
+                  <ClientWantsCard style={booking.requestedStyle} />
                 ) : null}
+
                 <TouchableOpacity
                   style={styles.completeBtn}
                   onPress={() => updateBookingStatus(booking.id, 'completed')}
                 >
-                  <Ionicons
-                    name="checkmark-done"
-                    size={16}
-                    color={theme.colors.textInverse}
-                  />
+                  <Ionicons name="checkmark-done" size={16} color={theme.colors.textInverse} />
                   <Text style={styles.completeBtnText}>MARK COMPLETE</Text>
                 </TouchableOpacity>
+
                 <TouchableOpacity
                   style={styles.cutGuideBtn}
                   onPress={() => navigation.navigate('CutGuide', {
-                    bookingId:   booking.id,
-                    serviceName: booking.serviceName,
-                    clientName:  booking.clientName,
-                    scheduledAt: booking.scheduledAt?.toISOString() ?? '',
+                    bookingId:      booking.id,
+                    serviceName:    booking.serviceName,
+                    clientName:     booking.clientName,
+                    scheduledAt:    booking.scheduledAt?.toISOString() ?? '',
+                    // Pass the full style so CutGuide can show images + use it in the prompt
+                    requestedStyle: booking.requestedStyle ?? null,
                   })}
                 >
-                  <Ionicons name="bulb-outline" size={16}
-                    color={theme.colors.gold} />
+                  <Ionicons name="bulb-outline" size={16} color={theme.colors.gold} />
                   <Text style={styles.cutGuideBtnText}>CUT GUIDE</Text>
                 </TouchableOpacity>
               </View>
@@ -336,7 +448,6 @@ const styles = StyleSheet.create({
   statNumberGold: {
     color: theme.colors.gold,
   },
-  // Fixed: fontSize 8 + numberOfLines={1} → never wraps
   statLabel: {
     fontFamily: theme.fonts.medium,
     fontSize: 8,
@@ -484,7 +595,7 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.gold,
     borderRadius: theme.radius.md,
     padding: theme.spacing.sm,
-    marginTop: theme.spacing.md,
+    marginTop: theme.spacing.sm,
   },
   cutGuideBtnText: {
     fontFamily: theme.fonts.heading,

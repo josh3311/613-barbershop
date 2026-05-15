@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, ActivityIndicator,
+  TouchableOpacity, ActivityIndicator, Image,
 } from 'react-native';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -13,6 +13,19 @@ import { theme } from '../../theme';
 type CutGuideNav   = NativeStackNavigationProp<BarberStackParams, 'CutGuide'>;
 type CutGuideRoute = RouteProp<BarberStackParams, 'CutGuide'>;
 
+interface RequestedStyle {
+  name:                string;
+  description?:        string | null;
+  generatedImageUrl?:  string | null;
+  tryOnImageUrl?:      string | null;
+  referenceImageUrl?:  string | null;
+  selfieUrl?:          string | null;
+}
+
+type ExtendedParams = CutGuideRoute['params'] & {
+  requestedStyle?: RequestedStyle | null;
+};
+
 const SYSTEM_PROMPT =
   'You are an expert barber trainer with 20 years of experience. ' +
   'Explain haircuts clearly and professionally for barbers of all skill levels.';
@@ -20,11 +33,21 @@ const SYSTEM_PROMPT =
 export default function CutGuideScreen() {
   const navigation = useNavigation<CutGuideNav>();
   const route      = useRoute<CutGuideRoute>();
-  const { bookingId: _bookingId, serviceName, clientName, scheduledAt } = route.params;
+
+  const {
+    bookingId: _bookingId,
+    serviceName,
+    clientName,
+    scheduledAt,
+    requestedStyle,
+  } = route.params as ExtendedParams;
 
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState<string | null>(null);
   const [guide,   setGuide]   = useState<string>('');
+
+  const afterUrl  = requestedStyle?.generatedImageUrl ?? requestedStyle?.tryOnImageUrl ?? null;
+  const beforeUrl = requestedStyle?.selfieUrl ?? requestedStyle?.referenceImageUrl ?? null;
 
   const fetchGuide = useCallback(async () => {
     setLoading(true);
@@ -38,9 +61,18 @@ export default function CutGuideScreen() {
       return;
     }
 
+    const styleContext = requestedStyle?.name
+      ? `The client specifically requested: "${requestedStyle.name}".` +
+        (requestedStyle.description
+          ? ` Style description: ${requestedStyle.description}.`
+          : '') +
+        ' Tailor your cutting guide to deliver this exact style.'
+      : '';
+
     const userMessage =
       `Give me a complete step-by-step cut guide for: ${serviceName} for client ${clientName}.\n` +
-      `Include: 1) Tools needed 2) Preparation 3) Step by step cutting instructions 4) Finishing touches 5) Pro tips.\n` +
+      `${styleContext}\n` +
+      `Include: 1) Tools needed 2) Preparation 3) Step-by-step cutting instructions 4) Finishing touches 5) Pro tips.\n` +
       `Be specific and practical.`;
 
     try {
@@ -73,7 +105,7 @@ export default function CutGuideScreen() {
     } finally {
       setLoading(false);
     }
-  }, [serviceName, clientName]);
+  }, [serviceName, clientName, requestedStyle]);
 
   useEffect(() => {
     fetchGuide();
@@ -89,14 +121,59 @@ export default function CutGuideScreen() {
     });
   })();
 
+  // ── Image section — strictly mutually exclusive ───────────────────────────
+  // Case A: both before + after → side by side
+  // Case B: only after          → full width, single image
+  // Case C: neither             → render nothing
+  const renderStyleImages = () => {
+    if (!afterUrl) return null;
+
+    if (beforeUrl) {
+      // Case A — side by side
+      return (
+        <View style={styles.styleImagesRow}>
+          <View style={styles.styleImageBlock}>
+            <Text style={styles.styleImageLabel}>BEFORE</Text>
+            <Image
+              source={{ uri: beforeUrl }}
+              style={styles.styleImage}
+              resizeMode="cover"
+            />
+          </View>
+          <View style={styles.styleImageBlock}>
+            <Text style={[styles.styleImageLabel, styles.styleImageLabelGold]}>
+              AI TRY-ON
+            </Text>
+            <Image
+              source={{ uri: afterUrl }}
+              style={[styles.styleImage, styles.styleImageAfter]}
+              resizeMode="cover"
+            />
+          </View>
+        </View>
+      );
+    }
+
+    // Case B — only after, full width
+    return (
+      <View style={styles.styleImageFullBlock}>
+        <Text style={[styles.styleImageLabel, styles.styleImageLabelGold]}>
+          AI TRY-ON
+        </Text>
+        <Image
+          source={{ uri: afterUrl }}
+          style={styles.styleImageFull}
+          resizeMode="cover"
+        />
+      </View>
+    );
+  };
+
   return (
     <View style={styles.container}>
-      {/* Header */}
+      {/* ── Header ── */}
       <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => navigation.goBack()}
-        >
+        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
           <Ionicons name="chevron-back" size={24} color={theme.colors.gold} />
         </TouchableOpacity>
         <View style={styles.headerTextWrap}>
@@ -111,7 +188,7 @@ export default function CutGuideScreen() {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-        {/* Booking info card */}
+        {/* ── Booking info card ── */}
         <View style={styles.infoCard}>
           <View style={styles.infoRow}>
             <Ionicons name="person-outline" size={16} color={theme.colors.gold} />
@@ -132,7 +209,21 @@ export default function CutGuideScreen() {
           ) : null}
         </View>
 
-        {/* Loading */}
+        {/* ── Requested Style card — only when client attached a style ── */}
+        {requestedStyle?.name ? (
+          <View style={styles.styleCard}>
+            <Text style={styles.styleCardHeading}>REQUESTED STYLE</Text>
+            <Text style={styles.styleCardName}>{requestedStyle.name}</Text>
+            {requestedStyle.description ? (
+              <Text style={styles.styleCardDesc} numberOfLines={3}>
+                {requestedStyle.description}
+              </Text>
+            ) : null}
+            {renderStyleImages()}
+          </View>
+        ) : null}
+
+        {/* ── Loading ── */}
         {loading && (
           <View style={styles.loadingWrap}>
             <ActivityIndicator size="large" color={theme.colors.gold} />
@@ -140,7 +231,7 @@ export default function CutGuideScreen() {
           </View>
         )}
 
-        {/* Error */}
+        {/* ── Error ── */}
         {!loading && error ? (
           <View style={styles.errorWrap}>
             <Ionicons name="alert-circle-outline" size={32} color={theme.colors.error} />
@@ -148,7 +239,7 @@ export default function CutGuideScreen() {
           </View>
         ) : null}
 
-        {/* Guide content */}
+        {/* ── Guide content ── */}
         {!loading && !error && guide ? (
           <View style={styles.guideCard}>
             <Markdown style={{
@@ -162,9 +253,9 @@ export default function CutGuideScreen() {
                 fontFamily: theme.fonts.bold,
               },
               heading1: {
-                color:        theme.colors.gold,
-                fontFamily:   theme.fonts.heading,
-                fontSize:     theme.fontSizes.lg,
+                color:         theme.colors.gold,
+                fontFamily:    theme.fonts.heading,
+                fontSize:      theme.fontSizes.lg,
                 letterSpacing: 2,
               },
               bullet_list: { color: theme.colors.textPrimary },
@@ -174,7 +265,7 @@ export default function CutGuideScreen() {
           </View>
         ) : null}
 
-        {/* Regenerate */}
+        {/* ── Regenerate ── */}
         {!loading && (
           <TouchableOpacity
             style={styles.regenBtn}
@@ -261,6 +352,75 @@ const styles = StyleSheet.create({
     fontFamily: theme.fonts.body,
     fontSize: theme.fontSizes.sm,
     color: theme.colors.textPrimary,
+  },
+  styleCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1.5,
+    borderColor: theme.colors.gold,
+    padding: theme.spacing.lg,
+    gap: theme.spacing.sm,
+    ...theme.shadows.gold,
+  },
+  styleCardHeading: {
+    fontFamily: theme.fonts.heading,
+    fontSize: theme.fontSizes.xs,
+    color: theme.colors.gold,
+    letterSpacing: 4,
+  },
+  styleCardName: {
+    fontFamily: theme.fonts.heading,
+    fontSize: theme.fontSizes.xl,
+    color: theme.colors.textPrimary,
+    letterSpacing: 1,
+  },
+  styleCardDesc: {
+    fontFamily: theme.fonts.body,
+    fontSize: theme.fontSizes.sm,
+    color: theme.colors.textSecondary,
+    lineHeight: 20,
+  },
+  // Side-by-side (before + after)
+  styleImagesRow: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+    marginTop: theme.spacing.sm,
+  },
+  styleImageBlock: {
+    flex: 1,
+    gap: 4,
+  },
+  styleImageLabel: {
+    fontFamily: theme.fonts.heading,
+    fontSize: 10,
+    color: theme.colors.textMuted,
+    letterSpacing: 2,
+  },
+  styleImageLabelGold: {
+    color: theme.colors.gold,
+  },
+  styleImage: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: theme.radius.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  styleImageAfter: {
+    borderColor: theme.colors.gold,
+    borderWidth: 1.5,
+  },
+  // Full-width (after only)
+  styleImageFullBlock: {
+    gap: 6,
+    marginTop: theme.spacing.sm,
+  },
+  styleImageFull: {
+    width: '100%',
+    height: 220,
+    borderRadius: theme.radius.md,
+    borderWidth: 1.5,
+    borderColor: theme.colors.gold,
   },
   loadingWrap: {
     alignItems: 'center',

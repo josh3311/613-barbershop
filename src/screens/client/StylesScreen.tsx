@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
   TouchableOpacity, Image, ActivityIndicator,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -14,20 +15,38 @@ import { useAuth } from '../../context/AuthContext';
 import { theme } from '../../theme';
 import type { FaceAnalysis, StyleRecommendation } from '../../types';
 
-// ── Nav typing (local; ClientNavigator stack is currently untyped) ──
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// ── Nav typing ────────────────────────────────────────────
 type StylesScreenNavParams = {
   BookingFlow: undefined;
   StyleChat:   undefined;
 };
 type StylesNav = NativeStackNavigationProp<StylesScreenNavParams>;
 
-// ── Models ───────────────────────────────────────────────
+// ── Models ────────────────────────────────────────────────
 const MODEL_HAIKU  = 'claude-haiku-4-5-20251001';
 const MODEL_SONNET = 'claude-sonnet-4-6';
 
-// ── System prompts ───────────────────────────────────────
+// ── Photo angle labels ────────────────────────────────────
+const ANGLES      = ['FRONT', 'LEFT', 'RIGHT', 'TILT UP', 'TILT DOWN'] as const;
+const ANGLE_HINTS = [
+  'Face camera straight on',
+  'Turn head left',
+  'Turn head right',
+  'Tilt head up slightly',
+  'Tilt head down slightly',
+];
+
+// ── Local extended type ───────────────────────────────────
+interface ExtendedFaceAnalysis extends FaceAnalysis {
+  bestPhotoIndex?:  number;
+  secondBestIndex?: number;
+}
+
+// ── System prompts ────────────────────────────────────────
 const FACE_SYSTEM_PROMPT =
-  'You are a professional barber consultant. ' +
+  'You are a professional hairstyle consultant. ' +
   'Respond only in plain English. ' +
   'No markdown, no asterisks, no bullet points. ' +
   'Write short clear sentences.';
@@ -35,32 +54,31 @@ const FACE_SYSTEM_PROMPT =
 const STYLE_SYSTEM_PROMPT =
   'You are the world\'s best hairstyle consultant with 20 years experience ' +
   'across all hair types, ethnicities, face shapes, and head sizes. ' +
+  'You work with clients of every background — all hair textures and all ethnicities. ' +
   'You recommend only modern styles from 2015 onwards. ' +
   'No vintage, no pre-2015 styles. ' +
   'You think deeply before recommending. ' +
-  'You give specific, unique recommendations — never generic, never repetitive. ' +
   'Respond ONLY with valid JSON. No markdown. No fences.';
 
-// ── User-prompt builders ─────────────────────────────────
-const FACE_USER_PROMPT =
-  'Analyze this person\'s face and hair carefully. ' +
-  'Return ONLY a JSON object, no extra text, no markdown:\n' +
-  '{\n' +
-  '  "faceShape": string,\n' +
-  '  "headSize": string,\n' +
-  '  "hairTexture": string,\n' +
-  '  "skinTone": string,\n' +
-  '  "currentStyle": string,\n' +
-  '  "faceSummary": string\n' +
-  '}\n' +
-  'faceShape: oval, round, square, heart, diamond, oblong, or triangle\n' +
-  'headSize: small, medium, or large\n' +
-  'hairTexture: coily, curly, wavy, straight, or locs\n' +
-  'skinTone: light, medium, tan, dark, or deep\n' +
-  'currentStyle: one sentence describing current hair\n' +
-  'faceSummary: one friendly sentence a barber would say about this person\'s ' +
-  'face and what works for them. Plain English, no markdown, conversational.';
+// ── Multi-photo face analysis prompt ─────────────────────
+const buildFacePrompt = (photoCount: number): string =>
+  `Analyze all ${photoCount} photos of the same person carefully. ` +
+  `Use all angles together for the most accurate analysis. ` +
+  `Return ONLY a JSON object:\n` +
+  `{\n` +
+  `  "faceShape": "oval|round|square|heart|diamond|oblong|triangle",\n` +
+  `  "headSize": "small|medium|large",\n` +
+  `  "hairTexture": "coily|curly|wavy|straight|locs",\n` +
+  `  "skinTone": "light|medium|tan|dark|deep",\n` +
+  `  "currentStyle": "one sentence describing current hair",\n` +
+  `  "faceSummary": "one friendly sentence a hairstylist would say. Plain English.",\n` +
+  `  "bestPhotoIndex": 0,\n` +
+  `  "secondBestIndex": 1\n` +
+  `}\n` +
+  `bestPhotoIndex: index (0 to ${photoCount - 1}) of the clearest front-facing photo\n` +
+  `secondBestIndex: index (0 to ${photoCount - 1}) of the second clearest photo`;
 
+// ── Style recommendations prompt ──────────────────────────
 const buildStylePrompt = (face: FaceAnalysis): string =>
   `This person has the following profile:\n` +
   `Face shape: ${face.faceShape}\n` +
@@ -68,35 +86,34 @@ const buildStylePrompt = (face: FaceAnalysis): string =>
   `Hair texture: ${face.hairTexture}\n` +
   `Skin tone: ${face.skinTone}\n` +
   `Current style: ${face.currentStyle}\n\n` +
-  `Think carefully about their specific combination of face shape + head size + hair texture.\n\n` +
-  `Your task:\n` +
-  `1. Find 4 COMPLETELY DIFFERENT modern hairstyles (2015-2026) that will make this ` +
-  `specific person look their absolute best.\n` +
-  `2. For each style, write a DETAILED FLUX IMAGE GENERATION PROMPT that will transform ` +
-  `the person's selfie into that exact hairstyle.\n\n` +
+  `Find 4 COMPLETELY DIFFERENT modern hairstyles (2015-2026) that will make ` +
+  `this specific person look their absolute best.\n\n` +
   `Rules for the 4 styles:\n` +
   `- Each must be completely different from the others\n` +
-  `- Mix styles: one bold, one clean/classic, one trendy 2024-2026, one versatile everyday\n` +
-  `- Every style must specifically suit their face shape AND hair texture combination\n` +
-  `- No two styles can be the same type of fade\n\n` +
-  `Rules for the FLUX prompt (CRITICAL):\n` +
-  `- The prompt transforms the person's ACTUAL SELFIE\n` +
-  `- Must preserve their face, skin tone, facial features\n` +
-  `- Only change the hair\n` +
-  `- Be extremely specific: fade level (low/mid/high/skin), sides (tapered/faded/undercut), ` +
-  `top length, top texture, front styling, edge details, finish\n` +
-  `- Example of a good prompt: "Change the hair to a low skin fade on the sides with a sharp ` +
-  `temple lineup, keeping 2-3 inches of coily natural texture on top styled into a defined ` +
-  `twist-out, clean edges around the hairline, professional barbershop finish"\n\n` +
-  `Return ONLY this JSON with no extra text:\n` +
+  `- Mix: one bold, one clean/classic, one trendy 2024-2026, one versatile everyday\n` +
+  `- Every style must suit their face shape AND hair texture combination\n` +
+  `- No two styles can be the same type\n` +
+  `- Recommend styles for ALL hair types and ethnicities, not just one group\n\n` +
+  `Rules for the hairstyle prompt (CRITICAL — goes directly to LightX hair AI):\n` +
+  `- Write SHORT natural descriptions under 15 words — LightX works best with concise prompts\n` +
+  `- Focus on the hair only: cut type, length, texture, fade level\n` +
+  `- Use real barber/salon language — not art direction\n` +
+  `- Always include the word "natural" to trigger LightX's realistic blend mode\n` +
+  `- NEVER include face/skin preservation instructions — LightX handles that automatically\n` +
+  `- Example good: "natural low skin fade, soft coily top, sharp lineup"\n` +
+  `- Example good: "natural bob cut, straight sleek, blunt ends"\n` +
+  `- Example good: "natural shoulder length box braids, dark brown"\n` +
+  `- Example good: "natural textured crop, low taper fade, messy top"\n` +
+  `- Example BAD: "preserve face, photorealistic, seamless blend" (do not add these)\n\n` +
+  `Return ONLY this JSON:\n` +
   `{\n` +
   `  "styles": [\n` +
   `    {\n` +
   `      "name": "specific modern style name",\n` +
   `      "year": "year popularized 2015-2026",\n` +
-  `      "shortDescription": "max 2 sentences, plain English, no markdown, describes the look",\n` +
-  `      "whyItFits": "one sentence, mention their specific face shape AND hair texture by name",\n` +
-  `      "fluxPrompt": "detailed FLUX transformation prompt (30-50 words, very specific about every aspect of the haircut)"\n` +
+  `      "shortDescription": "max 2 sentences, plain English",\n` +
+  `      "whyItFits": "one sentence mentioning face shape AND hair texture",\n` +
+  `      "fluxPrompt": "hairstyle description under 30 words"\n` +
   `    }\n` +
   `  ]\n` +
   `}`;
@@ -108,11 +125,12 @@ interface ClaudeResponse {
   content?: Array<{ text?: string }>;
 }
 
-interface ReplicatePrediction {
-  id?:     string;
-  status?: 'starting' | 'processing' | 'succeeded' | 'failed' | 'canceled';
-  output?: string | string[] | null;
-  error?:  string | null;
+interface LightXSubmitResponse {
+  body?: { orderId?: string };
+}
+
+interface LightXPollResponse {
+  body?: { status?: string; output?: string };
 }
 
 // ── Helpers ───────────────────────────────────────────────
@@ -125,7 +143,6 @@ const extractJson = <T,>(text: string): T | null => {
       .replace(/```\s*$/i, '')
       .trim();
   }
-  // If still wrapped in prose, slice from first { to last }.
   const start = cleaned.indexOf('{');
   const end   = cleaned.lastIndexOf('}');
   if (start === -1 || end === -1 || end <= start) return null;
@@ -153,12 +170,7 @@ const callClaude = async (
         'anthropic-version':                         '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
       },
-      body: JSON.stringify({
-        model,
-        max_tokens: maxTokens,
-        system,
-        messages,
-      }),
+      body: JSON.stringify({ model, max_tokens: maxTokens, system, messages }),
     });
     if (!r.ok) return null;
     const data = (await r.json()) as ClaudeResponse;
@@ -169,111 +181,117 @@ const callClaude = async (
   }
 };
 
-// Upload the selfie to ImgBB and return a hosted URL. We pass this URL to
-// Replicate instead of an inline data-URI because base64 selfies routinely
-// exceed Replicate's request-payload size limit. Returns a tagged result
-// so the screen can surface the exact failure reason without console.log.
-// Requires EXPO_PUBLIC_IMGBB_API_KEY in .env
+// ── ImgBB upload — gets a public URL for the selfie ───────
 const uploadToImgBB = async (
   base64: string,
 ): Promise<{ url: string | null; error: string | null }> => {
   try {
     const key = process.env.EXPO_PUBLIC_IMGBB_API_KEY;
-    if (!key) return { url: null, error: 'IMGBB key missing' };
-
+    if (!key) return { url: null, error: 'ImgBB key missing' };
     const formData = new FormData();
     formData.append('image', base64);
-
     const res = await fetch(
       `https://api.imgbb.com/1/upload?key=${key}`,
       { method: 'POST', body: formData },
     );
-
     const data = (await res.json()) as {
       data?:  { url?: string };
       error?: { message?: string };
     };
-
     if (!res.ok || !data?.data?.url) {
       return {
         url:   null,
         error: `ImgBB error: ${data?.error?.message ?? res.status}`,
       };
     }
-
     return { url: data.data.url, error: null };
   } catch (e) {
     return { url: null, error: `ImgBB exception: ${String(e)}` };
   }
 };
 
-// Run one FLUX change-haircut prediction against the user's selfie.
-// `imageUrl` must be an HTTPS URL (e.g. ImgBB-hosted) — sending base64 here
-// busts Replicate's payload limit. Returns a tagged result so the screen
-// can show the exact failure reason without console.log.
+// ── LightX hairstyle generation ───────────────────────────
+// LightX is purpose-built for hairstyle try-on across all hair
+// types and ethnicities. It needs a public image URL (from ImgBB)
+// and a natural language style description.
+// Requires EXPO_PUBLIC_LIGHTX_API_KEY in .env
 const generateStyleImage = async (
-  fluxPrompt: string,
-  imageUrl:   string,
+  stylePrompt: string,
+  imageUrl:    string,
 ): Promise<{ url: string | null; error: string | null }> => {
-  const token = process.env.EXPO_PUBLIC_REPLICATE_API_TOKEN;
-  if (!token) return { url: null, error: 'Replicate token missing' };
+  const key = process.env.EXPO_PUBLIC_LIGHTX_API_KEY;
+  if (!key) return { url: null, error: 'LightX key missing' };
 
   try {
-    const createRes = await fetch(
-      'https://api.replicate.com/v1/models/flux-kontext-apps/change-haircut/predictions',
+    // Step 1 — Submit the hairstyle job
+    const submitRes = await fetch(
+      'https://api.lightxeditor.com/external/api/v1/hairstyle',
       {
         method:  'POST',
         headers: {
-          'Authorization': `Token ${token}`,
-          'Content-Type':  'application/json',
+          'Content-Type': 'application/json',
+          'x-api-key':    key,
         },
         body: JSON.stringify({
-          input: {
-            input_image: imageUrl,
-            prompt:      fluxPrompt,
-          },
+          imageUrl,
+          // Short natural prompts activate LightX's inpainting/blend mode.
+          // Long identity-preservation clauses push it into artistic/generative
+          // mode which produces the painted look. LightX preserves the face
+          // automatically — do not instruct it to do so explicitly.
+          textPrompt:
+            `${stylePrompt}, ` +
+            `natural real hair texture, seamless skin blend, ` +
+            `realistic photograph, match original photo lighting`,
         }),
       },
     );
-    if (!createRes.ok) {
-      const errText = await createRes.text();
+
+    if (!submitRes.ok) {
+      const errText = await submitRes.text();
       return {
         url:   null,
-        error: `Create failed ${createRes.status}: ${errText.slice(0, 100)}`,
+        error: `LightX submit failed ${submitRes.status}: ${errText.slice(0, 120)}`,
       };
     }
 
-    const prediction = (await createRes.json()) as ReplicatePrediction;
-    if (prediction.status === 'succeeded' && prediction.output) {
-      const out = Array.isArray(prediction.output) ? prediction.output[0] : prediction.output;
-      return { url: out, error: null };
+    const submitData = (await submitRes.json()) as LightXSubmitResponse;
+    const orderId    = submitData?.body?.orderId;
+    if (!orderId) {
+      return { url: null, error: 'No orderId returned from LightX' };
     }
-    const predId = prediction.id;
-    if (!predId) return { url: null, error: 'No prediction id returned' };
 
-    // Poll up to 20 × 3s = 60s.
+    // Step 2 — Poll for result every 3 seconds, up to 20 attempts (60s)
     for (let i = 0; i < 20; i++) {
-      await new Promise<void>(resolve => setTimeout(resolve, 4000));
+      await new Promise<void>(resolve => setTimeout(resolve, 3000));
+
       const pollRes = await fetch(
-        `https://api.replicate.com/v1/predictions/${predId}`,
+        'https://api.lightxeditor.com/external/api/v1/order-status',
         {
+          method:  'POST',
           headers: {
-            'Authorization': `Token ${token}`,
-            'Content-Type':  'application/json',
+            'Content-Type': 'application/json',
+            'x-api-key':    key,
           },
+          body: JSON.stringify({ orderId }),
         },
       );
+
       if (!pollRes.ok) continue;
-      const poll = (await pollRes.json()) as ReplicatePrediction;
-      if (poll.status === 'succeeded' && poll.output) {
-        const out = Array.isArray(poll.output) ? poll.output[0] : poll.output;
-        return { url: out, error: null };
+
+      const pollData = (await pollRes.json()) as LightXPollResponse;
+      const status   = pollData?.body?.status;
+      const output   = pollData?.body?.output;
+
+      if ((status === 'completed' || status === 'active') && output) {
+        return { url: output, error: null };
       }
-      if (poll.status === 'failed' || poll.status === 'canceled') {
-        return { url: null, error: `Poll failed: ${poll.error ?? 'unknown'}` };
+      if (status === 'failed') {
+        return { url: null, error: 'LightX generation failed' };
       }
+      // status 'pending' or 'processing' — keep polling
     }
-    return { url: null, error: 'Timed out after 60s' };
+
+    return { url: null, error: 'LightX timed out after 60s' };
   } catch (e) {
     return { url: null, error: `Exception: ${String(e)}` };
   }
@@ -284,11 +302,11 @@ export default function StylesScreen() {
   const navigation = useNavigation<StylesNav>();
   const { user }   = useAuth();
 
-  // Selfie
-  const [selfieUri,    setSelfieUri]    = useState<string | null>(null);
-  const [selfieBase64, setSelfieBase64] = useState<string | null>(null);
-  // Hosted ImgBB URL — populated once before Stage 3 and reused by retries.
-  const [selfieUrl,    setSelfieUrl]    = useState<string | null>(null);
+  // 5-photo state
+  const [selfieUris,    setSelfieUris]    = useState<(string | null)[]>(Array(5).fill(null));
+  const [selfieBase64s, setSelfieBase64s] = useState<(string | null)[]>(Array(5).fill(null));
+  const [selfieUrls,    setSelfieUrls]    = useState<(string | null)[]>(Array(5).fill(null));
+  const [bestPhotoIndex,  setBestPhotoIndex]  = useState<number>(0);
 
   // Flow state
   const [loadingStage,    setLoadingStage]    = useState<LoadingStage>('idle');
@@ -298,67 +316,87 @@ export default function StylesScreen() {
   const [selectedStyle,    setSelectedStyle]    = useState<StyleRecommendation | null>(null);
   const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
   const [error,     setError]     = useState<string | null>(null);
-  const [fluxError, setFluxError] = useState<string | null>(null);
+  const [genError,  setGenError]  = useState<string | null>(null);
   const [saving,    setSaving]    = useState<boolean>(false);
 
-  // ── Selfie picker ───────────────────────────────────────
-  const pickImage = async () => {
+  const uploadedCount = selfieUris.filter(Boolean).length;
+  const canAnalyze    = uploadedCount >= 3;
+
+  // ── Reset ───────────────────────────────────────────────
+  const resetAnalysis = () => {
+    setFaceAnalysis(null);
+    setRecommendations([]);
+    setGeneratedImages([]);
+    setSelectedStyle(null);
+    setSelectedImageUrl(null);
+    setSelfieUrls(Array(5).fill(null));
+    setError(null);
+    setGenError(null);
+    setLoadingStage('idle');
+    setBestPhotoIndex(0);
+  };
+
+  // ── Pick one photo for a slot ───────────────────────────
+  const pickImageForSlot = async (slotIndex: number) => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      setError('Please allow photo access to upload a selfie.');
+      setError('Please allow photo access to upload photos.');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes:    ['images'],
       allowsEditing: true,
       aspect:        [1, 1],
-      quality:       0.85,
+      quality:       0.80,
       base64:        true,
     });
     if (result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];
     if (!asset.base64 || !asset.uri) return;
 
-    setSelfieUri(asset.uri);
-    setSelfieBase64(asset.base64);
-    setSelfieUrl(null);
-    setFaceAnalysis(null);
-    setRecommendations([]);
-    setGeneratedImages([]);
-    setSelectedStyle(null);
-    setSelectedImageUrl(null);
-    setError(null);
-    setFluxError(null);
-    setLoadingStage('idle');
+    setSelfieUris(prev => {
+      const next = [...prev]; next[slotIndex] = asset.uri; return next;
+    });
+    setSelfieBase64s(prev => {
+      const next = [...prev]; next[slotIndex] = asset.base64 ?? null; return next;
+    });
+    resetAnalysis();
   };
 
-  // ── Stage helpers ───────────────────────────────────────
-  const runFaceAnalysis = async (base64: string): Promise<FaceAnalysis | null> => {
+  // ── Stage 1: Haiku analyzes all photos ─────────────────
+  const runFaceAnalysis = async (
+    base64Array: (string | null)[],
+  ): Promise<ExtendedFaceAnalysis | null> => {
+    const validPhotos = base64Array
+      .map((b64, i) => ({ b64, i }))
+      .filter(x => x.b64 !== null);
+    if (validPhotos.length === 0) return null;
+
+    const angleLabels = ['front-facing','left side','right side','tilted up','tilted down'];
+    const content: unknown[] = [];
+
+    validPhotos.forEach(({ b64, i }) => {
+      content.push({ type: 'text', text: `Photo ${i + 1} (${angleLabels[i]}):` });
+      content.push({
+        type:   'image',
+        source: { type: 'base64', media_type: 'image/jpeg', data: b64 as string },
+      });
+    });
+    content.push({ type: 'text', text: buildFacePrompt(validPhotos.length) });
+
     const text = await callClaude(
       MODEL_HAIKU,
       FACE_SYSTEM_PROMPT,
-      [{
-        role: 'user',
-        content: [
-          {
-            type:   'image',
-            source: {
-              type:       'base64',
-              media_type: 'image/jpeg',
-              data:       base64,
-            },
-          },
-          { type: 'text', text: FACE_USER_PROMPT },
-        ],
-      }],
-      600,
+      [{ role: 'user', content }],
+      700,
     );
     if (!text) return null;
-    const face = extractJson<FaceAnalysis>(text);
+    const face = extractJson<ExtendedFaceAnalysis>(text);
     if (!face?.faceShape || !face?.hairTexture) return null;
     return face;
   };
 
+  // ── Stage 2: Sonnet recommends styles ──────────────────
   const runStyleRecommendations = async (
     face: FaceAnalysis,
   ): Promise<StyleRecommendation[]> => {
@@ -385,29 +423,32 @@ export default function StylesScreen() {
     );
   };
 
-  // ── Main flow ───────────────────────────────────────────
+  // ── Main analyze flow ───────────────────────────────────
   const handleAnalyze = async () => {
-    if (!selfieBase64) return;
+    if (!canAnalyze) return;
     setError(null);
-    setFluxError(null);
+    setGenError(null);
     setFaceAnalysis(null);
     setRecommendations([]);
     setGeneratedImages([]);
     setSelectedStyle(null);
     setSelectedImageUrl(null);
-    setSelfieUrl(null);
+    setSelfieUrls(Array(5).fill(null));
 
-    // Stage 1 — Haiku face analysis
+    // Stage 1 — Haiku analyzes all uploaded photos
     setLoadingStage('haiku');
-    const face = await runFaceAnalysis(selfieBase64);
+    const face = await runFaceAnalysis(selfieBase64s);
     if (!face) {
       setLoadingStage('idle');
-      setError('Could not read your face. Please try a clearer selfie.');
+      setError('Could not read your face. Please try clearer photos.');
       return;
     }
+    const validCount = selfieBase64s.filter(Boolean).length;
+    const best = Math.min(face.bestPhotoIndex ?? 0, validCount - 1);
+    setBestPhotoIndex(best);
     setFaceAnalysis(face);
 
-    // Stage 2 — Sonnet with retries (max 3 attempts, accept if ≥ 3 styles)
+    // Stage 2 — Sonnet style recommendations
     setLoadingStage('sonnet');
     let recs: StyleRecommendation[] = [];
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -421,58 +462,71 @@ export default function StylesScreen() {
     }
     setRecommendations(recs);
 
-    // Stage 3 — upload selfie to ImgBB, then run 4 FLUX calls in parallel.
+    // Stage 3 — Upload best photo to ImgBB, then run LightX
     setLoadingStage('flux');
-    const imgbbResult = await uploadToImgBB(selfieBase64);
+    const finalBest = Math.min(face.bestPhotoIndex ?? 0, selfieBase64s.length - 1);
+    const b64Best   = selfieBase64s[finalBest];
+
+    if (!b64Best) {
+      setError('Missing photo. Please re-upload your photos.');
+      setLoadingStage('idle');
+      return;
+    }
+
+    const imgbbResult = await uploadToImgBB(b64Best);
     if (!imgbbResult.url) {
       setError(imgbbResult.error ?? 'Could not upload photo. Please try again.');
       setLoadingStage('idle');
       return;
     }
-    setSelfieUrl(imgbbResult.url);
 
+    const newUrls      = [...selfieUrls];
+    newUrls[finalBest] = imgbbResult.url;
+    setSelfieUrls(newUrls);
+
+    // Run LightX calls sequentially with 4s gap
     const results: { url: string | null; error: string | null }[] = [];
     for (let i = 0; i < recs.length; i++) {
-      if (i > 0) {
-        await new Promise(r => setTimeout(r, 8000));
-      }
+      if (i > 0) await new Promise(r => setTimeout(r, 4000));
+
       const result = await generateStyleImage(
         recs[i].fluxPrompt,
-        imgbbResult.url ?? selfieUrl ?? '',
+        imgbbResult.url,
       );
       results.push(result);
 
       // Show cards as they generate one by one
       const partial = results.map(r => r.url);
-      while (partial.length < recs.length) {
-        partial.push(null);
-      }
+      while (partial.length < recs.length) partial.push(null);
       setGeneratedImages([...partial]);
     }
+
     const images     = results.map(r => r.url);
     const firstError = results.find(r => r.error)?.error;
     setGeneratedImages(images);
-    if (firstError) setFluxError(firstError);
+    if (firstError) setGenError(firstError);
     setLoadingStage('done');
   };
 
-  // Retry a single FLUX generation for one card without re-running Stage 1/2.
+  // ── Retry a single card ─────────────────────────────────
   const retryImage = async (index: number) => {
-    if (!selfieUrl) return;
+    const url = selfieUrls[bestPhotoIndex];
+    if (!url) return;
     const rec = recommendations[index];
     if (!rec) return;
-    const result = await generateStyleImage(rec.fluxPrompt, selfieUrl);
+    const result = await generateStyleImage(rec.fluxPrompt, url);
     setGeneratedImages(prev => {
-      const next = [...prev];
-      next[index] = result.url;
-      return next;
+      const next = [...prev]; next[index] = result.url; return next;
     });
-    if (result.error) setFluxError(result.error);
-    else              setFluxError(null);
+    if (result.error) setGenError(result.error);
+    else              setGenError(null);
   };
 
-  // ── Card → before/after ─────────────────────────────────
-  const handleSelectStyle = (style: StyleRecommendation, imageUrl: string | null) => {
+  // ── Select / deselect ───────────────────────────────────
+  const handleSelectStyle = (
+    style:    StyleRecommendation,
+    imageUrl: string | null,
+  ) => {
     setSelectedStyle(style);
     setSelectedImageUrl(imageUrl);
   };
@@ -482,7 +536,7 @@ export default function StylesScreen() {
     setSelectedImageUrl(null);
   };
 
-  // ── Save → Firestore ────────────────────────────────────
+  // ── Save to Firestore ───────────────────────────────────
   const writeSavedStyle = async (
     style:    StyleRecommendation,
     imageUrl: string | null,
@@ -496,7 +550,7 @@ export default function StylesScreen() {
           whyItFits:         style.whyItFits,
           fluxPrompt:        style.fluxPrompt,
           generatedImageUrl: imageUrl ?? null,
-          originalSelfieRef: selfieUri ?? null,
+          originalSelfieRef: selfieUris[bestPhotoIndex] ?? null,
           savedAt:           serverTimestamp(),
         },
       });
@@ -511,10 +565,7 @@ export default function StylesScreen() {
     setSaving(true);
     const ok = await writeSavedStyle(selectedStyle, selectedImageUrl);
     setSaving(false);
-    if (!ok) {
-      setError('Could not save your style. Please try again.');
-      return;
-    }
+    if (!ok) { setError('Could not save. Please try again.'); return; }
     navigation.navigate('BookingFlow');
   };
 
@@ -527,7 +578,7 @@ export default function StylesScreen() {
   };
 
   const handleBookSaved   = () => navigation.navigate('BookingFlow');
-  const handleUpdateStyle = () => pickImage();
+  const handleUpdateStyle = () => resetAnalysis();
 
   const isLoading =
     loadingStage === 'haiku' ||
@@ -536,8 +587,10 @@ export default function StylesScreen() {
 
   const savedThumbUrl =
     user?.savedStyle?.generatedImageUrl ??
-    user?.savedStyle?.tryOnImageUrl ??
+    (user?.savedStyle as { tryOnImageUrl?: string } | undefined)?.tryOnImageUrl ??
     null;
+
+  const bestSelfieUri = selfieUris[bestPhotoIndex] ?? selfieUris.find(Boolean) ?? null;
 
   // ── Render ──────────────────────────────────────────────
   return (
@@ -546,51 +599,102 @@ export default function StylesScreen() {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-        {/* ── Selfie upload card (hidden when viewing before/after) ── */}
+        {/* ── Upload card ───────────────────────────── */}
         {!selectedStyle ? (
           <View style={styles.uploadCard}>
             <Text style={styles.uploadTitle}>MY STYLE PROFILE</Text>
             <Text style={styles.uploadSubtitle}>
-              Upload a selfie to see yourself in new styles
+              Upload 5 photos from different angles for the most accurate AI analysis.
+              For best results: stand 50cm from camera so your full head is visible.
             </Text>
 
-            <TouchableOpacity
-              style={styles.uploadCircle}
-              onPress={pickImage}
-              activeOpacity={0.85}
-            >
-              {selfieUri ? (
-                <Image source={{ uri: selfieUri }} style={styles.uploadImage} />
-              ) : (
-                <View style={styles.uploadEmpty}>
-                  <Ionicons
-                    name="person-circle-outline"
-                    size={80}
-                    color={theme.colors.textMuted}
-                  />
-                  <Text style={styles.uploadHint}>TAP TO UPLOAD</Text>
-                </View>
-              )}
-            </TouchableOpacity>
+            {/* 3 + 2 grid */}
+            <View style={styles.slotsGrid}>
+              <View style={styles.slotsRow}>
+                {[0, 1, 2].map(i => (
+                  <TouchableOpacity
+                    key={i}
+                    style={styles.slot}
+                    onPress={() => pickImageForSlot(i)}
+                    activeOpacity={0.8}
+                  >
+                    {selfieUris[i] ? (
+                      <Image source={{ uri: selfieUris[i]! }} style={styles.slotImage} />
+                    ) : (
+                      <View style={styles.slotEmpty}>
+                        <Ionicons name="add-circle-outline" size={28} color={theme.colors.textMuted} />
+                      </View>
+                    )}
+                    <Text style={[styles.slotLabel, selfieUris[i] ? styles.slotLabelDone : undefined]}>
+                      {ANGLES[i]}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <View style={[styles.slotsRow, styles.slotsRowCenter]}>
+                {[3, 4].map(i => (
+                  <TouchableOpacity
+                    key={i}
+                    style={styles.slot}
+                    onPress={() => pickImageForSlot(i)}
+                    activeOpacity={0.8}
+                  >
+                    {selfieUris[i] ? (
+                      <Image source={{ uri: selfieUris[i]! }} style={styles.slotImage} />
+                    ) : (
+                      <View style={styles.slotEmpty}>
+                        <Ionicons name="add-circle-outline" size={28} color={theme.colors.textMuted} />
+                      </View>
+                    )}
+                    <Text style={[styles.slotLabel, selfieUris[i] ? styles.slotLabelDone : undefined]}>
+                      {ANGLES[i]}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
 
-            {selfieUri && !isLoading ? (
+            {/* Progress dots */}
+            <View style={styles.progressRow}>
+              {Array(5).fill(null).map((_, i) => (
+                <View key={i} style={[styles.progressDot, selfieUris[i] ? styles.progressDotFilled : undefined]} />
+              ))}
+              <Text style={styles.progressText}>
+                {uploadedCount}/5{uploadedCount >= 5 ? ' — all 5 loaded!' : uploadedCount >= 3 ? ' — ready!' : ''}
+              </Text>
+            </View>
+
+            {uploadedCount < 3 ? (
+              <Text style={styles.uploadHintText}>Upload at least 3 photos to start</Text>
+            ) : null}
+
+            {/* Angle tips for unfilled slots */}
+            {uploadedCount < 5 ? (
+              <View style={styles.hintGrid}>
+                {ANGLE_HINTS.map((hint, i) =>
+                  selfieUris[i] ? null : (
+                    <Text key={i} style={styles.hintItem}>
+                      {ANGLES[i]}: {hint}
+                    </Text>
+                  )
+                )}
+              </View>
+            ) : null}
+
+            {canAnalyze && !isLoading ? (
               <TouchableOpacity
                 style={styles.analyzeBtn}
                 onPress={handleAnalyze}
                 activeOpacity={0.85}
               >
-                <Ionicons
-                  name="color-wand"
-                  size={18}
-                  color={theme.colors.textInverse}
-                />
+                <Ionicons name="color-wand" size={18} color={theme.colors.textInverse} />
                 <Text style={styles.analyzeBtnText}>FIND MY PERFECT STYLES</Text>
               </TouchableOpacity>
             ) : null}
           </View>
         ) : null}
 
-        {/* ── Saved style banner (below upload card) ─── */}
+        {/* ── Saved style banner ────────────────────── */}
         {user?.savedStyle && !selectedStyle ? (
           <View style={styles.savedBanner}>
             <Text style={styles.savedBannerLabel}>YOUR SAVED STYLE</Text>
@@ -609,16 +713,10 @@ export default function StylesScreen() {
               </View>
             </View>
             <View style={styles.savedBannerButtons}>
-              <TouchableOpacity
-                style={[styles.savedBtn, styles.savedBtnPrimary]}
-                onPress={handleBookSaved}
-              >
+              <TouchableOpacity style={[styles.savedBtn, styles.savedBtnPrimary]} onPress={handleBookSaved}>
                 <Text style={styles.savedBtnPrimaryText}>BOOK IT</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.savedBtn, styles.savedBtnOutline]}
-                onPress={handleUpdateStyle}
-              >
+              <TouchableOpacity style={[styles.savedBtn, styles.savedBtnOutline]} onPress={handleUpdateStyle}>
                 <Text style={styles.savedBtnOutlineText}>UPDATE STYLE</Text>
               </TouchableOpacity>
             </View>
@@ -631,10 +729,10 @@ export default function StylesScreen() {
             <ActivityIndicator size="large" color={theme.colors.gold} />
             <Text style={styles.loadingText}>
               {loadingStage === 'haiku'
-                ? 'Reading your face shape...'
+                ? `Analyzing your ${uploadedCount} photos...`
                 : loadingStage === 'sonnet'
                   ? 'Finding styles that suit you...'
-                  : 'Creating your 4 looks...'}
+                  : 'Creating your looks...'}
             </Text>
             {loadingStage === 'flux' ? (
               <Text style={styles.loadingSubtext}>This takes about 30 seconds</Text>
@@ -650,31 +748,27 @@ export default function StylesScreen() {
           </View>
         ) : null}
 
-        {/* ── Face analysis (above cards) ───────────── */}
+        {/* ── Face analysis card ────────────────────── */}
         {faceAnalysis && !selectedStyle && !isLoading ? (
           <View style={styles.faceCard}>
             <View style={styles.facePillRow}>
               <View style={styles.facePill}>
-                <Text style={styles.facePillText}>
-                  {faceAnalysis.faceShape.toUpperCase()}
-                </Text>
+                <Text style={styles.facePillText}>{faceAnalysis.faceShape.toUpperCase()}</Text>
               </View>
               <View style={styles.facePill}>
-                <Text style={styles.facePillText}>
-                  {faceAnalysis.hairTexture.toUpperCase()}
-                </Text>
+                <Text style={styles.facePillText}>{faceAnalysis.hairTexture.toUpperCase()}</Text>
               </View>
             </View>
             <Text style={styles.faceSummary}>{faceAnalysis.faceSummary}</Text>
           </View>
         ) : null}
 
-        {/* ── Style cards (horizontal scroll) ──────── */}
+        {/* ── Style cards ──────────────────────────── */}
         {recommendations.length > 0 &&
           (loadingStage === 'flux' || loadingStage === 'done') &&
           !selectedStyle ? (
           <>
-            <Text style={styles.sectionTitle}>YOUR 4 LOOKS</Text>
+            <Text style={styles.sectionTitle}>YOUR LOOKS</Text>
             <ScrollView
               horizontal
               nestedScrollEnabled
@@ -687,23 +781,13 @@ export default function StylesScreen() {
                   <View key={`${rec.name}-${i}`} style={styles.recCard}>
                     <View style={styles.recImageWrap}>
                       {imgUrl ? (
-                        <Image
-                          source={{ uri: imgUrl }}
-                          style={styles.recImage}
-                          resizeMode="cover"
-                        />
-                      ) : selfieUri ? (
+                        <Image source={{ uri: imgUrl }} style={styles.recImage} resizeMode="cover" />
+                      ) : bestSelfieUri ? (
                         <View style={styles.recFallbackWrap}>
-                          <Image
-                            source={{ uri: selfieUri }}
-                            style={styles.recImage}
-                            resizeMode="cover"
-                          />
+                          <Image source={{ uri: bestSelfieUri }} style={styles.recImage} resizeMode="cover" />
                           {loadingStage === 'flux' ? (
                             <View style={styles.recFallbackBadge}>
-                              <Text style={styles.recFallbackText}>
-                                Generating...
-                              </Text>
+                              <Text style={styles.recFallbackText}>Generating...</Text>
                             </View>
                           ) : (
                             <TouchableOpacity
@@ -711,9 +795,7 @@ export default function StylesScreen() {
                               onPress={() => retryImage(i)}
                               activeOpacity={0.7}
                             >
-                              <Text style={styles.recFallbackText}>
-                                Preview failed — tap to retry
-                              </Text>
+                              <Text style={styles.recFallbackText}>Preview failed — tap to retry</Text>
                             </TouchableOpacity>
                           )}
                         </View>
@@ -730,18 +812,12 @@ export default function StylesScreen() {
                     </View>
 
                     <View style={styles.recBody}>
-                      <Text style={styles.recName} numberOfLines={2}>
-                        {rec.name.toUpperCase()}
-                      </Text>
+                      <Text style={styles.recName} numberOfLines={2}>{rec.name.toUpperCase()}</Text>
                       <View style={styles.recYearBadge}>
                         <Text style={styles.recYearText}>{rec.year}</Text>
                       </View>
-                      <Text style={styles.recShortDesc} numberOfLines={3}>
-                        {rec.shortDescription}
-                      </Text>
-                      <Text style={styles.recWhyItFits} numberOfLines={2}>
-                        {rec.whyItFits}
-                      </Text>
+                      <Text style={styles.recShortDesc} numberOfLines={3}>{rec.shortDescription}</Text>
+                      <Text style={styles.recWhyItFits} numberOfLines={2}>{rec.whyItFits}</Text>
                       <TouchableOpacity
                         style={styles.selectBtn}
                         onPress={() => handleSelectStyle(rec, imgUrl ?? null)}
@@ -754,42 +830,26 @@ export default function StylesScreen() {
                 );
               })}
             </ScrollView>
-            <Text style={styles.scrollHint}>
-              Swipe left to see all your looks
-            </Text>
-            {fluxError ? (
-              <Text style={styles.fluxErrorText}>{fluxError}</Text>
-            ) : null}
+            <Text style={styles.scrollHint}>Swipe left to see all your looks</Text>
+            {genError ? <Text style={styles.genErrorText}>{genError}</Text> : null}
           </>
         ) : null}
 
-        {/* ── Before / After view ───────────────────── */}
+        {/* ── Before / After ───────────────────────── */}
         {selectedStyle ? (
           <View style={styles.beforeAfterWrap}>
             <Text style={styles.transformTitle}>YOUR TRANSFORMATION</Text>
 
             <Text style={styles.beforeLabel}>BEFORE</Text>
-            {selfieUri ? (
-              <Image
-                source={{ uri: selfieUri }}
-                style={styles.beforeImage}
-                resizeMode="cover"
-              />
+            {bestSelfieUri ? (
+              <Image source={{ uri: bestSelfieUri }} style={styles.beforeImage} resizeMode="cover" />
             ) : null}
 
             <Text style={styles.afterLabel}>AFTER</Text>
             {selectedImageUrl ? (
-              <Image
-                source={{ uri: selectedImageUrl }}
-                style={styles.afterImage}
-                resizeMode="cover"
-              />
-            ) : selfieUri ? (
-              <Image
-                source={{ uri: selfieUri }}
-                style={styles.afterImage}
-                resizeMode="cover"
-              />
+              <Image source={{ uri: selectedImageUrl }} style={styles.afterImage} resizeMode="cover" />
+            ) : bestSelfieUri ? (
+              <Image source={{ uri: bestSelfieUri }} style={styles.afterImage} resizeMode="cover" />
             ) : null}
 
             <Text style={styles.afterName}>{selectedStyle.name.toUpperCase()}</Text>
@@ -813,11 +873,7 @@ export default function StylesScreen() {
               disabled={saving}
               activeOpacity={0.85}
             >
-              <Ionicons
-                name="chatbubble-outline"
-                size={16}
-                color={theme.colors.gold}
-              />
+              <Ionicons name="chatbubble-outline" size={16} color={theme.colors.gold} />
               <Text style={styles.chatBtnText}>CHAT ABOUT THIS STYLE</Text>
             </TouchableOpacity>
 
@@ -836,473 +892,98 @@ export default function StylesScreen() {
 }
 
 // ── Styles ─────────────────────────────────────────────────
+const SLOT_SIZE = Math.floor((SCREEN_WIDTH - 32 - 16) / 3);
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
-  scroll: {
-    padding:       theme.spacing.md,
-    paddingTop:    theme.spacing.xxl,
-    paddingBottom: theme.spacing.xxl,
-    gap:           theme.spacing.md,
-  },
+  container:       { flex: 1, backgroundColor: theme.colors.background },
+  scroll:          { padding: theme.spacing.md, paddingTop: theme.spacing.xxl, paddingBottom: theme.spacing.xxl, gap: theme.spacing.md },
 
-  // ── Saved banner ────────────────────────────────────────
-  savedBanner: {
-    backgroundColor: theme.colors.goldMuted,
-    borderRadius:    theme.radius.md,
-    borderWidth:     1,
-    borderColor:     theme.colors.gold,
-    padding:         theme.spacing.md,
-    gap:             theme.spacing.sm,
-  },
-  savedBannerLabel: {
-    fontFamily:    theme.fonts.heading,
-    fontSize:      12,
-    color:         theme.colors.gold,
-    letterSpacing: 3,
-  },
-  savedBannerRow: {
-    flexDirection: 'row',
-    alignItems:    'center',
-    gap:           theme.spacing.sm,
-  },
-  savedThumb: {
-    width:        80,
-    height:       80,
-    borderRadius: 8,
-    borderWidth:  1.5,
-    borderColor:  theme.colors.gold,
-  },
-  savedThumbPlaceholder: {
-    backgroundColor: theme.colors.card,
-    alignItems:      'center',
-    justifyContent:  'center',
-  },
-  savedBannerTextWrap: {
-    flex: 1,
-  },
-  savedBannerName: {
-    fontFamily:    theme.fonts.heading,
-    fontSize:      18,
-    color:         theme.colors.textPrimary,
-    letterSpacing: 2,
-  },
-  savedBannerButtons: {
-    flexDirection: 'row',
-    gap:           theme.spacing.sm,
-  },
-  savedBtn: {
-    flex:           1,
-    height:         40,
-    borderRadius:   8,
-    alignItems:     'center',
-    justifyContent: 'center',
-  },
-  savedBtnPrimary: {
-    backgroundColor: theme.colors.gold,
-  },
-  savedBtnPrimaryText: {
-    fontFamily:    theme.fonts.heading,
-    fontSize:      13,
-    color:         theme.colors.textInverse,
-    letterSpacing: 2,
-  },
-  savedBtnOutline: {
-    borderWidth: 1,
-    borderColor: theme.colors.gold,
-  },
-  savedBtnOutlineText: {
-    fontFamily:    theme.fonts.heading,
-    fontSize:      13,
-    color:         theme.colors.gold,
-    letterSpacing: 2,
-  },
+  savedBanner:        { backgroundColor: theme.colors.goldMuted, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.colors.gold, padding: theme.spacing.md, gap: theme.spacing.sm },
+  savedBannerLabel:   { fontFamily: theme.fonts.heading, fontSize: 12, color: theme.colors.gold, letterSpacing: 3 },
+  savedBannerRow:     { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm },
+  savedThumb:         { width: 80, height: 80, borderRadius: 8, borderWidth: 1.5, borderColor: theme.colors.gold },
+  savedThumbPlaceholder: { backgroundColor: theme.colors.card, alignItems: 'center', justifyContent: 'center' },
+  savedBannerTextWrap: { flex: 1 },
+  savedBannerName:    { fontFamily: theme.fonts.heading, fontSize: 18, color: theme.colors.textPrimary, letterSpacing: 2 },
+  savedBannerButtons: { flexDirection: 'row', gap: theme.spacing.sm },
+  savedBtn:           { flex: 1, height: 40, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  savedBtnPrimary:    { backgroundColor: theme.colors.gold },
+  savedBtnPrimaryText: { fontFamily: theme.fonts.heading, fontSize: 13, color: theme.colors.textInverse, letterSpacing: 2 },
+  savedBtnOutline:    { borderWidth: 1, borderColor: theme.colors.gold },
+  savedBtnOutlineText: { fontFamily: theme.fonts.heading, fontSize: 13, color: theme.colors.gold, letterSpacing: 2 },
 
-  // ── Upload card ─────────────────────────────────────────
-  uploadCard: {
-    backgroundColor: theme.colors.surface,
-    borderRadius:    12,
-    borderWidth:     1,
-    borderColor:     theme.colors.border,
-    padding:         theme.spacing.lg,
-    gap:             theme.spacing.md,
-    alignItems:      'center',
-  },
-  uploadTitle: {
-    fontFamily:    theme.fonts.heading,
-    fontSize:      theme.fontSizes.lg,
-    color:         theme.colors.gold,
-    letterSpacing: 4,
-    alignSelf:     'flex-start',
-  },
-  uploadSubtitle: {
-    fontFamily: theme.fonts.body,
-    fontSize:   13,
-    color:      theme.colors.textSecondary,
-    alignSelf:  'flex-start',
-    marginTop:  -theme.spacing.sm,
-  },
-  uploadCircle: {
-    width:           180,
-    height:          180,
-    borderRadius:    90,
-    backgroundColor: theme.colors.card,
-    borderWidth:     2,
-    borderColor:     theme.colors.gold,
-    alignItems:      'center',
-    justifyContent:  'center',
-    overflow:        'hidden',
-  },
-  uploadEmpty: {
-    alignItems:     'center',
-    justifyContent: 'center',
-    gap:            theme.spacing.xs,
-  },
-  uploadImage: {
-    width:        180,
-    height:       180,
-    borderRadius: 90,
-  },
-  uploadHint: {
-    fontFamily:    theme.fonts.medium,
-    fontSize:      11,
-    color:         theme.colors.textMuted,
-    letterSpacing: 2,
-  },
-  analyzeBtn: {
-    width:           '100%',
-    height:          52,
-    flexDirection:   'row',
-    alignItems:      'center',
-    justifyContent:  'center',
-    gap:             theme.spacing.sm,
-    backgroundColor: theme.colors.gold,
-    borderRadius:    10,
-    ...theme.shadows.gold,
-  },
-  analyzeBtnText: {
-    fontFamily:    theme.fonts.heading,
-    fontSize:      16,
-    color:         theme.colors.textInverse,
-    letterSpacing: 3,
-  },
+  uploadCard:     { backgroundColor: theme.colors.surface, borderRadius: 12, borderWidth: 1, borderColor: theme.colors.border, padding: theme.spacing.lg, gap: theme.spacing.md },
+  uploadTitle:    { fontFamily: theme.fonts.heading, fontSize: theme.fontSizes.lg, color: theme.colors.gold, letterSpacing: 4 },
+  uploadSubtitle: { fontFamily: theme.fonts.body, fontSize: 13, color: theme.colors.textSecondary, marginTop: -theme.spacing.sm },
 
-  // ── Loading card ────────────────────────────────────────
-  loadingCard: {
-    alignItems:      'center',
-    backgroundColor: theme.colors.surface,
-    borderRadius:    12,
-    borderWidth:     1,
-    borderColor:     theme.colors.border,
-    paddingVertical: theme.spacing.xl,
-    gap:             theme.spacing.sm,
-  },
-  loadingText: {
-    fontFamily:    theme.fonts.body,
-    fontSize:      14,
-    color:         theme.colors.textPrimary,
-    letterSpacing: 1,
-  },
-  loadingSubtext: {
-    fontFamily: theme.fonts.body,
-    fontSize:   12,
-    color:      theme.colors.textMuted,
-  },
+  slotsGrid:      { gap: theme.spacing.sm },
+  slotsRow:       { flexDirection: 'row', gap: 8 },
+  slotsRowCenter: { justifyContent: 'center' },
+  slot:           { width: SLOT_SIZE, height: SLOT_SIZE, borderRadius: 10, backgroundColor: theme.colors.card, borderWidth: 1, borderColor: theme.colors.border, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  slotImage:      { width: SLOT_SIZE, height: SLOT_SIZE },
+  slotEmpty:      { alignItems: 'center', justifyContent: 'center', flex: 1 },
+  slotLabel:      { position: 'absolute', bottom: 4, fontFamily: theme.fonts.heading, fontSize: 9, color: theme.colors.textMuted, letterSpacing: 1, textAlign: 'center', backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 4, paddingVertical: 1, borderRadius: 3 },
+  slotLabelDone:  { color: theme.colors.gold },
 
-  // ── Error ───────────────────────────────────────────────
-  errorCard: {
-    flexDirection:   'row',
-    alignItems:      'center',
-    gap:             theme.spacing.sm,
-    backgroundColor: theme.colors.surface,
-    borderRadius:    theme.radius.md,
-    borderWidth:     1,
-    borderColor:     theme.colors.error,
-    padding:         theme.spacing.md,
-  },
-  errorText: {
-    flex:       1,
-    fontFamily: theme.fonts.body,
-    fontSize:   13,
-    color:      theme.colors.error,
-  },
+  progressRow:        { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
+  progressDot:        { width: 10, height: 10, borderRadius: 5, backgroundColor: theme.colors.border, borderWidth: 1, borderColor: theme.colors.textMuted },
+  progressDotFilled:  { backgroundColor: theme.colors.gold, borderColor: theme.colors.gold },
+  progressText:       { fontFamily: theme.fonts.body, fontSize: 12, color: theme.colors.textSecondary },
+  uploadHintText:     { fontFamily: theme.fonts.body, fontSize: 12, color: theme.colors.textMuted, textAlign: 'center' },
 
-  // ── Face analysis card ──────────────────────────────────
-  faceCard: {
-    backgroundColor: theme.colors.surface,
-    borderRadius:    12,
-    borderLeftWidth: 3,
-    borderLeftColor: theme.colors.gold,
-    padding:         theme.spacing.md,
-    gap:             theme.spacing.sm,
-  },
-  facePillRow: {
-    flexDirection: 'row',
-    gap:           theme.spacing.sm,
-    flexWrap:      'wrap',
-  },
-  facePill: {
-    borderWidth:       1,
-    borderColor:       theme.colors.gold,
-    borderRadius:      20,
-    paddingVertical:   3,
-    paddingHorizontal: 10,
-  },
-  facePillText: {
-    fontFamily:    theme.fonts.heading,
-    fontSize:      11,
-    color:         theme.colors.gold,
-    letterSpacing: 2,
-  },
-  faceSummary: {
-    fontFamily: theme.fonts.body,
-    fontSize:   15,
-    color:      theme.colors.textPrimary,
-    lineHeight: 22,
-  },
+  hintGrid:   { gap: 2 },
+  hintItem:   { fontFamily: theme.fonts.body, fontSize: 11, color: theme.colors.textMuted },
 
-  // ── Section title ──────────────────────────────────────
-  sectionTitle: {
-    fontFamily:    theme.fonts.heading,
-    fontSize:      14,
-    color:         theme.colors.textSecondary,
-    letterSpacing: 4,
-    marginLeft:    theme.spacing.xs,
-  },
+  analyzeBtn:     { height: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: theme.spacing.sm, backgroundColor: theme.colors.gold, borderRadius: 10, ...theme.shadows.gold },
+  analyzeBtnText: { fontFamily: theme.fonts.heading, fontSize: 16, color: theme.colors.textInverse, letterSpacing: 3 },
 
-  // ── Horizontal recommendation cards ────────────────────
-  recScroll: {
-    paddingHorizontal: 16,
-    paddingVertical:   8,
-    gap:               14,
-    flexDirection:     'row',
-  },
-  recCard: {
-    width:           270,
-    backgroundColor: theme.colors.card,
-    borderRadius:    14,
-    borderWidth:     1,
-    borderColor:     theme.colors.border,
-    overflow:        'hidden',
-  },
-  recImageWrap: {
-    width:    '100%',
-    height:   200,
-    position: 'relative',
-  },
-  recImage: {
-    width:                '100%',
-    height:               200,
-    borderTopLeftRadius:  14,
-    borderTopRightRadius: 14,
-  },
-  recImageFallback: {
-    width:                '100%',
-    height:               200,
-    backgroundColor:      theme.colors.background,
-    alignItems:           'center',
-    justifyContent:       'center',
-    borderTopLeftRadius:  14,
-    borderTopRightRadius: 14,
-  },
-  recFallbackWrap: {
-    width:    '100%',
-    height:   200,
-    position: 'relative',
-  },
-  recFallbackBadge: {
-    position:          'absolute',
-    top:               theme.spacing.sm,
-    left:              theme.spacing.sm,
-    right:             theme.spacing.sm,
-    backgroundColor:   theme.colors.overlay,
-    paddingVertical:   4,
-    paddingHorizontal: 8,
-    borderRadius:      6,
-    alignItems:        'center',
-  },
-  recFallbackText: {
-    fontFamily: theme.fonts.body,
-    fontSize:   11,
-    color:      theme.colors.textSecondary,
-  },
-  recOverlay: {
-    position:          'absolute',
-    bottom:            0,
-    left:              0,
-    right:             0,
-    backgroundColor:   theme.colors.overlay,
-    paddingVertical:   8,
-    paddingHorizontal: 10,
-  },
-  recOverlayText: {
-    fontFamily: theme.fonts.heading,
-    fontSize:   14,
-    color:      theme.colors.gold,
-    flexWrap:   'wrap',
-  },
-  recBody: {
-    padding: 14,
-    gap:     theme.spacing.xs,
-  },
-  recName: {
-    fontFamily:    theme.fonts.heading,
-    fontSize:      17,
-    color:         theme.colors.textPrimary,
-    letterSpacing: 1,
-  },
-  recYearBadge: {
-    alignSelf:         'flex-start',
-    borderWidth:       1,
-    borderColor:       theme.colors.gold,
-    borderRadius:      20,
-    paddingVertical:   2,
-    paddingHorizontal: 10,
-  },
-  recYearText: {
-    fontFamily: theme.fonts.heading,
-    fontSize:   12,
-    color:      theme.colors.gold,
-  },
-  recShortDesc: {
-    fontFamily: theme.fonts.body,
-    fontSize:   12,
-    color:      theme.colors.textSecondary,
-    lineHeight: 18,
-    marginTop:  6,
-  },
-  recWhyItFits: {
-    fontFamily: theme.fonts.body,
-    fontSize:   11,
-    color:      theme.colors.textMuted,
-    fontStyle:  'italic',
-    marginTop:  4,
-  },
-  selectBtn: {
-    height:          44,
-    backgroundColor: theme.colors.gold,
-    borderRadius:    8,
-    alignItems:      'center',
-    justifyContent:  'center',
-    marginTop:       12,
-  },
-  selectBtnText: {
-    fontFamily:    theme.fonts.heading,
-    fontSize:      14,
-    color:         theme.colors.textInverse,
-    letterSpacing: 2,
-  },
-  scrollHint: {
-    fontFamily:    theme.fonts.body,
-    fontSize:      12,
-    color:         '#555',
-    textAlign:     'center',
-    marginTop:     8,
-    letterSpacing: 1,
-  },
-  fluxErrorText: {
-    fontFamily: theme.fonts.body,
-    fontSize:   11,
-    color:      '#E53935',
-    textAlign:  'center',
-    marginTop:  6,
-    paddingHorizontal: theme.spacing.md,
-  },
+  loadingCard:    { alignItems: 'center', backgroundColor: theme.colors.surface, borderRadius: 12, borderWidth: 1, borderColor: theme.colors.border, paddingVertical: theme.spacing.xl, gap: theme.spacing.sm },
+  loadingText:    { fontFamily: theme.fonts.body, fontSize: 14, color: theme.colors.textPrimary, letterSpacing: 1 },
+  loadingSubtext: { fontFamily: theme.fonts.body, fontSize: 12, color: theme.colors.textMuted },
 
-  // ── Before / After ─────────────────────────────────────
-  beforeAfterWrap: {
-    paddingHorizontal: theme.spacing.xs,
-    gap:               theme.spacing.sm,
-  },
-  transformTitle: {
-    fontFamily:    theme.fonts.heading,
-    fontSize:      22,
-    color:         theme.colors.gold,
-    letterSpacing: 4,
-    textAlign:     'center',
-    marginBottom:  theme.spacing.md,
-  },
-  beforeLabel: {
-    fontFamily:    theme.fonts.heading,
-    fontSize:      13,
-    color:         theme.colors.textSecondary,
-    letterSpacing: 3,
-    marginBottom:  6,
-  },
-  beforeImage: {
-    width:        '100%',
-    height:       320,
-    borderRadius: 12,
-  },
-  afterLabel: {
-    fontFamily:    theme.fonts.heading,
-    fontSize:      13,
-    color:         theme.colors.gold,
-    letterSpacing: 3,
-    marginTop:     16,
-    marginBottom:  6,
-  },
-  afterImage: {
-    width:        '100%',
-    height:       320,
-    borderRadius: 12,
-    borderWidth:  2,
-    borderColor:  theme.colors.gold,
-  },
-  afterName: {
-    fontFamily:    theme.fonts.heading,
-    fontSize:      18,
-    color:         theme.colors.textPrimary,
-    letterSpacing: 2,
-    textAlign:     'center',
-    marginTop:     theme.spacing.sm,
-  },
-  saveBookBtn: {
-    height:          52,
-    backgroundColor: theme.colors.gold,
-    borderRadius:    10,
-    alignItems:      'center',
-    justifyContent:  'center',
-    marginTop:       theme.spacing.md,
-    ...theme.shadows.gold,
-  },
-  saveBookBtnText: {
-    fontFamily:    theme.fonts.heading,
-    fontSize:      15,
-    color:         theme.colors.textInverse,
-    letterSpacing: 2,
-  },
-  chatBtn: {
-    height:         48,
-    borderWidth:    1,
-    borderColor:    theme.colors.gold,
-    borderRadius:   10,
-    flexDirection:  'row',
-    alignItems:     'center',
-    justifyContent: 'center',
-    gap:            theme.spacing.sm,
-  },
-  chatBtnText: {
-    fontFamily:    theme.fonts.heading,
-    fontSize:      14,
-    color:         theme.colors.gold,
-    letterSpacing: 2,
-  },
-  seeOtherBtn: {
-    height:         44,
-    borderWidth:    1,
-    borderColor:    '#444',
-    borderRadius:   8,
-    alignItems:     'center',
-    justifyContent: 'center',
-    marginTop:      8,
-  },
-  seeOtherBtnText: {
-    fontFamily:    theme.fonts.heading,
-    fontSize:      13,
-    color:         '#888',
-    letterSpacing: 2,
-  },
+  errorCard: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm, backgroundColor: theme.colors.surface, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.colors.error, padding: theme.spacing.md },
+  errorText: { flex: 1, fontFamily: theme.fonts.body, fontSize: 13, color: theme.colors.error },
+
+  faceCard:    { backgroundColor: theme.colors.surface, borderRadius: 12, borderLeftWidth: 3, borderLeftColor: theme.colors.gold, padding: theme.spacing.md, gap: theme.spacing.sm },
+  facePillRow: { flexDirection: 'row', gap: theme.spacing.sm, flexWrap: 'wrap' },
+  facePill:    { borderWidth: 1, borderColor: theme.colors.gold, borderRadius: 20, paddingVertical: 3, paddingHorizontal: 10 },
+  facePillText: { fontFamily: theme.fonts.heading, fontSize: 11, color: theme.colors.gold, letterSpacing: 2 },
+  faceSummary: { fontFamily: theme.fonts.body, fontSize: 15, color: theme.colors.textPrimary, lineHeight: 22 },
+
+  sectionTitle: { fontFamily: theme.fonts.heading, fontSize: 14, color: theme.colors.textSecondary, letterSpacing: 4, marginLeft: theme.spacing.xs },
+
+  recScroll: { paddingHorizontal: 16, paddingVertical: 8, gap: 14, flexDirection: 'row' },
+  recCard:   { width: 270, backgroundColor: theme.colors.card, borderRadius: 14, borderWidth: 1, borderColor: theme.colors.border, overflow: 'hidden' },
+  recImageWrap:    { width: '100%', height: 200, position: 'relative' },
+  recImage:        { width: '100%', height: 200, borderTopLeftRadius: 14, borderTopRightRadius: 14 },
+  recImageFallback: { width: '100%', height: 200, backgroundColor: theme.colors.background, alignItems: 'center', justifyContent: 'center', borderTopLeftRadius: 14, borderTopRightRadius: 14 },
+  recFallbackWrap: { width: '100%', height: 200, position: 'relative' },
+  recFallbackBadge: { position: 'absolute', top: theme.spacing.sm, left: theme.spacing.sm, right: theme.spacing.sm, backgroundColor: theme.colors.overlay, paddingVertical: 4, paddingHorizontal: 8, borderRadius: 6, alignItems: 'center' },
+  recFallbackText: { fontFamily: theme.fonts.body, fontSize: 11, color: theme.colors.textSecondary },
+  recOverlay:      { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: theme.colors.overlay, paddingVertical: 8, paddingHorizontal: 10 },
+  recOverlayText:  { fontFamily: theme.fonts.heading, fontSize: 14, color: theme.colors.gold, flexWrap: 'wrap' },
+  recBody:         { padding: 14, gap: theme.spacing.xs },
+  recName:         { fontFamily: theme.fonts.heading, fontSize: 17, color: theme.colors.textPrimary, letterSpacing: 1 },
+  recYearBadge:    { alignSelf: 'flex-start', borderWidth: 1, borderColor: theme.colors.gold, borderRadius: 20, paddingVertical: 2, paddingHorizontal: 10 },
+  recYearText:     { fontFamily: theme.fonts.heading, fontSize: 12, color: theme.colors.gold },
+  recShortDesc:    { fontFamily: theme.fonts.body, fontSize: 12, color: theme.colors.textSecondary, lineHeight: 18, marginTop: 6 },
+  recWhyItFits:    { fontFamily: theme.fonts.body, fontSize: 11, color: theme.colors.textMuted, fontStyle: 'italic', marginTop: 4 },
+  selectBtn:       { height: 44, backgroundColor: theme.colors.gold, borderRadius: 8, alignItems: 'center', justifyContent: 'center', marginTop: 12 },
+  selectBtnText:   { fontFamily: theme.fonts.heading, fontSize: 14, color: theme.colors.textInverse, letterSpacing: 2 },
+  scrollHint:      { fontFamily: theme.fonts.body, fontSize: 12, color: '#555', textAlign: 'center', marginTop: 8, letterSpacing: 1 },
+  genErrorText:    { fontFamily: theme.fonts.body, fontSize: 11, color: '#E53935', textAlign: 'center', marginTop: 6, paddingHorizontal: theme.spacing.md },
+
+  beforeAfterWrap: { paddingHorizontal: theme.spacing.xs, gap: theme.spacing.sm },
+  transformTitle:  { fontFamily: theme.fonts.heading, fontSize: 22, color: theme.colors.gold, letterSpacing: 4, textAlign: 'center', marginBottom: theme.spacing.md },
+  beforeLabel:     { fontFamily: theme.fonts.heading, fontSize: 13, color: theme.colors.textSecondary, letterSpacing: 3, marginBottom: 6 },
+  beforeImage:     { width: '100%', height: 320, borderRadius: 12 },
+  afterLabel:      { fontFamily: theme.fonts.heading, fontSize: 13, color: theme.colors.gold, letterSpacing: 3, marginTop: 16, marginBottom: 6 },
+  afterImage:      { width: '100%', height: 320, borderRadius: 12, borderWidth: 2, borderColor: theme.colors.gold },
+  afterName:       { fontFamily: theme.fonts.heading, fontSize: 18, color: theme.colors.textPrimary, letterSpacing: 2, textAlign: 'center', marginTop: theme.spacing.sm },
+  saveBookBtn:     { height: 52, backgroundColor: theme.colors.gold, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginTop: theme.spacing.md, ...theme.shadows.gold },
+  saveBookBtnText: { fontFamily: theme.fonts.heading, fontSize: 15, color: theme.colors.textInverse, letterSpacing: 2 },
+  chatBtn:         { height: 48, borderWidth: 1, borderColor: theme.colors.gold, borderRadius: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: theme.spacing.sm },
+  chatBtnText:     { fontFamily: theme.fonts.heading, fontSize: 14, color: theme.colors.gold, letterSpacing: 2 },
+  seeOtherBtn:     { height: 44, borderWidth: 1, borderColor: '#444', borderRadius: 8, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
+  seeOtherBtnText: { fontFamily: theme.fonts.heading, fontSize: 13, color: '#888', letterSpacing: 2 },
 });

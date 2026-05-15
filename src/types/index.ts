@@ -68,6 +68,12 @@ export interface HaircutStyle {
   referenceImageUrl?: string;
   tryOnImageUrl?:     string;
 
+  // ── LightX / new FLUX flow ──────────────────────────────
+  // generatedImageUrl: the AI try-on output (replaces tryOnImageUrl in new saves)
+  generatedImageUrl?: string;
+  // selfieUrl: the client's original selfie used as the "before" image
+  selfieUrl?:         string;
+
   // Legacy fields kept optional for compatibility with the original schema.
   id?:           string;
   photoURL?:     string | null;
