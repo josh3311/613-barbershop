@@ -1,31 +1,30 @@
 import React from 'react';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createBottomTabNavigator }   from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { theme } from '../theme';
+import { theme }    from '../theme';
 
-import DashboardScreen  from '../screens/barber/DashboardScreen';
-import ScheduleScreen   from '../screens/barber/BarberScheduleScreen';
-import ProfileScreen    from '../screens/barber/BarberProfileScreen';
-import ChatsScreen      from '../screens/barber/BarberChatsScreen';
-import ChatScreen       from '../screens/chat/ChatScreen';
-import CutGuideScreen   from '../screens/barber/CutGuideScreen';
+import DashboardScreen      from '../screens/barber/DashboardScreen';
+import ScheduleScreen       from '../screens/barber/BarberScheduleScreen';
+import ProfileScreen        from '../screens/barber/BarberProfileScreen';
+import ChatsScreen          from '../screens/barber/BarberChatsScreen';
+import ChatScreen           from '../screens/chat/ChatScreen';
+import CutGuideScreen       from '../screens/barber/CutGuideScreen';
+import StyleDocumentScreen  from '../screens/barber/StyleDocumentScreen';
 
-// ── Tab icon map ──────────────────────────────────────────────
 const TAB_ICONS: Record<string, {
   active:   keyof typeof Ionicons.glyphMap;
   inactive: keyof typeof Ionicons.glyphMap;
 }> = {
-  Dashboard: { active: 'grid',            inactive: 'grid-outline'            },
-  Schedule:  { active: 'calendar',        inactive: 'calendar-outline'        },
-  Messages:  { active: 'chatbubbles',     inactive: 'chatbubbles-outline'     },
-  Profile:   { active: 'person',          inactive: 'person-outline'          },
+  Dashboard: { active: 'grid',        inactive: 'grid-outline'        },
+  Schedule:  { active: 'calendar',    inactive: 'calendar-outline'    },
+  Messages:  { active: 'chatbubbles', inactive: 'chatbubbles-outline' },
+  Profile:   { active: 'person',      inactive: 'person-outline'      },
 };
 
 const Tab   = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
-// ── Bottom tabs ───────────────────────────────────────────────
 function BarberTabs() {
   return (
     <Tab.Navigator
@@ -48,6 +47,7 @@ function BarberTabs() {
         },
         tabBarIcon: ({ focused, color, size }) => {
           const icon = TAB_ICONS[route.name];
+          if (!icon) return null;
           return (
             <Ionicons
               name={focused ? icon.active : icon.inactive}
@@ -66,14 +66,13 @@ function BarberTabs() {
   );
 }
 
-// ── Root stack (tabs + full-screen chat) ──────────────────────
 export default function BarberNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="BarberTabs"  component={BarberTabs}  />
-      {/* Full-screen chat pushed on top of the tabs */}
-      <Stack.Screen name="BarberChat"  component={ChatScreen}  />
-      <Stack.Screen name="CutGuide"    component={CutGuideScreen} />
+      <Stack.Screen name="BarberTabs"     component={BarberTabs}         />
+      <Stack.Screen name="BarberChat"     component={ChatScreen}         />
+      <Stack.Screen name="CutGuide"       component={CutGuideScreen}     />
+      <Stack.Screen name="StyleDocument"  component={StyleDocumentScreen}/>
     </Stack.Navigator>
   );
 }

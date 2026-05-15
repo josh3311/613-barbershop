@@ -1,7 +1,5 @@
 // ─── User ────────────────────────────────────────────────
-export type UserRole = 'client' | 'barber' | 'admin';
-
-// Barber approval lifecycle. Missing field is treated as 'pending'.
+export type UserRole   = 'client' | 'barber' | 'admin';
 export type UserStatus = 'pending' | 'active' | 'declined';
 
 export interface User {
@@ -12,26 +10,20 @@ export interface User {
   role:          UserRole;
   phone:         string | null;
   createdAt:     Date;
-
-  // Approval status (barbers only — clients/admins are implicitly active)
   status?:       UserStatus;
-
-  // Expo push notification token (set on login from notifications service)
   expoPushToken?: string;
 
   // Client-only
-  loyaltyStamps?: number;
+  loyaltyStamps?:     number;
   preferredBarberId?: string;
-  birthday?:     string; // ISO format: "MM-DD" (e.g. "05-13")
+  birthday?:          string;
   savedStyle?: {
     name:               string;
     description:        string;
-    // ── Current shape (set by StylesScreen v2 — FLUX face-preserved flow) ──
     whyItFits?:         string;
     fluxPrompt?:        string;
     generatedImageUrl?: string;
     originalSelfieRef?: string;
-    // ── Legacy fields (older saves from the Unsplash/two-image flow) ──
     prompt?:            string;
     imageQuery?:        string;
     referenceImageUrl?: string;
@@ -40,12 +32,14 @@ export interface User {
   };
 
   // Barber-only
-  bio?:          string;
-  specialties?:  string[];
-  isAvailable?:  boolean;
+  bio?:           string;
+  specialties?:   string[];
+  isAvailable?:   boolean;
+  averageRating?: number;   // recalculated on every new review
+  reviewCount?:   number;
 }
 
-// ─── Service (haircut menu item) ─────────────────────────
+// ─── Service ─────────────────────────────────────────────
 export interface Service {
   id:          string;
   name:        string;
@@ -56,10 +50,7 @@ export interface Service {
   isActive:    boolean;
 }
 
-// ─── Style (AI feature — client's requested look) ────────
-// Attached to a booking via Booking.requestedStyle, and mirrored on
-// User.savedStyle (see below). All fields except `name` are optional
-// because Claude/Replicate-attached styles only carry a subset.
+// ─── HaircutStyle ────────────────────────────────────────
 export interface HaircutStyle {
   name:               string;
   description?:       string | null;
@@ -67,18 +58,12 @@ export interface HaircutStyle {
   imageQuery?:        string;
   referenceImageUrl?: string;
   tryOnImageUrl?:     string;
-
-  // ── LightX / new FLUX flow ──────────────────────────────
-  // generatedImageUrl: the AI try-on output (replaces tryOnImageUrl in new saves)
-  generatedImageUrl?: string;
-  // selfieUrl: the client's original selfie used as the "before" image
-  selfieUrl?:         string;
-
-  // Legacy fields kept optional for compatibility with the original schema.
-  id?:           string;
-  photoURL?:     string | null;
-  barberNotes?:  string | null;
-  aiGenerated?:  boolean;
+  generatedImageUrl?: string;   // LightX / new FLUX try-on output
+  selfieUrl?:         string;   // client's original selfie
+  id?:                string;
+  photoURL?:          string | null;
+  barberNotes?:       string | null;
+  aiGenerated?:       boolean;
 }
 
 // ─── Booking ─────────────────────────────────────────────
@@ -102,19 +87,46 @@ export interface Booking {
   scheduledAt:    Date;
   createdAt:      Date;
   notes:          string | null;
-
-  // AI feature — what the client wants
   requestedStyle: HaircutStyle | null;
-
-  // Rating (filled after completion)
   rating:         number | null;
   review:         string | null;
-
-  // Birthday free haircut applied at booking time
   birthdayDiscount?: boolean;
+  // Set by StyleDocumentScreen when barber documents the finished style
+  styleCardId?:   string | null;
 }
 
-// ─── Message (real-time chat) ────────────────────────────
+// ─── Style Card (post-session documentation) ─────────────
+export interface StyleCard {
+  id:          string;
+  bookingId:   string;
+  clientId:    string;
+  clientName:  string;
+  barberId:    string;
+  barberName:  string;
+  serviceName: string;
+  photoURL:    string;       // Firebase Storage URL of finished style photo
+  aiGuide:     string;       // Claude's plain-English reproduction guide
+  barberNotes: string | null;
+  createdAt:   Date;
+}
+
+// ─── AI Chat ─────────────────────────────────────────────
+export interface AiChatMessage {
+  role:      'user' | 'assistant';
+  content:   string;
+  createdAt: string; // ISO string for Firestore compatibility
+}
+
+export interface AiChatSession {
+  id:        string;
+  userId:    string;
+  title:     string;        // first user message, truncated to 40 chars
+  messages:  AiChatMessage[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ─── Message (barber ↔ client chat) ──────────────────────
 export interface Message {
   id:         string;
   bookingId:  string;
@@ -144,7 +156,7 @@ export interface AppNotification {
   createdAt:  Date;
 }
 
-// ─── Service layer wrapper ────────────────────────────────
+// ─── Service layer ────────────────────────────────────────
 export interface FirestoreResult<T> {
   data:  T | null;
   error: string | null;

@@ -10,7 +10,7 @@ import { theme } from '../../theme';
 
 interface Barber {
   id:          string;
-  userId:      string | null; // barber's Firebase Auth UID
+  userId:      string | null;
   displayName: string;
   bio:         string;
   specialties: string[];
@@ -33,13 +33,19 @@ export default function BarberSelectionScreen({ navigation, route }: Props) {
 
   useEffect(() => {
     const fetchBarbers = async () => {
-      const q    = query(
-        collection(db, 'barbers'),
-        where('isAvailable', '==', true),
-      );
-      const snap = await getDocs(q);
-      setBarbers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Barber)));
-      setLoading(false);
+      try {
+        const q    = query(
+          collection(db, 'barbers'),
+          where('isAvailable', '==', true),
+        );
+        const snap = await getDocs(q);
+        setBarbers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Barber)));
+      } catch (e) {
+        console.error('Failed to load barbers:', e);
+      } finally {
+        // Always stop loading — even if query fails
+        setLoading(false);
+      }
     };
     fetchBarbers();
   }, []);
@@ -85,6 +91,12 @@ export default function BarberSelectionScreen({ navigation, route }: Props) {
           size="large"
           style={styles.loader}
         />
+      ) : barbers.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Ionicons name="person-outline" size={48} color={theme.colors.textMuted} />
+          <Text style={styles.emptyTitle}>No barbers available</Text>
+          <Text style={styles.emptySubtitle}>Check back soon</Text>
+        </View>
       ) : (
         <ScrollView
           contentContainerStyle={styles.scroll}
@@ -100,10 +112,7 @@ export default function BarberSelectionScreen({ navigation, route }: Props) {
                 activeOpacity={0.8}
               >
                 {/* Avatar */}
-                <View style={[
-                  styles.avatar,
-                  isSelected && styles.avatarSelected,
-                ]}>
+                <View style={[styles.avatar, isSelected && styles.avatarSelected]}>
                   {barber.photoURL ? (
                     <Image
                       source={{ uri: barber.photoURL }}
@@ -113,9 +122,7 @@ export default function BarberSelectionScreen({ navigation, route }: Props) {
                     <Ionicons
                       name="person"
                       size={32}
-                      color={isSelected
-                        ? theme.colors.textInverse
-                        : theme.colors.gold}
+                      color={isSelected ? theme.colors.textInverse : theme.colors.gold}
                     />
                   )}
                 </View>
@@ -139,9 +146,7 @@ export default function BarberSelectionScreen({ navigation, route }: Props) {
                         color={theme.colors.gold}
                       />
                     ))}
-                    <Text style={styles.reviewCount}>
-                      ({barber.reviewCount})
-                    </Text>
+                    <Text style={styles.reviewCount}>({barber.reviewCount})</Text>
                   </View>
 
                   {/* Specialties */}
@@ -156,11 +161,7 @@ export default function BarberSelectionScreen({ navigation, route }: Props) {
 
                 {/* Checkmark */}
                 {isSelected && (
-                  <Ionicons
-                    name="checkmark-circle"
-                    size={24}
-                    color={theme.colors.gold}
-                  />
+                  <Ionicons name="checkmark-circle" size={24} color={theme.colors.gold} />
                 )}
               </TouchableOpacity>
             );
@@ -181,11 +182,7 @@ export default function BarberSelectionScreen({ navigation, route }: Props) {
               : 'SELECT A BARBER'}
           </Text>
           {selected && (
-            <Ionicons
-              name="arrow-forward"
-              size={18}
-              color={theme.colors.textInverse}
-            />
+            <Ionicons name="arrow-forward" size={18} color={theme.colors.textInverse} />
           )}
         </TouchableOpacity>
       </View>
@@ -194,183 +191,75 @@ export default function BarberSelectionScreen({ navigation, route }: Props) {
   );
 }
 
-// ── BookingConfirmScreen will receive barber.userId as barberId ──
-// Export a helper so BookingConfirmScreen always uses the correct ID
 export const getBarberBookingId = (barber: {
   id: string;
   userId?: string | null;
 }): string => barber.userId ?? barber.id;
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
+  container: { flex: 1, backgroundColor: theme.colors.background },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.md,
-    padding: theme.spacing.lg,
-    paddingTop: theme.spacing.xxl,
+    flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md,
+    padding: theme.spacing.lg, paddingTop: theme.spacing.xxl,
   },
   backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: theme.radius.md,
+    width: 40, height: 40, borderRadius: theme.radius.md,
     backgroundColor: theme.colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'center', justifyContent: 'center',
   },
-  stepText: {
-    fontFamily: theme.fonts.medium,
-    fontSize: theme.fontSizes.xs,
-    color: theme.colors.gold,
-    letterSpacing: 2,
-  },
-  title: {
-    fontFamily: theme.fonts.heading,
-    fontSize: theme.fontSizes.xxl,
-    color: theme.colors.textPrimary,
-    letterSpacing: 4,
-  },
+  stepText: { fontFamily: theme.fonts.medium, fontSize: theme.fontSizes.xs, color: theme.colors.gold, letterSpacing: 2 },
+  title:    { fontFamily: theme.fonts.heading, fontSize: theme.fontSizes.xxl, color: theme.colors.textPrimary, letterSpacing: 4 },
   progressBar: {
-    height: 3,
-    backgroundColor: theme.colors.border,
-    marginHorizontal: theme.spacing.lg,
-    borderRadius: theme.radius.full,
-    marginBottom: theme.spacing.md,
+    height: 3, backgroundColor: theme.colors.border,
+    marginHorizontal: theme.spacing.lg, borderRadius: theme.radius.full, marginBottom: theme.spacing.md,
   },
-  progressFill: {
-    height: '100%',
-    backgroundColor: theme.colors.gold,
-    borderRadius: theme.radius.full,
-  },
+  progressFill: { height: '100%', backgroundColor: theme.colors.gold, borderRadius: theme.radius.full },
   servicePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.xs,
-    backgroundColor: theme.colors.goldMuted,
-    borderWidth: 1,
-    borderColor: theme.colors.gold,
-    borderRadius: theme.radius.full,
-    paddingVertical: theme.spacing.xs,
-    paddingHorizontal: theme.spacing.md,
-    alignSelf: 'flex-start',
-    marginHorizontal: theme.spacing.lg,
-    marginBottom: theme.spacing.lg,
+    flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs,
+    backgroundColor: theme.colors.goldMuted, borderWidth: 1, borderColor: theme.colors.gold,
+    borderRadius: theme.radius.full, paddingVertical: theme.spacing.xs, paddingHorizontal: theme.spacing.md,
+    alignSelf: 'flex-start', marginHorizontal: theme.spacing.lg, marginBottom: theme.spacing.lg,
   },
-  servicePillText: {
-    fontFamily: theme.fonts.medium,
-    fontSize: theme.fontSizes.xs,
-    color: theme.colors.gold,
-    letterSpacing: 1,
-  },
-  loader: {
-    flex: 1,
-  },
-  scroll: {
-    padding: theme.spacing.lg,
-    paddingTop: 0,
-    gap: theme.spacing.md,
-  },
+  servicePillText: { fontFamily: theme.fonts.medium, fontSize: theme.fontSizes.xs, color: theme.colors.gold, letterSpacing: 1 },
+  loader:     { flex: 1 },
+  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: theme.spacing.md },
+  emptyTitle: { fontFamily: theme.fonts.heading, fontSize: theme.fontSizes.xl, color: theme.colors.textSecondary, letterSpacing: 2 },
+  emptySubtitle: { fontFamily: theme.fonts.body, fontSize: theme.fontSizes.sm, color: theme.colors.textMuted },
+  scroll: { padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.md },
   card: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.lg,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    padding: theme.spacing.lg,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.md,
-    ...theme.shadows.md,
+    backgroundColor: theme.colors.surface, borderRadius: theme.radius.lg,
+    borderWidth: 1, borderColor: theme.colors.border,
+    padding: theme.spacing.lg, flexDirection: 'row', alignItems: 'center',
+    gap: theme.spacing.md, ...theme.shadows.md,
   },
-  cardSelected: {
-    borderColor: theme.colors.gold,
-    backgroundColor: theme.colors.goldMuted,
-  },
+  cardSelected: { borderColor: theme.colors.gold, backgroundColor: theme.colors.goldMuted },
   avatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 64, height: 64, borderRadius: 32,
     backgroundColor: theme.colors.goldMuted,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
+    alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
   },
-  avatarSelected: {
-    backgroundColor: theme.colors.gold,
-  },
-  avatarImage: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-  },
-  cardInfo: {
-    flex: 1,
-    gap: theme.spacing.xs,
-  },
+  avatarSelected: { backgroundColor: theme.colors.gold },
+  avatarImage:    { width: 64, height: 64, borderRadius: 32 },
+  cardInfo:       { flex: 1, gap: theme.spacing.xs },
   barberName: {
-    fontFamily: theme.fonts.heading,
-    fontSize: theme.fontSizes.lg,
-    color: theme.colors.textPrimary,
-    letterSpacing: 2,
+    fontFamily: theme.fonts.heading, fontSize: theme.fontSizes.lg,
+    color: theme.colors.textPrimary, letterSpacing: 2,
   },
-  barberNameSelected: {
-    color: theme.colors.gold,
-  },
-  ratingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-  },
-  reviewCount: {
-    fontFamily: theme.fonts.body,
-    fontSize: theme.fontSizes.xs,
-    color: theme.colors.textMuted,
-    marginLeft: 4,
-  },
-  specialties: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: theme.spacing.xs,
-    marginTop: 2,
-  },
+  barberNameSelected: { color: theme.colors.gold },
+  ratingRow:  { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  reviewCount:{ fontFamily: theme.fonts.body, fontSize: theme.fontSizes.xs, color: theme.colors.textMuted, marginLeft: 4 },
+  specialties:{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.xs, marginTop: 2 },
   specialtyTag: {
-    backgroundColor: theme.colors.surface,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: theme.radius.full,
-    paddingVertical: 2,
-    paddingHorizontal: theme.spacing.sm,
+    backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border,
+    borderRadius: theme.radius.full, paddingVertical: 2, paddingHorizontal: theme.spacing.sm,
   },
-  specialtyText: {
-    fontFamily: theme.fonts.body,
-    fontSize: theme.fontSizes.xs,
-    color: theme.colors.textMuted,
-  },
-  footer: {
-    padding: theme.spacing.lg,
-    paddingBottom: theme.spacing.xl,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.border,
-  },
+  specialtyText: { fontFamily: theme.fonts.body, fontSize: theme.fontSizes.xs, color: theme.colors.textMuted },
+  footer: { padding: theme.spacing.lg, paddingBottom: theme.spacing.xl, borderTopWidth: 1, borderTopColor: theme.colors.border },
   button: {
-    backgroundColor: theme.colors.gold,
-    borderRadius: theme.radius.md,
-    padding: theme.spacing.md,
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: theme.spacing.sm,
-    ...theme.shadows.gold,
+    backgroundColor: theme.colors.gold, borderRadius: theme.radius.md, padding: theme.spacing.md,
+    alignItems: 'center', flexDirection: 'row', justifyContent: 'center',
+    gap: theme.spacing.sm, ...theme.shadows.gold,
   },
-  buttonDisabled: {
-    opacity: 0.4,
-  },
-  buttonText: {
-    fontFamily: theme.fonts.heading,
-    fontSize: theme.fontSizes.md,
-    color: theme.colors.textInverse,
-    letterSpacing: 2,
-  },
+  buttonDisabled: { opacity: 0.4 },
+  buttonText: { fontFamily: theme.fonts.heading, fontSize: theme.fontSizes.md, color: theme.colors.textInverse, letterSpacing: 2 },
 });

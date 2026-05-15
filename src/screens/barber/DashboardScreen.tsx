@@ -1,20 +1,20 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, Animated, Image,
+  TouchableOpacity, Animated, Image, Alert,
 } from 'react-native';
 import {
   collection, query, where, onSnapshot,
   orderBy, updateDoc, doc, getDoc, runTransaction,
 } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
-import { signOut } from 'firebase/auth';
+import { signOut }  from 'firebase/auth';
 import { auth, db } from '../../config/firebase';
-import { useAuth } from '../../context/AuthContext';
+import { useAuth }  from '../../context/AuthContext';
 import { COLLECTIONS } from '../../constants/collections';
 import { sendPushNotification } from '../../services/notifications';
 import { Booking } from '../../types';
-import { theme } from '../../theme';
+import { theme }   from '../../theme';
 
 interface Props {
   navigation: {
@@ -22,8 +22,7 @@ interface Props {
   };
 }
 
-// Resolve the best available image URL from a requestedStyle object.
-// LightX saves under generatedImageUrl; old FLUX flow used tryOnImageUrl.
+// ── Resolve best available image URL from requestedStyle ──
 function resolveAfterUrl(style: Booking['requestedStyle']): string | null {
   return style?.generatedImageUrl ?? style?.tryOnImageUrl ?? null;
 }
@@ -32,7 +31,7 @@ function resolveBeforeUrl(style: Booking['requestedStyle']): string | null {
   return style?.selfieUrl ?? style?.referenceImageUrl ?? null;
 }
 
-// ── Inline CLIENT WANTS section ──────────────────────────────────────────────
+// ── Inline CLIENT WANTS card ──────────────────────────────
 function ClientWantsCard({ style }: { style: NonNullable<Booking['requestedStyle']> }) {
   const afterUrl  = resolveAfterUrl(style);
   const beforeUrl = resolveBeforeUrl(style);
@@ -48,7 +47,6 @@ function ClientWantsCard({ style }: { style: NonNullable<Booking['requestedStyle
         </Text>
       ) : null}
 
-      {/* Show before/after images only when URLs exist — no placeholder icons */}
       {(beforeUrl || afterUrl) ? (
         <View style={cwStyles.imagesRow}>
           {beforeUrl ? (
@@ -138,7 +136,7 @@ const cwStyles = StyleSheet.create({
   },
 });
 
-// ── Main screen ───────────────────────────────────────────────────────────────
+// ── Main screen ───────────────────────────────────────────
 export default function BarberDashboardScreen({ navigation }: Props) {
   const { user }  = useAuth();
   const fadeAnim  = useRef(new Animated.Value(0)).current;
@@ -194,6 +192,7 @@ export default function BarberDashboardScreen({ navigation }: Props) {
     bookingId: string,
     status: 'confirmed' | 'cancelled' | 'completed',
   ) => {
+    // Capture the booking now — onSnapshot may remove it from state after the update.
     const booking = bookings.find(b => b.id === bookingId);
 
     try {
@@ -203,14 +202,15 @@ export default function BarberDashboardScreen({ navigation }: Props) {
       return;
     }
 
+    // ── Notify client on confirmation ──────────────────────
     if (status === 'confirmed' && booking?.clientId) {
       try {
-        const clientDocSnap = await getDoc(doc(db, COLLECTIONS.USERS, booking.clientId));
-        const clientToken = clientDocSnap.data()?.expoPushToken;
+        const clientSnap = await getDoc(doc(db, COLLECTIONS.USERS, booking.clientId));
+        const clientToken = clientSnap.data()?.expoPushToken;
         if (clientToken) {
           await sendPushNotification(
             clientToken,
-            'Booking Confirmed ✅',
+            'Booking Confirmed',
             `Your ${booking.serviceName} is confirmed!`,
             { bookingId },
           );
@@ -220,6 +220,7 @@ export default function BarberDashboardScreen({ navigation }: Props) {
       }
     }
 
+    // ── Loyalty stamps on completion ───────────────────────
     if (status === 'completed' && booking?.clientId) {
       try {
         await runTransaction(db, async (transaction) => {
@@ -232,6 +233,28 @@ export default function BarberDashboardScreen({ navigation }: Props) {
       } catch (e) {
         console.log('Loyalty stamp update failed:', e);
       }
+    }
+
+    // ── Prompt to document the style after completion ──────
+    if (status === 'completed' && booking) {
+      Alert.alert(
+        'Document This Style?',
+        'Create a style card so the client can recreate this look next time.',
+        [
+          { text: 'Skip', style: 'cancel' },
+          {
+            text: 'Document',
+            onPress: () => navigation.navigate('StyleDocument', {
+              bookingId:   booking.id,
+              clientId:    booking.clientId,
+              clientName:  booking.clientName,
+              barberId:    booking.barberId,
+              barberName:  booking.barberName,
+              serviceName: booking.serviceName,
+            }),
+          },
+        ],
+      );
     }
   };
 
@@ -269,8 +292,10 @@ export default function BarberDashboardScreen({ navigation }: Props) {
               <Text style={[styles.statNumber, s.gold && styles.statNumberGold]}>
                 {s.value}
               </Text>
-              <Text style={[styles.statLabel, s.gold && styles.statLabelGold]}
-                numberOfLines={1}>
+              <Text
+                style={[styles.statLabel, s.gold && styles.statLabelGold]}
+                numberOfLines={1}
+              >
                 {s.label}
               </Text>
             </View>
@@ -298,7 +323,6 @@ export default function BarberDashboardScreen({ navigation }: Props) {
                   <Text style={styles.bookingPrice}>${booking.servicePrice}</Text>
                 </View>
 
-                {/* CLIENT WANTS — only render when name exists */}
                 {booking.requestedStyle?.name ? (
                   <ClientWantsCard style={booking.requestedStyle} />
                 ) : null}
@@ -345,7 +369,6 @@ export default function BarberDashboardScreen({ navigation }: Props) {
                   <Ionicons name="chevron-forward" size={16} color={theme.colors.textMuted} />
                 </View>
 
-                {/* CLIENT WANTS — only render when name exists */}
                 {booking.requestedStyle?.name ? (
                   <ClientWantsCard style={booking.requestedStyle} />
                 ) : null}
@@ -365,7 +388,6 @@ export default function BarberDashboardScreen({ navigation }: Props) {
                     serviceName:    booking.serviceName,
                     clientName:     booking.clientName,
                     scheduledAt:    booking.scheduledAt?.toISOString() ?? '',
-                    // Pass the full style so CutGuide can show images + use it in the prompt
                     requestedStyle: booking.requestedStyle ?? null,
                   })}
                 >
@@ -385,7 +407,6 @@ export default function BarberDashboardScreen({ navigation }: Props) {
             <Text style={styles.emptySubtitle}>New bookings will appear here</Text>
           </View>
         )}
-
       </ScrollView>
     </View>
   );

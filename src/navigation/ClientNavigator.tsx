@@ -2,7 +2,7 @@ import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { theme } from '../theme';
+import { theme }    from '../theme';
 
 import HomeScreen              from '../screens/client/HomeScreen';
 import ServiceSelectionScreen  from '../screens/client/ServiceSelectionScreen';
@@ -15,24 +15,26 @@ import ProfileScreen           from '../screens/client/ProfileScreen';
 import StylesScreen            from '../screens/client/StylesScreen';
 import StyleChatScreen         from '../screens/client/StyleChatScreen';
 import AddToBookingScreen      from '../screens/client/AddToBookingScreen';
+import AIStylistChatScreen     from '../screens/client/AIStylistChatScreen';
 import ChatScreen              from '../screens/chat/ChatScreen';
+// StyleCardView is a lightweight screen — created below inline or as a separate file
+import StyleCardViewScreen     from '../screens/client/StyleCardViewScreen';
 
 const Tab   = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
-// ── Tab icon map ──────────────────────────────────────────────
 const TAB_ICONS: Record<string, {
   active:   keyof typeof Ionicons.glyphMap;
   inactive: keyof typeof Ionicons.glyphMap;
 }> = {
-  Home:    { active: 'home',     inactive: 'home-outline'     },
-  Book:    { active: 'calendar', inactive: 'calendar-outline' },
-  Styles:  { active: 'cut',      inactive: 'cut-outline'      },
-  History: { active: 'time',     inactive: 'time-outline'     },
-  Profile: { active: 'person',   inactive: 'person-outline'   },
+  Home:      { active: 'home',          inactive: 'home-outline'          },
+  Book:      { active: 'calendar',      inactive: 'calendar-outline'      },
+  Styles:    { active: 'cut',           inactive: 'cut-outline'           },
+  History:   { active: 'time',          inactive: 'time-outline'          },
+  AIStyler:  { active: 'chatbubbles',   inactive: 'chatbubbles-outline'   },
+  Profile:   { active: 'person',        inactive: 'person-outline'        },
 };
 
-// ── Bottom tabs ───────────────────────────────────────────────
 function ClientTabs() {
   return (
     <Tab.Navigator
@@ -55,6 +57,7 @@ function ClientTabs() {
         },
         tabBarIcon: ({ focused, color, size }) => {
           const icon = TAB_ICONS[route.name];
+          if (!icon) return null;
           return (
             <Ionicons
               name={focused ? icon.active : icon.inactive}
@@ -65,36 +68,33 @@ function ClientTabs() {
         },
       })}
     >
-      <Tab.Screen name="Home"    component={HomeScreen}           />
-      {/*
-        Book tab now shows ServiceSelectionScreen directly.
-        The back button inside ServiceSelectionScreen is hidden
-        when there is nothing to go back to (tab root).
-      */}
-      <Tab.Screen name="Book"    component={ServiceSelectionScreen} />
-      <Tab.Screen name="Styles"  component={StylesScreen}            />
-      <Tab.Screen name="History" component={BookingHistoryScreen}   />
-      <Tab.Screen name="Profile" component={ProfileScreen}          />
+      <Tab.Screen name="Home"     component={HomeScreen}              />
+      <Tab.Screen name="Book"     component={ServiceSelectionScreen}  />
+      <Tab.Screen name="Styles"   component={StylesScreen}            />
+      <Tab.Screen name="History"  component={BookingHistoryScreen}    />
+      <Tab.Screen
+        name="AIStyler"
+        component={AIStylistChatScreen}
+        options={{ tabBarLabel: 'AI Chat' }}
+      />
+      <Tab.Screen name="Profile"  component={ProfileScreen}           />
     </Tab.Navigator>
   );
 }
 
-// ── Root stack (tabs + full-screen booking flow) ──────────────
 export default function ClientNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      {/* Tab shell */}
-      <Stack.Screen name="ClientTabs" component={ClientTabs} />
-
-      {/* Full-screen booking flow pushed on top of tabs */}
-      <Stack.Screen name="BookingFlow"       component={ServiceSelectionScreen}  />
-      <Stack.Screen name="BarberSelection"   component={BarberSelectionScreen}   />
-      <Stack.Screen name="DateTimeSelection" component={DateTimeSelectionScreen} />
-      <Stack.Screen name="BookingConfirm"    component={BookingConfirmScreen}    />
-      <Stack.Screen name="BookingSuccess"    component={BookingSuccessScreen}    />
-      <Stack.Screen name="Chat"              component={ChatScreen}              />
-      <Stack.Screen name="StyleChat"         component={StyleChatScreen}         />
-      <Stack.Screen name="AddToBooking"      component={AddToBookingScreen}      />
+      <Stack.Screen name="ClientTabs"          component={ClientTabs}             />
+      <Stack.Screen name="BookingFlow"         component={ServiceSelectionScreen} />
+      <Stack.Screen name="BarberSelection"     component={BarberSelectionScreen}  />
+      <Stack.Screen name="DateTimeSelection"   component={DateTimeSelectionScreen}/>
+      <Stack.Screen name="BookingConfirm"      component={BookingConfirmScreen}   />
+      <Stack.Screen name="BookingSuccess"      component={BookingSuccessScreen}   />
+      <Stack.Screen name="Chat"                component={ChatScreen}             />
+      <Stack.Screen name="StyleChat"           component={StyleChatScreen}        />
+      <Stack.Screen name="AddToBooking"        component={AddToBookingScreen}     />
+      <Stack.Screen name="StyleCardView"       component={StyleCardViewScreen}    />
     </Stack.Navigator>
   );
 }

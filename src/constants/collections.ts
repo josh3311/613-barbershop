@@ -6,4 +6,6 @@ export const COLLECTIONS = {
     NOTIFICATIONS: 'notifications',
     STYLES:        'styles',
     AVAILABILITY:  'availability',
+    STYLE_CARDS: 'styleCards',
+    AI_CHATS:    'aiChats',
   } as const;

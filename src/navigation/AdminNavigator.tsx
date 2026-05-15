@@ -1,25 +1,25 @@
 import React from 'react';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createBottomTabNavigator }   from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { theme } from '../theme';
+import { theme }    from '../theme';
 
 import AdminDashboardScreen from '../screens/admin/DashboardScreen';
 import AdminAIScreen        from '../screens/admin/AdminAIScreen';
+import ReviewsScreen        from '../screens/admin/ReviewsScreen';
 
-// ── Tab icon map ──────────────────────────────────────────────
 const TAB_ICONS: Record<string, {
   active:   keyof typeof Ionicons.glyphMap;
   inactive: keyof typeof Ionicons.glyphMap;
 }> = {
-  Dashboard: { active: 'grid',     inactive: 'grid-outline'     },
-  AI:        { active: 'sparkles', inactive: 'sparkles-outline' },
+  Dashboard: { active: 'grid',        inactive: 'grid-outline'        },
+  Reviews:   { active: 'star',        inactive: 'star-outline'        },
+  AI:        { active: 'sparkles',    inactive: 'sparkles-outline'    },
 };
 
 const Tab   = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
-// ── Bottom tabs ───────────────────────────────────────────────
 function AdminTabs() {
   return (
     <Tab.Navigator
@@ -42,6 +42,7 @@ function AdminTabs() {
         },
         tabBarIcon: ({ focused, color, size }) => {
           const icon = TAB_ICONS[route.name];
+          if (!icon) return null;
           return (
             <Ionicons
               name={focused ? icon.active : icon.inactive}
@@ -53,12 +54,12 @@ function AdminTabs() {
       })}
     >
       <Tab.Screen name="Dashboard" component={AdminDashboardScreen} />
+      <Tab.Screen name="Reviews"   component={ReviewsScreen}        />
       <Tab.Screen name="AI"        component={AdminAIScreen}        />
     </Tab.Navigator>
   );
 }
 
-// ── Root stack (tabs only for now) ─────────────────────────────
 export default function AdminNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>

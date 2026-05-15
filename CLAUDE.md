@@ -34,8 +34,8 @@ src/
 ├── navigation/      → RootNavigator + all navigators + types.ts
 ├── screens/
 │   ├── auth/        → Login, Register, RoleSelect
-│   ├── client/      → Home, Book, History, Profile
-│   ├── barber/      → Dashboard, Schedule, Chat
+│   ├── client/      → Home, Book, Styles, History, Profile, StyleChat
+│   ├── barber/      → Dashboard, Schedule, Chat, CutGuide
 │   ├── admin/       → Dashboard, Analytics
 │   └── chat/        → ChatScreen
 ├── services/        → booking.service.ts, user.service.ts, etc.
@@ -46,6 +46,7 @@ src/
 - RootNavigator checks auth state + profileLoaded before routing
 - Never guess user role — always read from Firestore users collection
 - All navigation params strictly typed in navigation/types.ts
+- `BarberStackParams.CutGuide` includes optional `requestedStyle?: HaircutStyle | null`
 
 ## Service Layer Rules
 - Every service returns: { data: T | null, error: string | null }
@@ -134,8 +135,10 @@ Middle Eastern hair:
 All features below are BUILT and WORKING:
 - Full auth flow (Login, Register, RoleSelect)
 - Three roles: Client, Barber, Admin
-- Client: Home, Book, History, Profile, Chat
-- Barber: Dashboard, Schedule, Chats, Profile
+- Client: Home, Book, Styles, History, Profile, Chat
+  - Styles tab: selfie analysis, AI recommendations, virtual try-on, saved styles gallery
+  - AI Stylist Chat tab (scissors icon): business-aware stylist chat, new/saved threads
+- Barber: Dashboard, Schedule, Chats, Profile, Cut Guide
 - Admin: Dashboard (Overview/Barbers/Bookings/Profile), AI Assistant
 - Full booking flow (Service → Barber → DateTime → Confirm → Success)
 - Real-time chat per booking (client ↔ barber)
@@ -155,15 +158,39 @@ All features below are BUILT and WORKING:
   - Calls Anthropic directly (claude-3-5-haiku-20241022)
   - Real Firestore stats injected into system prompt
   - Markdown rendering via react-native-markdown-display
+- Rating & Reviews
+  - Clients rate completed bookings (1–5 stars + text review)
+  - Stored on booking doc (`rating`, `review`)
+  - Barbers see average rating; admin sees all reviews
+- Post-Session Style Cards
+  - After MARK COMPLETE, barber photographs finished style
+  - Claude vision analyzes photo → plain-English reproduction guide
+  - Saved to `styleCards` collection; clients view in BookingHistoryScreen
+- AI Stylist Chat (client tab)
+  - Bottom tab with scissors icon; chats in `aiChats` collection
+  - AI knows services, prices, how to book; users can start new chats
+- Saved Styles Gallery
+  - AI recommendations + user-saved pictures in `User.savedStyles[]`
+  - Gallery section on StylesScreen
+
+## Data Model (key fields)
+- `Booking`: `rating`, `review` (post-completion); `requestedStyle: HaircutStyle | null`
+- `HaircutStyle`: `generatedImageUrl`, `selfieUrl` (try-on before/after); legacy `tryOnImageUrl`, `referenceImageUrl`
+- `User.savedStyles[]`: gallery of AI-recommended and user-saved style entries
+- `styleCards`: barber-captured finished cuts + AI reproduction guide (linked to booking/client)
+- `aiChats`: persisted AI stylist conversations per client
+- `BarberStackParams.CutGuide`: optional `requestedStyle` (client’s requested look for context)
 
 ## Firestore Rules (deployed)
 - users: owner + admin full access
   barber can READ all users + UPDATE loyaltyStamps only
 - services/barbers: public read, admin write
 - bookings: client/barber/admin read; anyone create;
-  barber/client/admin update
+  barber/client/admin update (includes `rating` / `review` on completion)
 - messages: authenticated read/write
 - ratings: public read, authenticated write
+- styleCards: barber create; client read own; admin read all
+- aiChats: owner read/write; admin read
 
 ## Key Technical Decisions
 - barberId stored as barber.userId (auth UID), NOT barbers doc ID
@@ -174,6 +201,10 @@ All features below are BUILT and WORKING:
 - Admin AI calls Anthropic directly from client — deviation from
   "ALL AI calls through Go backend" rule — acceptable for admin only
 - Birthday stored as "MM-DD" string format
+- `HaircutStyle.generatedImageUrl` preferred over legacy `tryOnImageUrl` for after-image
+- `HaircutStyle.selfieUrl` used as before-image when present
+- Cut Guide receives optional `requestedStyle` via navigation params (not only booking fetch)
+- Reviews aggregated from `bookings.rating` / `bookings.review` for barber averages
 
 ## Environment Variables Required
 EXPO_PUBLIC_FIREBASE_API_KEY
@@ -196,14 +227,8 @@ EXPO_PUBLIC_UNSPLASH_ACCESS_KEY
 - Production build pending Apple Developer Account
 
 ## What Is NOT Built Yet
-- Barber AI Cut Guide screen
-- Client My Styles Tab:
-  - Selfie upload
-  - Face shape + ethnicity analysis (Claude Haiku)
-  - Style recommendations
-  - Virtual try-on (FLUX.1 Kontext on Replicate)
-  - AI stylist chat
-  - Book from result
+- Book directly from try-on result (one-tap into booking flow with style attached)
+- Migrate all client AI calls to Go backend (Styles, StyleChat, Cut Guide, style cards still use direct Anthropic/Replicate from app in places)
 - Apple Developer Account (iOS TestFlight)
 - Google Play Console (Android store submission)
 
@@ -223,4 +248,4 @@ EXPO_PUBLIC_UNSPLASH_ACCESS_KEY
   access (5000 requests/hour, free). Requires showing
   the live app. Each "Analyze My Face" uses 3 requests.
 
-Last Updated: 2026-05-14
+Last Updated: 2026-05-15
