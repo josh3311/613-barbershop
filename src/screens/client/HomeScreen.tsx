@@ -52,10 +52,10 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
         navigation.navigate('History');
         break;
       case 'Chat':
-        navigation.navigate('History');
+        navigation.navigate('StyleAI');   // ← fixed: chat lives in StylesScreen
         break;
       case 'My Styles':
-        navigation.navigate('Styles');
+        navigation.navigate('StyleAI');   // ← fixed: was 'Styles', now 'StyleAI'
         break;
     }
   };
@@ -301,10 +301,10 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.xl,
     borderWidth: 1,
-    borderColor: theme.colors.gold,       // ← gold border
+    borderColor: theme.colors.gold,
     padding: theme.spacing.lg,
     marginBottom: theme.spacing.xl,
-    ...theme.shadows.gold,                // ← gold glow
+    ...theme.shadows.gold,
   },
   loyaltyHeader: {
     flexDirection: 'row',

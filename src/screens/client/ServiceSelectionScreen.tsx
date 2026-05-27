@@ -34,15 +34,16 @@ export default function ServiceSelectionScreen({ navigation }: Props) {
 
   const handleContinue = () => {
     if (!selected) return;
-    // Step 2 — barber selection (coming next)
     navigation.navigate('BarberSelection', { service: selected });
   };
 
   return (
     <View style={styles.container}>
 
-      {/* Header */}
+      {/* ── Header (3-column: back | title | spacer) ── */}
       <View style={styles.header}>
+
+        {/* Left — back button */}
         <TouchableOpacity
           style={styles.backBtn}
           onPress={() => navigation.goBack()}
@@ -53,10 +54,18 @@ export default function ServiceSelectionScreen({ navigation }: Props) {
             color={theme.colors.textPrimary}
           />
         </TouchableOpacity>
-        <View>
+
+        {/* Center — step + title */}
+        <View style={styles.headerCenter}>
           <Text style={styles.stepText}>STEP 1 OF 4</Text>
-          <Text style={styles.title}>PICK A SERVICE</Text>
+          <Text style={styles.title} numberOfLines={1} adjustsFontSizeToFit>
+            PICK A SERVICE
+          </Text>
         </View>
+
+        {/* Right — mirror spacer keeps title truly centered */}
+        <View style={styles.headerSpacer} />
+
       </View>
 
       {/* Progress Bar */}
@@ -172,12 +181,14 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background,
   },
+
+  // ── Header ──────────────────────────────────────────────
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: theme.spacing.md,
-    padding: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.lg,
     paddingTop: theme.spacing.xxl,
+    paddingBottom: theme.spacing.md,
   },
   backBtn: {
     width: 40,
@@ -187,18 +198,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  headerCenter: {
+    flex: 1,                   // takes all remaining space
+    alignItems: 'center',      // centers step label + title
+  },
+  headerSpacer: {
+    width: 40,                 // mirrors backBtn width → title stays centred
+  },
   stepText: {
     fontFamily: theme.fonts.medium,
     fontSize: theme.fontSizes.xs,
     color: theme.colors.gold,
     letterSpacing: 2,
+    marginBottom: 2,
   },
   title: {
     fontFamily: theme.fonts.heading,
     fontSize: theme.fontSizes.xxl,
     color: theme.colors.textPrimary,
     letterSpacing: 4,
+    textAlign: 'center',
   },
+
+  // ── Rest unchanged ───────────────────────────────────────
   progressBar: {
     height: 3,
     backgroundColor: theme.colors.border,

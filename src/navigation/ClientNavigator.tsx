@@ -13,12 +13,11 @@ import BookingSuccessScreen    from '../screens/client/BookingSuccessScreen';
 import BookingHistoryScreen    from '../screens/client/BookingHistoryScreen';
 import ProfileScreen           from '../screens/client/ProfileScreen';
 import StylesScreen            from '../screens/client/StylesScreen';
-import StyleChatScreen         from '../screens/client/StyleChatScreen';
 import AddToBookingScreen      from '../screens/client/AddToBookingScreen';
-import AIStylistChatScreen     from '../screens/client/AIStylistChatScreen';
 import ChatScreen              from '../screens/chat/ChatScreen';
-// StyleCardView is a lightweight screen — created below inline or as a separate file
 import StyleCardViewScreen     from '../screens/client/StyleCardViewScreen';
+
+// AIStylistChatScreen + StyleChatScreen removed — merged into StylesScreen
 
 const Tab   = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -27,12 +26,11 @@ const TAB_ICONS: Record<string, {
   active:   keyof typeof Ionicons.glyphMap;
   inactive: keyof typeof Ionicons.glyphMap;
 }> = {
-  Home:      { active: 'home',          inactive: 'home-outline'          },
-  Book:      { active: 'calendar',      inactive: 'calendar-outline'      },
-  Styles:    { active: 'cut',           inactive: 'cut-outline'           },
-  History:   { active: 'time',          inactive: 'time-outline'          },
-  AIStyler:  { active: 'chatbubbles',   inactive: 'chatbubbles-outline'   },
-  Profile:   { active: 'person',        inactive: 'person-outline'        },
+  Home:    { active: 'home',     inactive: 'home-outline'     },
+  Book:    { active: 'calendar', inactive: 'calendar-outline' },
+  StyleAI: { active: 'cut',      inactive: 'cut-outline'      },
+  History: { active: 'time',     inactive: 'time-outline'     },
+  Profile: { active: 'person',   inactive: 'person-outline'   },
 };
 
 function ClientTabs() {
@@ -68,16 +66,15 @@ function ClientTabs() {
         },
       })}
     >
-      <Tab.Screen name="Home"     component={HomeScreen}              />
-      <Tab.Screen name="Book"     component={ServiceSelectionScreen}  />
-      <Tab.Screen name="Styles"   component={StylesScreen}            />
-      <Tab.Screen name="History"  component={BookingHistoryScreen}    />
+      <Tab.Screen name="Home"    component={HomeScreen}             />
+      <Tab.Screen name="Book"    component={ServiceSelectionScreen} />
       <Tab.Screen
-        name="AIStyler"
-        component={AIStylistChatScreen}
-        options={{ tabBarLabel: 'AI Chat' }}
+        name="StyleAI"
+        component={StylesScreen}
+        options={{ tabBarLabel: 'Style AI' }}
       />
-      <Tab.Screen name="Profile"  component={ProfileScreen}           />
+      <Tab.Screen name="History" component={BookingHistoryScreen}   />
+      <Tab.Screen name="Profile" component={ProfileScreen}          />
     </Tab.Navigator>
   );
 }
@@ -85,16 +82,15 @@ function ClientTabs() {
 export default function ClientNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="ClientTabs"          component={ClientTabs}             />
-      <Stack.Screen name="BookingFlow"         component={ServiceSelectionScreen} />
-      <Stack.Screen name="BarberSelection"     component={BarberSelectionScreen}  />
-      <Stack.Screen name="DateTimeSelection"   component={DateTimeSelectionScreen}/>
-      <Stack.Screen name="BookingConfirm"      component={BookingConfirmScreen}   />
-      <Stack.Screen name="BookingSuccess"      component={BookingSuccessScreen}   />
-      <Stack.Screen name="Chat"                component={ChatScreen}             />
-      <Stack.Screen name="StyleChat"           component={StyleChatScreen}        />
-      <Stack.Screen name="AddToBooking"        component={AddToBookingScreen}     />
-      <Stack.Screen name="StyleCardView"       component={StyleCardViewScreen}    />
+      <Stack.Screen name="ClientTabs"        component={ClientTabs}              />
+      <Stack.Screen name="BookingFlow"       component={ServiceSelectionScreen}  />
+      <Stack.Screen name="BarberSelection"   component={BarberSelectionScreen}   />
+      <Stack.Screen name="DateTimeSelection" component={DateTimeSelectionScreen} />
+      <Stack.Screen name="BookingConfirm"    component={BookingConfirmScreen}    />
+      <Stack.Screen name="BookingSuccess"    component={BookingSuccessScreen}    />
+      <Stack.Screen name="Chat"              component={ChatScreen}              />
+      <Stack.Screen name="AddToBooking"      component={AddToBookingScreen}      />
+      <Stack.Screen name="StyleCardView"     component={StyleCardViewScreen}     />
     </Stack.Navigator>
   );
 }

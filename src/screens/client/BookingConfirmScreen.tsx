@@ -12,6 +12,7 @@ import { db } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
 import { COLLECTIONS } from '../../constants/collections';
 import { sendPushNotification } from '../../services/notifications';
+import { syncBookingToSquare } from '../../services/squareSync';   // ← NEW
 import { theme } from '../../theme';
 
 interface Props {
@@ -75,6 +76,7 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
         : null;
 
     try {
+      // ── 1. Write to Firestore (source of truth) ──────────────
       const newBookingRef = await addDoc(collection(db, COLLECTIONS.BOOKINGS), {
         clientId:       user.id,
         clientName:     user.displayName,
@@ -94,6 +96,21 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
         review:         null,
       });
 
+      // ── 2. Fire-and-forget Square sync ───────────────────────
+      // Never awaited — never blocks the user if Square is down
+      syncBookingToSquare({
+        bookingId:    newBookingRef.id,
+        customerName: user.displayName ?? 'Client',
+        serviceName:  service.name,
+        barberId,
+        startAt:      scheduled.toISOString(),
+        styleNote:    requestedStyle?.description  ?? '',
+        tryOnImageUrl: requestedStyle?.tryOnImageUrl
+                       ?? requestedStyle?.generatedImageUrl
+                       ?? '',
+      });
+
+      // ── 3. Push notifications ────────────────────────────────
       try {
         const barberDocSnap = await getDoc(doc(db, COLLECTIONS.USERS, barberId));
         const barberToken = barberDocSnap.data()?.expoPushToken;
@@ -117,6 +134,7 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
         // Push failure must never block booking
       }
 
+      // ── 4. Navigate to success ───────────────────────────────
       navigation.replace('BookingSuccess', {
         serviceName: service.name,
         barberName:  barber.displayName,
@@ -139,10 +157,13 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
         >
           <Ionicons name="arrow-back" size={24} color={theme.colors.textPrimary} />
         </TouchableOpacity>
-        <View>
+        <View style={styles.headerCenter}>
           <Text style={styles.stepText}>STEP 4 OF 4</Text>
-          <Text style={styles.title}>CONFIRM BOOKING</Text>
+          <Text style={styles.title} numberOfLines={1} adjustsFontSizeToFit>
+            CONFIRM BOOKING
+          </Text>
         </View>
+        <View style={styles.headerSpacer} />
       </View>
 
       <View style={styles.progressBar}>
@@ -251,7 +272,6 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
             !includeStyle && styles.styleCardDisabled,
           ]}>
 
-            {/* Header with toggle */}
             <View style={styles.styleCardHeader}>
               <View style={styles.styleCardTitleRow}>
                 <Ionicons
@@ -277,7 +297,6 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
               </TouchableOpacity>
             </View>
 
-            {/* Full width image or placeholder */}
             {styleImageUrl ? (
               <Image
                 source={{ uri: styleImageUrl }}
@@ -293,7 +312,6 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
               </View>
             )}
 
-            {/* Style name + description */}
             <Text style={styles.styleName} numberOfLines={2}>
               {stylePayload.name.toUpperCase()}
             </Text>
@@ -318,7 +336,6 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
           </View>
         )}
 
-        {/* Info note */}
         <View style={styles.infoBox}>
           <Ionicons
             name="information-circle-outline"
@@ -371,9 +388,9 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: theme.spacing.md,
-    padding: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.lg,
     paddingTop: theme.spacing.xxl,
+    paddingBottom: theme.spacing.md,
   },
   backBtn: {
     width: 40,
@@ -383,17 +400,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  headerSpacer: {
+    width: 40,
+  },
   stepText: {
     fontFamily: theme.fonts.medium,
     fontSize: theme.fontSizes.xs,
     color: theme.colors.gold,
     letterSpacing: 2,
+    marginBottom: 2,
   },
   title: {
     fontFamily: theme.fonts.heading,
     fontSize: theme.fontSizes.xxl,
     color: theme.colors.textPrimary,
     letterSpacing: 4,
+    textAlign: 'center',
   },
   progressBar: {
     height: 3,
