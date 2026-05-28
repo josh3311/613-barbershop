@@ -10,12 +10,12 @@ export type AuthStackParams = {
 };
 
 // ─── Client Tabs ─────────────────────────────────────────
+// V3: Styles + AI Chat merged into a single "StyleAI" tab.
 export type ClientTabParams = {
   Home:      undefined;
   Book:      undefined;
-  Styles:    undefined;
+  StyleAI:   undefined;   // ← merged Style + AI chat tab
   History:   undefined;
-  AIStyler:  undefined;   // ← new AI Stylist chat tab
   Profile:   undefined;
 };
 
@@ -28,7 +28,6 @@ export type ClientStackParams = {
   BookingConfirm:      undefined;
   BookingSuccess:      undefined;
   Chat:                { bookingId: string; recipientName: string };
-  StyleChat:           undefined;
   AddToBooking:        undefined;
   StyleCardView: {     // ← view a post-session style card
     styleCardId: string;

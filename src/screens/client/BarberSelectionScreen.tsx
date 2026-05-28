@@ -58,7 +58,7 @@ export default function BarberSelectionScreen({ navigation, route }: Props) {
   return (
     <View style={styles.container}>
 
-      {/* Header */}
+      {/* Header (3-column: back | title | spacer) */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backBtn}
@@ -66,10 +66,13 @@ export default function BarberSelectionScreen({ navigation, route }: Props) {
         >
           <Ionicons name="arrow-back" size={24} color={theme.colors.textPrimary} />
         </TouchableOpacity>
-        <View>
+        <View style={styles.headerCenter}>
           <Text style={styles.stepText}>STEP 2 OF 4</Text>
-          <Text style={styles.title}>PICK A BARBER</Text>
+          <Text style={styles.title} numberOfLines={1} adjustsFontSizeToFit>
+            PICK A BARBER
+          </Text>
         </View>
+        <View style={styles.headerSpacer} />
       </View>
 
       {/* Progress Bar */}
@@ -199,16 +202,20 @@ export const getBarberBookingId = (barber: {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
   header: {
-    flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md,
-    padding: theme.spacing.lg, paddingTop: theme.spacing.xxl,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.xxl,
+    paddingBottom: theme.spacing.md,
   },
   backBtn: {
     width: 40, height: 40, borderRadius: theme.radius.md,
     backgroundColor: theme.colors.surface,
     alignItems: 'center', justifyContent: 'center',
   },
-  stepText: { fontFamily: theme.fonts.medium, fontSize: theme.fontSizes.xs, color: theme.colors.gold, letterSpacing: 2 },
-  title:    { fontFamily: theme.fonts.heading, fontSize: theme.fontSizes.xxl, color: theme.colors.textPrimary, letterSpacing: 4 },
+  headerCenter: { flex: 1, alignItems: 'center' },
+  headerSpacer: { width: 40 },
+  stepText: { fontFamily: theme.fonts.medium, fontSize: theme.fontSizes.xs, color: theme.colors.gold, letterSpacing: 2, marginBottom: 2 },
+  title:    { fontFamily: theme.fonts.heading, fontSize: theme.fontSizes.xxl, color: theme.colors.textPrimary, letterSpacing: 4, textAlign: 'center' },
   progressBar: {
     height: 3, backgroundColor: theme.colors.border,
     marginHorizontal: theme.spacing.lg, borderRadius: theme.radius.full, marginBottom: theme.spacing.md,

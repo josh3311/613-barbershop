@@ -82,7 +82,7 @@ export default function DateTimeSelectionScreen({ navigation, route }: Props) {
   return (
     <View style={styles.container}>
 
-      {/* Header */}
+      {/* Header (3-column: back | title | spacer) */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backBtn}
@@ -94,10 +94,13 @@ export default function DateTimeSelectionScreen({ navigation, route }: Props) {
             color={theme.colors.textPrimary}
           />
         </TouchableOpacity>
-        <View>
+        <View style={styles.headerCenter}>
           <Text style={styles.stepText}>STEP 3 OF 4</Text>
-          <Text style={styles.title}>PICK DATE & TIME</Text>
+          <Text style={styles.title} numberOfLines={1} adjustsFontSizeToFit>
+            PICK DATE & TIME
+          </Text>
         </View>
+        <View style={styles.headerSpacer} />
       </View>
 
       {/* Progress Bar */}
@@ -235,9 +238,9 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: theme.spacing.md,
-    padding: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.lg,
     paddingTop: theme.spacing.xxl,
+    paddingBottom: theme.spacing.md,
   },
   backBtn: {
     width: 40,
@@ -247,17 +250,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  headerCenter: { flex: 1, alignItems: 'center' },
+  headerSpacer: { width: 40 },
   stepText: {
     fontFamily: theme.fonts.medium,
     fontSize: theme.fontSizes.xs,
     color: theme.colors.gold,
     letterSpacing: 2,
+    marginBottom: 2,
   },
   title: {
     fontFamily: theme.fonts.heading,
     fontSize: theme.fontSizes.xxl,
     color: theme.colors.textPrimary,
     letterSpacing: 4,
+    textAlign: 'center',
   },
   progressBar: {
     height: 3,

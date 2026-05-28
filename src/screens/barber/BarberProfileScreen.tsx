@@ -237,7 +237,7 @@ export default function BarberProfileScreen() {
           </View>
           <View style={styles.infoContent}>
             <Text style={styles.infoLabel}>VERSION</Text>
-            <Text style={styles.infoValue}>613 Barbershop v2.0</Text>
+            <Text style={styles.infoValue}>613 Barbershop v3.0</Text>
           </View>
         </View>
       </View>

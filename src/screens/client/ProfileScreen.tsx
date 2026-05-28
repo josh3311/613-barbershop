@@ -351,7 +351,7 @@ export default function ProfileScreen() {
         </TouchableOpacity>
 
         {/* Version */}
-        <Text style={styles.version}>613 Barbershop v2.0</Text>
+        <Text style={styles.version}>613 Barbershop v3.0</Text>
 
       </ScrollView>
     </View>

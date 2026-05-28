@@ -18,16 +18,23 @@ export default function ServiceSelectionScreen({ navigation }: Props) {
   const [services, setServices] = useState<Service[]>([]);
   const [selected, setSelected] = useState<Service | null>(null);
   const [loading,  setLoading]  = useState(true);
+  const [error,    setError]    = useState<string | null>(null);
 
   useEffect(() => {
     const fetchServices = async () => {
-      const q    = query(
-        collection(db, COLLECTIONS.SERVICES),
-        where('isActive', '==', true)
-      );
-      const snap = await getDocs(q);
-      setServices(snap.docs.map(d => ({ id: d.id, ...d.data() } as Service)));
-      setLoading(false);
+      try {
+        const q    = query(
+          collection(db, COLLECTIONS.SERVICES),
+          where('isActive', '==', true)
+        );
+        const snap = await getDocs(q);
+        setServices(snap.docs.map(d => ({ id: d.id, ...d.data() } as Service)));
+      } catch (e) {
+        console.error('Failed to load services:', e);
+        setError('Could not load services. Pull to retry.');
+      } finally {
+        setLoading(false);
+      }
     };
     fetchServices();
   }, []);
@@ -79,6 +86,17 @@ export default function ServiceSelectionScreen({ navigation }: Props) {
           size="large"
           style={styles.loader}
         />
+      ) : error ? (
+        <View style={styles.emptyState}>
+          <Ionicons name="alert-circle-outline" size={48} color={theme.colors.error} />
+          <Text style={styles.emptyTitle}>{error}</Text>
+        </View>
+      ) : services.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Ionicons name="cut-outline" size={48} color={theme.colors.textMuted} />
+          <Text style={styles.emptyTitle}>No services available</Text>
+          <Text style={styles.emptySubtitle}>Check back soon</Text>
+        </View>
       ) : (
         <ScrollView
           contentContainerStyle={styles.scroll}
@@ -235,6 +253,25 @@ const styles = StyleSheet.create({
   },
   loader: {
     flex: 1,
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing.md,
+    paddingHorizontal: theme.spacing.lg,
+  },
+  emptyTitle: {
+    fontFamily: theme.fonts.heading,
+    fontSize: theme.fontSizes.lg,
+    color: theme.colors.textSecondary,
+    letterSpacing: 2,
+    textAlign: 'center',
+  },
+  emptySubtitle: {
+    fontFamily: theme.fonts.body,
+    fontSize: theme.fontSizes.sm,
+    color: theme.colors.textMuted,
   },
   scroll: {
     padding: theme.spacing.lg,
