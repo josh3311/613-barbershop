@@ -1,15 +1,28 @@
+/**
+ * DateTimeSelectionScreen — V3 visual layer
+ *
+ * Logic preserved exactly. Visual upgrades:
+ * - AnimatedHeader
+ * - Time slot buttons spring-scale on press with animated gold fill
+ * - Date cards stagger in
+ * - PremiumButton for continue
+ */
+
 import React, { useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView,
-  TouchableOpacity,
+  View, Text, StyleSheet, ScrollView, Pressable,
 } from 'react-native';
+import Animated, {
+  FadeInRight, useAnimatedStyle, useSharedValue,
+  withSpring, withTiming, interpolateColor,
+} from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
-import { theme } from '../../theme';
+import * as Haptics from 'expo-haptics';
 
-interface Props {
-  navigation: any;
-  route:      any;
-}
+import { theme } from '../../theme';
+import { AnimatedHeader, PremiumButton } from '../../components/ui';
+
+interface Props { navigation: any; route: any; }
 
 const HOURS = [
   '10:00', '10:30', '11:00', '11:30',
@@ -20,15 +33,95 @@ const HOURS = [
   '20:00', '20:30',
 ];
 
+// ── Animated time slot ─────────────────────────────────────────────
+interface TimeSlotProps {
+  time:       string;
+  selected:   boolean;
+  disabled:   boolean;
+  onPress:    () => void;
+  index:      number;
+}
+
+const TimeSlot = React.memo(function TimeSlot(props: TimeSlotProps) {
+  const { time, selected, disabled, onPress, index } = props;
+  const scale     = useSharedValue(1);
+  const selectAnim = useSharedValue(selected ? 1 : 0);
+
+  React.useEffect(() => {
+    selectAnim.value = withTiming(selected ? 1 : 0, { duration: 220 });
+  }, [selected, selectAnim]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+    backgroundColor: interpolateColor(
+      selectAnim.value,
+      [0, 1],
+      [theme.colors.surface, theme.colors.gold],
+    ),
+    borderColor: interpolateColor(
+      selectAnim.value,
+      [0, 1],
+      [theme.colors.border, theme.colors.gold],
+    ),
+  }));
+
+  const animatedText = useAnimatedStyle(() => ({
+    color: interpolateColor(
+      selectAnim.value,
+      [0, 1],
+      [theme.colors.textPrimary, theme.colors.textInverse],
+    ),
+  }));
+
+  const handlePressIn  = () => { scale.value = withSpring(0.93, { damping: 14, stiffness: 240 }); };
+  const handlePressOut = () => { scale.value = withSpring(1,    { damping: 12, stiffness: 200 }); };
+
+  const handlePress = () => {
+    Haptics.selectionAsync().catch(() => undefined);
+    onPress();
+  };
+
+  return (
+    <Animated.View
+      entering={FadeInRight.delay(60 + index * 18).springify().damping(16)}
+    >
+      <Pressable
+        onPress={handlePress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        disabled={disabled}
+      >
+        <Animated.View
+          style={[
+            styles.timeSlot,
+            animatedStyle,
+            disabled && styles.timeSlotDisabled,
+          ]}
+        >
+          <Animated.Text
+            style={[
+              styles.timeText,
+              animatedText,
+              disabled && styles.timeTextDisabled,
+            ]}
+          >
+            {time}
+          </Animated.Text>
+        </Animated.View>
+      </Pressable>
+    </Animated.View>
+  );
+});
+
+// ── Screen ─────────────────────────────────────────────────────────
 export default function DateTimeSelectionScreen({ navigation, route }: Props) {
   const { service, barber } = route.params;
 
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
 
-  // Generate next 14 days
   const getDates = () => {
-    const dates = [];
+    const dates: Date[] = [];
     const today = new Date();
     for (let i = 0; i < 14; i++) {
       const d = new Date(today);
@@ -44,23 +137,18 @@ export default function DateTimeSelectionScreen({ navigation, route }: Props) {
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     return days[date.getDay()];
   };
-
   const formatMonth = (date: Date) => {
     const months = ['Jan','Feb','Mar','Apr','May','Jun',
                     'Jul','Aug','Sep','Oct','Nov','Dec'];
     return months[date.getMonth()];
   };
-
-  const isToday = (date: Date) => {
-    const today = new Date();
-    return date.toDateString() === today.toDateString();
-  };
+  const isToday = (date: Date) =>
+    date.toDateString() === new Date().toDateString();
 
   const isTimeDisabled = (time: string) => {
     if (!selectedDate) return false;
     const today = new Date();
-    const isTodaySelected = selectedDate.toDateString() === today.toDateString();
-    if (!isTodaySelected) return false;
+    if (selectedDate.toDateString() !== today.toDateString()) return false;
     const [hours, minutes] = time.split(':').map(Number);
     const slotTime = new Date();
     slotTime.setHours(hours, minutes, 0, 0);
@@ -73,42 +161,22 @@ export default function DateTimeSelectionScreen({ navigation, route }: Props) {
     const scheduledAt = new Date(selectedDate);
     scheduledAt.setHours(hours, minutes, 0, 0);
     navigation.navigate('BookingConfirm', {
-      service,
-      barber,
-      scheduledAt: scheduledAt.toISOString(),
+      service, barber, scheduledAt: scheduledAt.toISOString(),
     });
   };
 
   return (
     <View style={styles.container}>
+      <AnimatedHeader
+        title="PICK DATE & TIME"
+        eyebrow="STEP 3 OF 4"
+        onBack={() => navigation.goBack()}
+      />
 
-      {/* Header (3-column: back | title | spacer) */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons
-            name="arrow-back"
-            size={24}
-            color={theme.colors.textPrimary}
-          />
-        </TouchableOpacity>
-        <View style={styles.headerCenter}>
-          <Text style={styles.stepText}>STEP 3 OF 4</Text>
-          <Text style={styles.title} numberOfLines={1} adjustsFontSizeToFit>
-            PICK DATE & TIME
-          </Text>
-        </View>
-        <View style={styles.headerSpacer} />
-      </View>
-
-      {/* Progress Bar */}
       <View style={styles.progressBar}>
         <View style={[styles.progressFill, { width: '75%' }]} />
       </View>
 
-      {/* Pills */}
       <View style={styles.pills}>
         <View style={styles.pill}>
           <Ionicons name="cut-outline" size={12} color={theme.colors.gold} />
@@ -121,8 +189,6 @@ export default function DateTimeSelectionScreen({ navigation, route }: Props) {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>
-
-        {/* Date Picker */}
         <Text style={styles.sectionTitle}>SELECT DATE</Text>
         <ScrollView
           horizontal
@@ -132,68 +198,49 @@ export default function DateTimeSelectionScreen({ navigation, route }: Props) {
           {dates.map((date, i) => {
             const isSelected = selectedDate?.toDateString() === date.toDateString();
             return (
-              <TouchableOpacity
+              <Animated.View
                 key={i}
-                style={[styles.dateCard, isSelected && styles.dateCardSelected]}
-                onPress={() => {
-                  setSelectedDate(date);
-                  setSelectedTime(null);
-                }}
+                entering={FadeInRight.delay(80 + i * 30).springify().damping(16)}
               >
-                <Text style={[
-                  styles.dateDay,
-                  isSelected && styles.dateDaySelected
-                ]}>
-                  {isToday(date) ? 'TODAY' : formatDay(date)}
-                </Text>
-                <Text style={[
-                  styles.dateNum,
-                  isSelected && styles.dateNumSelected
-                ]}>
-                  {date.getDate()}
-                </Text>
-                <Text style={[
-                  styles.dateMon,
-                  isSelected && styles.dateMonSelected
-                ]}>
-                  {formatMonth(date)}
-                </Text>
-              </TouchableOpacity>
+                <Pressable
+                  style={[styles.dateCard, isSelected && styles.dateCardSelected]}
+                  onPress={() => {
+                    Haptics.selectionAsync().catch(() => undefined);
+                    setSelectedDate(date);
+                    setSelectedTime(null);
+                  }}
+                >
+                  <Text style={[styles.dateDay, isSelected && styles.dateDaySelected]}>
+                    {isToday(date) ? 'TODAY' : formatDay(date)}
+                  </Text>
+                  <Text style={[styles.dateNum, isSelected && styles.dateNumSelected]}>
+                    {date.getDate()}
+                  </Text>
+                  <Text style={[styles.dateMon, isSelected && styles.dateMonSelected]}>
+                    {formatMonth(date)}
+                  </Text>
+                </Pressable>
+              </Animated.View>
             );
           })}
         </ScrollView>
 
-        {/* Time Slots */}
         {selectedDate && (
           <>
             <Text style={[styles.sectionTitle, { marginTop: theme.spacing.xl }]}>
               SELECT TIME
             </Text>
             <View style={styles.timesGrid}>
-              {HOURS.map((time, i) => {
-                const isSelected = selectedTime === time;
-                const disabled   = isTimeDisabled(time);
-                return (
-                  <TouchableOpacity
-                    key={i}
-                    style={[
-                      styles.timeSlot,
-                      isSelected && styles.timeSlotSelected,
-                      disabled   && styles.timeSlotDisabled,
-                    ]}
-                    onPress={() => !disabled && setSelectedTime(time)}
-                    disabled={disabled}
-                  >
-                    <Text style={[
-                      styles.timeText,
-                      isSelected && styles.timeTextSelected,
-                      disabled   && styles.timeTextDisabled,
-                    ]}>
-                      {time}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
+              {HOURS.map((time, i) => (
+                <TimeSlot
+                  key={time}
+                  time={time}
+                  selected={selectedTime === time}
+                  disabled={isTimeDisabled(time)}
+                  onPress={() => setSelectedTime(time)}
+                  index={i}
+                />
+              ))}
             </View>
           </>
         )}
@@ -201,112 +248,69 @@ export default function DateTimeSelectionScreen({ navigation, route }: Props) {
         <View style={{ height: 120 }} />
       </ScrollView>
 
-      {/* Continue Button */}
       <View style={styles.footer}>
-        <TouchableOpacity
-          style={[
-            styles.button,
-            (!selectedDate || !selectedTime) && styles.buttonDisabled
-          ]}
-          onPress={handleContinue}
+        <PremiumButton
+          label={selectedDate && selectedTime
+            ? `CONFIRM — ${selectedTime}`
+            : 'SELECT DATE & TIME'}
+          fullWidth
           disabled={!selectedDate || !selectedTime}
-        >
-          <Text style={styles.buttonText}>
-            {selectedDate && selectedTime
-              ? `CONFIRM — ${selectedTime}`
-              : 'SELECT DATE & TIME'}
-          </Text>
-          {selectedDate && selectedTime && (
-            <Ionicons
-              name="arrow-forward"
-              size={18}
-              color={theme.colors.textInverse}
-            />
-          )}
-        </TouchableOpacity>
+          onPress={handleContinue}
+          rightIcon={selectedDate && selectedTime ? (
+            <Ionicons name="arrow-forward" size={18} color={theme.colors.textInverse} />
+          ) : undefined}
+        />
       </View>
-
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: theme.spacing.lg,
-    paddingTop: theme.spacing.xxl,
-    paddingBottom: theme.spacing.md,
-  },
-  backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: theme.radius.md,
-    backgroundColor: theme.colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerCenter: { flex: 1, alignItems: 'center' },
-  headerSpacer: { width: 40 },
-  stepText: {
-    fontFamily: theme.fonts.medium,
-    fontSize: theme.fontSizes.xs,
-    color: theme.colors.gold,
-    letterSpacing: 2,
-    marginBottom: 2,
-  },
-  title: {
-    fontFamily: theme.fonts.heading,
-    fontSize: theme.fontSizes.xxl,
-    color: theme.colors.textPrimary,
-    letterSpacing: 4,
-    textAlign: 'center',
-  },
+  container: { flex: 1, backgroundColor: theme.colors.background },
+
   progressBar: {
-    height: 3,
-    backgroundColor: theme.colors.border,
+    height:           3,
+    backgroundColor:  theme.colors.border,
     marginHorizontal: theme.spacing.lg,
-    borderRadius: theme.radius.full,
-    marginBottom: theme.spacing.md,
+    borderRadius:     theme.radius.full,
+    marginBottom:     theme.spacing.md,
   },
   progressFill: {
-    height: '100%',
+    height:          '100%',
     backgroundColor: theme.colors.gold,
-    borderRadius: theme.radius.full,
+    borderRadius:    theme.radius.full,
   },
+
   pills: {
-    flexDirection: 'row',
-    gap: theme.spacing.sm,
+    flexDirection:    'row',
+    gap:              theme.spacing.sm,
     paddingHorizontal: theme.spacing.lg,
-    marginBottom: theme.spacing.lg,
+    marginBottom:     theme.spacing.lg,
   },
   pill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.xs,
-    backgroundColor: theme.colors.goldMuted,
-    borderWidth: 1,
-    borderColor: theme.colors.gold,
-    borderRadius: theme.radius.full,
-    paddingVertical: theme.spacing.xs,
+    flexDirection:     'row',
+    alignItems:        'center',
+    gap:               theme.spacing.xs,
+    backgroundColor:   theme.colors.goldMuted,
+    borderWidth:       1,
+    borderColor:       theme.colors.gold,
+    borderRadius:      theme.radius.full,
+    paddingVertical:   theme.spacing.xs,
     paddingHorizontal: theme.spacing.md,
   },
   pillText: {
-    fontFamily: theme.fonts.medium,
-    fontSize: theme.fontSizes.xs,
-    color: theme.colors.gold,
+    fontFamily:    theme.fonts.medium,
+    fontSize:      theme.fontSizes.xs,
+    color:         theme.colors.gold,
     letterSpacing: 1,
   },
+
   sectionTitle: {
-    fontFamily: theme.fonts.heading,
-    fontSize: theme.fontSizes.sm,
-    color: theme.colors.textSecondary,
+    fontFamily:    theme.fonts.heading,
+    fontSize:      theme.fontSizes.sm,
+    color:         theme.colors.textSecondary,
     letterSpacing: 4,
-    marginBottom: theme.spacing.md,
+    marginBottom:  theme.spacing.md,
     paddingHorizontal: theme.spacing.lg,
   },
   datesRow: {
@@ -315,108 +319,69 @@ const styles = StyleSheet.create({
   },
   dateCard: {
     backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.lg,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    padding: theme.spacing.md,
-    alignItems: 'center',
-    minWidth: 64,
+    borderRadius:    theme.radius.lg,
+    borderWidth:     1,
+    borderColor:     theme.colors.border,
+    padding:         theme.spacing.md,
+    alignItems:      'center',
+    minWidth:        64,
     ...theme.shadows.md,
   },
   dateCardSelected: {
-    borderColor: theme.colors.gold,
+    borderColor:     theme.colors.gold,
     backgroundColor: theme.colors.goldMuted,
   },
   dateDay: {
-    fontFamily: theme.fonts.medium,
-    fontSize: theme.fontSizes.xs,
-    color: theme.colors.textMuted,
+    fontFamily:    theme.fonts.medium,
+    fontSize:      theme.fontSizes.xs,
+    color:         theme.colors.textMuted,
     letterSpacing: 1,
   },
-  dateDaySelected: {
-    color: theme.colors.gold,
-  },
+  dateDaySelected: { color: theme.colors.gold },
   dateNum: {
     fontFamily: theme.fonts.heading,
-    fontSize: theme.fontSizes.xxl,
-    color: theme.colors.textPrimary,
+    fontSize:   theme.fontSizes.xxl,
+    color:      theme.colors.textPrimary,
     lineHeight: 32,
   },
-  dateNumSelected: {
-    color: theme.colors.gold,
-  },
+  dateNumSelected: { color: theme.colors.gold },
   dateMon: {
     fontFamily: theme.fonts.body,
-    fontSize: theme.fontSizes.xs,
-    color: theme.colors.textMuted,
+    fontSize:   theme.fontSizes.xs,
+    color:      theme.colors.textMuted,
   },
-  dateMonSelected: {
-    color: theme.colors.goldDark,
-  },
+  dateMonSelected: { color: theme.colors.goldDark },
+
   timesGrid: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: theme.spacing.sm,
+    flexWrap:      'wrap',
+    gap:           theme.spacing.sm,
     paddingHorizontal: theme.spacing.lg,
   },
   timeSlot: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    paddingVertical: theme.spacing.sm,
+    borderRadius:      theme.radius.md,
+    borderWidth:       1,
+    paddingVertical:   theme.spacing.sm,
     paddingHorizontal: theme.spacing.md,
-    minWidth: 80,
-    alignItems: 'center',
+    minWidth:          80,
+    alignItems:        'center',
   },
-  timeSlotSelected: {
-    backgroundColor: theme.colors.gold,
-    borderColor: theme.colors.gold,
-  },
-  timeSlotDisabled: {
-    opacity: 0.3,
-    borderColor: theme.colors.border,
-  },
+  timeSlotDisabled: { opacity: 0.3, borderColor: theme.colors.border },
   timeText: {
     fontFamily: theme.fonts.medium,
-    fontSize: theme.fontSizes.sm,
-    color: theme.colors.textPrimary,
+    fontSize:   theme.fontSizes.sm,
   },
-  timeTextSelected: {
-    color: theme.colors.textInverse,
-    fontFamily: theme.fonts.bold,
-  },
-  timeTextDisabled: {
-    color: theme.colors.textMuted,
-  },
+  timeTextDisabled: { color: theme.colors.textMuted },
+
   footer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: theme.spacing.lg,
-    paddingBottom: theme.spacing.xl,
-    backgroundColor: theme.colors.background,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.border,
-  },
-  button: {
-    backgroundColor: theme.colors.gold,
-    borderRadius: theme.radius.md,
-    padding: theme.spacing.md,
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: theme.spacing.sm,
-    ...theme.shadows.gold,
-  },
-  buttonDisabled: {
-    opacity: 0.4,
-  },
-  buttonText: {
-    fontFamily: theme.fonts.heading,
-    fontSize: theme.fontSizes.lg,
-    color: theme.colors.textInverse,
-    letterSpacing: 2,
+    position:         'absolute',
+    bottom:           0,
+    left:             0,
+    right:            0,
+    padding:          theme.spacing.lg,
+    paddingBottom:    theme.spacing.xl,
+    backgroundColor:  theme.colors.background,
+    borderTopWidth:   1,
+    borderTopColor:   theme.colors.border,
   },
 });

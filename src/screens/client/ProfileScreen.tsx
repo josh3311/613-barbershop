@@ -1,24 +1,87 @@
-import React, { useState } from 'react';
+/**
+ * ProfileScreen — V3 visual layer
+ *
+ * Visual upgrades:
+ * - Avatar wrapped in a Skia gold ring that slowly rotates
+ * - Account info sections become GoldCards
+ * - Loyalty stamps spring-bounce in with stagger (same pattern as Home)
+ *
+ * Logic preserved: birthday edit (MM-DD regex), sign-out alert,
+ * loyalty math, all info rows.
+ */
+
+import React, { useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, Alert, TextInput, ActivityIndicator,
+  View, Text, StyleSheet, ScrollView, Pressable,
+  Alert, ActivityIndicator,
 } from 'react-native';
+import {
+  Canvas, Group, Circle, DashPathEffect,
+} from '@shopify/react-native-skia';
+import Animated, {
+  Easing, useSharedValue, useAnimatedStyle,
+  withRepeat, withTiming,
+} from 'react-native-reanimated';
+import { MotiView } from 'moti';
 import { Ionicons } from '@expo/vector-icons';
 import { signOut } from 'firebase/auth';
 import { doc, updateDoc } from 'firebase/firestore';
+
 import { auth, db } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
 import { COLLECTIONS } from '../../constants/collections';
 import { theme } from '../../theme';
+import { GoldCard, PremiumInput } from '../../components/ui';
 
 const BIRTHDAY_REGEX = /^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 
+// ── Skia rotating gold ring around the avatar ─────────────────────
+const RING_SIZE   = 110;
+const RING_STROKE = 2;
+
+const AvatarRingImpl = () => {
+  const rotation = useSharedValue(0);
+
+  useEffect(() => {
+    rotation.value = withRepeat(
+      withTiming(360, { duration: 16000, easing: Easing.linear }),
+      -1,
+      false,
+    );
+  }, [rotation]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${rotation.value}deg` }],
+  }));
+
+  return (
+    <Animated.View style={[styles.ringWrap, animatedStyle]}>
+      <Canvas style={{ width: RING_SIZE, height: RING_SIZE }}>
+        <Group>
+          <Circle
+            cx={RING_SIZE / 2}
+            cy={RING_SIZE / 2}
+            r={(RING_SIZE - RING_STROKE) / 2}
+            color={theme.colors.gold}
+            style="stroke"
+            strokeWidth={RING_STROKE}
+          >
+            <DashPathEffect intervals={[6, 8]} />
+          </Circle>
+        </Group>
+      </Canvas>
+    </Animated.View>
+  );
+};
+const AvatarRing = React.memo(AvatarRingImpl);
+
+// ── Screen ─────────────────────────────────────────────────────────
 export default function ProfileScreen() {
   const { user } = useAuth();
-  const [signingOut, setSigningOut] = useState(false);
+  const [signingOut,      setSigningOut]      = useState(false);
   const [editingBirthday, setEditingBirthday] = useState(false);
-  const [birthday, setBirthday] = useState(user?.birthday ?? '');
-  const [savingBirthday, setSavingBirthday] = useState(false);
+  const [birthday,        setBirthday]        = useState(user?.birthday ?? '');
+  const [savingBirthday,  setSavingBirthday]  = useState(false);
 
   const handleSaveBirthday = async () => {
     if (!user) return;
@@ -53,14 +116,14 @@ export default function ProfileScreen() {
             await signOut(auth);
           },
         },
-      ]
+      ],
     );
   };
 
-  const stamps      = user?.loyaltyStamps ?? 0;
-  const stampsLeft  = 10 - stamps;
-  const firstName   = user?.displayName?.split(' ')[0] ?? '';
-  const lastName    = user?.displayName?.split(' ').slice(1).join(' ') ?? '';
+  const stamps     = user?.loyaltyStamps ?? 0;
+  const stampsLeft = 10 - stamps;
+  const firstName  = user?.displayName?.split(' ')[0] ?? '';
+  const lastName   = user?.displayName?.split(' ').slice(1).join(' ') ?? '';
 
   return (
     <View style={styles.container}>
@@ -68,32 +131,29 @@ export default function ProfileScreen() {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-
-        {/* Header */}
         <View style={styles.header}>
           <Text style={styles.title}>PROFILE</Text>
         </View>
 
-        {/* Avatar + Name */}
+        {/* Avatar + Name with rotating ring */}
         <View style={styles.avatarSection}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>
-              {user?.displayName?.charAt(0).toUpperCase() ?? '?'}
-            </Text>
+          <View style={styles.avatarBlock}>
+            <AvatarRing />
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>
+                {user?.displayName?.charAt(0).toUpperCase() ?? '?'}
+              </Text>
+            </View>
           </View>
-          <Text style={styles.name}>
-            {user?.displayName?.toUpperCase()}
-          </Text>
+          <Text style={styles.name}>{user?.displayName?.toUpperCase()}</Text>
           <Text style={styles.email}>{user?.email}</Text>
           <View style={styles.roleBadge}>
-            <Text style={styles.roleText}>
-              {user?.role?.toUpperCase()}
-            </Text>
+            <Text style={styles.roleText}>{user?.role?.toUpperCase()}</Text>
           </View>
         </View>
 
-        {/* Loyalty Card */}
-        <View style={styles.loyaltyCard}>
+        {/* Loyalty card */}
+        <GoldCard entranceIndex={0} active={stamps >= 10}>
           <View style={styles.loyaltyHeader}>
             <View>
               <Text style={styles.loyaltyTitle}>LOYALTY STAMPS</Text>
@@ -106,483 +166,385 @@ export default function ProfileScreen() {
             <Text style={styles.loyaltyCount}>{stamps}/10</Text>
           </View>
           <View style={styles.stampsGrid}>
-            {Array.from({ length: 10 }).map((_, i) => (
-              <View
-                key={i}
-                style={[
-                  styles.stamp,
-                  i < stamps && styles.stampFilled,
-                ]}
-              >
-                {i < stamps && (
-                  <Ionicons
-                    name="checkmark"
-                    size={14}
-                    color={theme.colors.textInverse}
+            {Array.from({ length: 10 }).map((_, i) => {
+              const filled = i < stamps;
+              return (
+                <MotiView
+                  key={i}
+                  from={{ scale: 0, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{
+                    type: 'spring',
+                    damping: filled ? 9 : 14,
+                    mass:    filled ? 0.6 : 1,
+                    delay:   180 + i * 35,
+                  }}
+                  style={[styles.stamp, filled && styles.stampFilled]}
+                >
+                  {filled && (
+                    <Ionicons name="checkmark" size={14} color={theme.colors.textInverse} />
+                  )}
+                </MotiView>
+              );
+            })}
+          </View>
+        </GoldCard>
+
+        {/* Account info */}
+        <Text style={styles.sectionTitle}>ACCOUNT INFO</Text>
+        <GoldCard entranceIndex={1} contentStyle={{ padding: 0 }} flat>
+          <InfoRow
+            icon="person-outline"
+            label="FIRST NAME"
+            value={firstName}
+          />
+          <Divider />
+          <InfoRow
+            icon="person-outline"
+            label="LAST NAME"
+            value={lastName || '—'}
+          />
+          <Divider />
+          <InfoRow
+            icon="mail-outline"
+            label="EMAIL"
+            value={user?.email ?? '—'}
+          />
+          <Divider />
+          <InfoRow
+            icon="call-outline"
+            label="PHONE"
+            value={user?.phone ?? 'Not added'}
+          />
+          <Divider />
+
+          {/* Birthday row (tappable) */}
+          <Pressable
+            style={styles.infoRow}
+            onPress={() => {
+              setBirthday(user?.birthday ?? '');
+              setEditingBirthday(true);
+            }}
+            disabled={editingBirthday}
+          >
+            <View style={styles.infoIcon}>
+              <Ionicons name="gift-outline" size={18} color={theme.colors.gold} />
+            </View>
+            <View style={styles.infoContent}>
+              <Text style={styles.infoLabel}>BIRTHDAY</Text>
+              {editingBirthday ? (
+                <View style={styles.birthdayEditRow}>
+                  <PremiumInput
+                    value={birthday}
+                    onChangeText={setBirthday}
+                    placeholder="MM-DD"
+                    maxLength={5}
+                    keyboardType="numbers-and-punctuation"
+                    autoFocus
+                    editable={!savingBirthday}
+                    containerStyle={{ flex: 1, marginBottom: 0 }}
                   />
-                )}
-              </View>
-            ))}
-          </View>
-        </View>
-
-        {/* Info Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>ACCOUNT INFO</Text>
-
-          <View style={styles.infoCard}>
-            <View style={styles.infoRow}>
-              <View style={styles.infoIcon}>
-                <Ionicons
-                  name="person-outline"
-                  size={18}
-                  color={theme.colors.gold}
-                />
-              </View>
-              <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>FIRST NAME</Text>
-                <Text style={styles.infoValue}>{firstName}</Text>
-              </View>
-            </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.infoRow}>
-              <View style={styles.infoIcon}>
-                <Ionicons
-                  name="person-outline"
-                  size={18}
-                  color={theme.colors.gold}
-                />
-              </View>
-              <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>LAST NAME</Text>
-                <Text style={styles.infoValue}>
-                  {lastName || '—'}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.infoRow}>
-              <View style={styles.infoIcon}>
-                <Ionicons
-                  name="mail-outline"
-                  size={18}
-                  color={theme.colors.gold}
-                />
-              </View>
-              <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>EMAIL</Text>
-                <Text style={styles.infoValue}>{user?.email}</Text>
-              </View>
-            </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.infoRow}>
-              <View style={styles.infoIcon}>
-                <Ionicons
-                  name="call-outline"
-                  size={18}
-                  color={theme.colors.gold}
-                />
-              </View>
-              <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>PHONE</Text>
-                <Text style={styles.infoValue}>
-                  {user?.phone ?? 'Not added'}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.divider} />
-
-            <TouchableOpacity
-              style={styles.infoRow}
-              onPress={() => {
-                setBirthday(user?.birthday ?? '');
-                setEditingBirthday(true);
-              }}
-              disabled={editingBirthday}
-            >
-              <View style={styles.infoIcon}>
-                <Ionicons
-                  name="gift-outline"
-                  size={18}
-                  color={theme.colors.gold}
-                />
-              </View>
-              <View style={styles.infoContent}>
-                <Text style={styles.infoLabel}>BIRTHDAY</Text>
-                {editingBirthday ? (
-                  <View style={styles.birthdayEditRow}>
-                    <TextInput
-                      style={styles.birthdayInput}
-                      value={birthday}
-                      onChangeText={setBirthday}
-                      placeholder="MM-DD"
-                      placeholderTextColor={theme.colors.textMuted}
-                      maxLength={5}
-                      keyboardType="numbers-and-punctuation"
-                      autoFocus
-                      editable={!savingBirthday}
-                    />
-                    <TouchableOpacity
-                      style={styles.birthdaySaveBtn}
-                      onPress={handleSaveBirthday}
-                      disabled={savingBirthday}
-                    >
-                      {savingBirthday ? (
-                        <ActivityIndicator size="small" color={theme.colors.textInverse} />
-                      ) : (
-                        <Text style={styles.birthdaySaveText}>SAVE</Text>
-                      )}
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.birthdayCancelBtn}
-                      onPress={() => {
-                        setEditingBirthday(false);
-                        setBirthday(user?.birthday ?? '');
-                      }}
-                      disabled={savingBirthday}
-                    >
-                      <Ionicons name="close" size={18} color={theme.colors.textMuted} />
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <Text style={styles.infoValue}>
-                    {user?.birthday ?? 'Not set'}
-                  </Text>
-                )}
-              </View>
-              {!editingBirthday && (
-                <Ionicons
-                  name="create-outline"
-                  size={16}
-                  color={theme.colors.textMuted}
-                />
+                  <Pressable
+                    style={styles.birthdaySaveBtn}
+                    onPress={handleSaveBirthday}
+                    disabled={savingBirthday}
+                  >
+                    {savingBirthday ? (
+                      <ActivityIndicator size="small" color={theme.colors.textInverse} />
+                    ) : (
+                      <Text style={styles.birthdaySaveText}>SAVE</Text>
+                    )}
+                  </Pressable>
+                  <Pressable
+                    style={styles.birthdayCancelBtn}
+                    onPress={() => {
+                      setEditingBirthday(false);
+                      setBirthday(user?.birthday ?? '');
+                    }}
+                    disabled={savingBirthday}
+                  >
+                    <Ionicons name="close" size={18} color={theme.colors.textMuted} />
+                  </Pressable>
+                </View>
+              ) : (
+                <Text style={styles.infoValue}>{user?.birthday ?? 'Not set'}</Text>
               )}
-            </TouchableOpacity>
-          </View>
-        </View>
+            </View>
+            {!editingBirthday && (
+              <Ionicons name="create-outline" size={16} color={theme.colors.textMuted} />
+            )}
+          </Pressable>
+        </GoldCard>
 
-        {/* App Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>APP</Text>
-          <View style={styles.infoCard}>
+        {/* App section */}
+        <Text style={styles.sectionTitle}>APP</Text>
+        <GoldCard entranceIndex={2} contentStyle={{ padding: 0 }} flat>
+          <Pressable style={styles.infoRow}>
+            <View style={styles.infoIcon}>
+              <Ionicons name="notifications-outline" size={18} color={theme.colors.gold} />
+            </View>
+            <View style={styles.infoContent}>
+              <Text style={styles.infoValue}>Notifications</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={theme.colors.textMuted} />
+          </Pressable>
+          <Divider />
+          <Pressable style={styles.infoRow}>
+            <View style={styles.infoIcon}>
+              <Ionicons name="shield-outline" size={18} color={theme.colors.gold} />
+            </View>
+            <View style={styles.infoContent}>
+              <Text style={styles.infoValue}>Privacy Policy</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={theme.colors.textMuted} />
+          </Pressable>
+          <Divider />
+          <Pressable style={styles.infoRow}>
+            <View style={styles.infoIcon}>
+              <Ionicons name="information-circle-outline" size={18} color={theme.colors.gold} />
+            </View>
+            <View style={styles.infoContent}>
+              <Text style={styles.infoValue}>About 613 Barbershop</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={theme.colors.textMuted} />
+          </Pressable>
+        </GoldCard>
 
-            <TouchableOpacity style={styles.infoRow}>
-              <View style={styles.infoIcon}>
-                <Ionicons
-                  name="notifications-outline"
-                  size={18}
-                  color={theme.colors.gold}
-                />
-              </View>
-              <View style={styles.infoContent}>
-                <Text style={styles.infoValue}>Notifications</Text>
-              </View>
-              <Ionicons
-                name="chevron-forward"
-                size={16}
-                color={theme.colors.textMuted}
-              />
-            </TouchableOpacity>
-
-            <View style={styles.divider} />
-
-            <TouchableOpacity style={styles.infoRow}>
-              <View style={styles.infoIcon}>
-                <Ionicons
-                  name="shield-outline"
-                  size={18}
-                  color={theme.colors.gold}
-                />
-              </View>
-              <View style={styles.infoContent}>
-                <Text style={styles.infoValue}>Privacy Policy</Text>
-              </View>
-              <Ionicons
-                name="chevron-forward"
-                size={16}
-                color={theme.colors.textMuted}
-              />
-            </TouchableOpacity>
-
-            <View style={styles.divider} />
-
-            <TouchableOpacity style={styles.infoRow}>
-              <View style={styles.infoIcon}>
-                <Ionicons
-                  name="information-circle-outline"
-                  size={18}
-                  color={theme.colors.gold}
-                />
-              </View>
-              <View style={styles.infoContent}>
-                <Text style={styles.infoValue}>About 613 Barbershop</Text>
-              </View>
-              <Ionicons
-                name="chevron-forward"
-                size={16}
-                color={theme.colors.textMuted}
-              />
-            </TouchableOpacity>
-
-          </View>
-        </View>
-
-        {/* Sign Out */}
-        <TouchableOpacity
+        {/* Sign out */}
+        <Pressable
           style={styles.signOutBtn}
           onPress={handleSignOut}
           disabled={signingOut}
         >
-          <Ionicons
-            name="log-out-outline"
-            size={20}
-            color={theme.colors.error}
-          />
+          <Ionicons name="log-out-outline" size={20} color={theme.colors.error} />
           <Text style={styles.signOutText}>
             {signingOut ? 'SIGNING OUT...' : 'SIGN OUT'}
           </Text>
-        </TouchableOpacity>
+        </Pressable>
 
-        {/* Version */}
         <Text style={styles.version}>613 Barbershop v3.0</Text>
-
       </ScrollView>
     </View>
   );
 }
 
+// ── Small helpers (kept local to file) ────────────────────────────
+function InfoRow({
+  icon, label, value,
+}: { icon: keyof typeof import('@expo/vector-icons').Ionicons.glyphMap;
+     label: string;
+     value: string; }) {
+  return (
+    <View style={styles.infoRow}>
+      <View style={styles.infoIcon}>
+        <Ionicons name={icon} size={18} color={theme.colors.gold} />
+      </View>
+      <View style={styles.infoContent}>
+        <Text style={styles.infoLabel}>{label}</Text>
+        <Text style={styles.infoValue}>{value}</Text>
+      </View>
+    </View>
+  );
+}
+
+function Divider() {
+  return <View style={styles.divider} />;
+}
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
+  container: { flex: 1, backgroundColor: theme.colors.background },
   scroll: {
-    padding: theme.spacing.lg,
-    paddingTop: theme.spacing.xxl,
+    padding:       theme.spacing.lg,
+    paddingTop:    theme.spacing.xxl,
     paddingBottom: theme.spacing.xxl,
   },
-  header: {
-    marginBottom: theme.spacing.xl,
-  },
+  header: { marginBottom: theme.spacing.xl },
   title: {
-    fontFamily: theme.fonts.heading,
-    fontSize: theme.fontSizes.xxxl,
-    color: theme.colors.textPrimary,
+    fontFamily:    theme.fonts.heading,
+    fontSize:      theme.fontSizes.xxxl,
+    color:         theme.colors.textPrimary,
     letterSpacing: 4,
   },
-  avatarSection: {
-    alignItems: 'center',
-    marginBottom: theme.spacing.xl,
+
+  avatarSection: { alignItems: 'center', marginBottom: theme.spacing.xl },
+  avatarBlock: {
+    width:           RING_SIZE,
+    height:          RING_SIZE,
+    alignItems:      'center',
+    justifyContent:  'center',
+    marginBottom:    theme.spacing.md,
   },
+  ringWrap: { position: 'absolute', top: 0, left: 0 },
   avatar: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
+    width:           90,
+    height:          90,
+    borderRadius:    45,
     backgroundColor: theme.colors.gold,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: theme.spacing.md,
+    alignItems:      'center',
+    justifyContent:  'center',
     ...theme.shadows.gold,
   },
   avatarText: {
     fontFamily: theme.fonts.heading,
-    fontSize: 40,
-    color: theme.colors.textInverse,
+    fontSize:   40,
+    color:      theme.colors.textInverse,
   },
   name: {
-    fontFamily: theme.fonts.heading,
-    fontSize: theme.fontSizes.xxl,
-    color: theme.colors.textPrimary,
+    fontFamily:    theme.fonts.heading,
+    fontSize:      theme.fontSizes.xxl,
+    color:         theme.colors.textPrimary,
     letterSpacing: 3,
   },
   email: {
     fontFamily: theme.fonts.body,
-    fontSize: theme.fontSizes.sm,
-    color: theme.colors.textSecondary,
-    marginTop: theme.spacing.xs,
+    fontSize:   theme.fontSizes.sm,
+    color:      theme.colors.textSecondary,
+    marginTop:  theme.spacing.xs,
   },
   roleBadge: {
-    backgroundColor: theme.colors.goldMuted,
-    borderWidth: 1,
-    borderColor: theme.colors.gold,
-    borderRadius: theme.radius.full,
-    paddingVertical: 4,
+    backgroundColor:  theme.colors.goldMuted,
+    borderWidth:      1,
+    borderColor:      theme.colors.gold,
+    borderRadius:     theme.radius.full,
+    paddingVertical:  4,
     paddingHorizontal: theme.spacing.md,
-    marginTop: theme.spacing.sm,
+    marginTop:        theme.spacing.sm,
   },
   roleText: {
-    fontFamily: theme.fonts.medium,
-    fontSize: theme.fontSizes.xs,
-    color: theme.colors.gold,
+    fontFamily:    theme.fonts.medium,
+    fontSize:      theme.fontSizes.xs,
+    color:         theme.colors.gold,
     letterSpacing: 2,
   },
-  loyaltyCard: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.xl,
-    borderWidth: 1,
-    borderColor: theme.colors.gold,
-    padding: theme.spacing.lg,
-    marginBottom: theme.spacing.xl,
-    ...theme.shadows.gold,
-  },
+
+  // Loyalty
   loyaltyHeader: {
-    flexDirection: 'row',
+    flexDirection:  'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: theme.spacing.md,
+    alignItems:     'flex-start',
+    marginBottom:   theme.spacing.md,
   },
   loyaltyTitle: {
-    fontFamily: theme.fonts.heading,
-    fontSize: theme.fontSizes.md,
-    color: theme.colors.textPrimary,
+    fontFamily:    theme.fonts.heading,
+    fontSize:      theme.fontSizes.md,
+    color:         theme.colors.textPrimary,
     letterSpacing: 3,
   },
   loyaltySubtitle: {
     fontFamily: theme.fonts.body,
-    fontSize: theme.fontSizes.xs,
-    color: theme.colors.textSecondary,
-    marginTop: 2,
+    fontSize:   theme.fontSizes.xs,
+    color:      theme.colors.textSecondary,
+    marginTop:  2,
   },
   loyaltyCount: {
     fontFamily: theme.fonts.heading,
-    fontSize: theme.fontSizes.xl,
-    color: theme.colors.gold,
+    fontSize:   theme.fontSizes.xl,
+    color:      theme.colors.gold,
   },
-  stampsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: theme.spacing.sm,
-  },
+  stampsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm },
   stamp: {
-    width: 36,
-    height: 36,
-    borderRadius: theme.radius.full,
-    borderWidth: 1.5,
-    borderColor: theme.colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width:           36,
+    height:          36,
+    borderRadius:    theme.radius.full,
+    borderWidth:     1.5,
+    borderColor:     theme.colors.border,
+    alignItems:      'center',
+    justifyContent:  'center',
   },
-  stampFilled: {
-    backgroundColor: theme.colors.gold,
-    borderColor: theme.colors.gold,
-  },
-  section: {
-    marginBottom: theme.spacing.xl,
-  },
+  stampFilled: { backgroundColor: theme.colors.gold, borderColor: theme.colors.gold },
+
+  // Section
   sectionTitle: {
-    fontFamily: theme.fonts.heading,
-    fontSize: theme.fontSizes.sm,
-    color: theme.colors.textSecondary,
+    fontFamily:    theme.fonts.heading,
+    fontSize:      theme.fontSizes.sm,
+    color:         theme.colors.textSecondary,
     letterSpacing: 4,
-    marginBottom: theme.spacing.md,
+    marginTop:     theme.spacing.xl,
+    marginBottom:  theme.spacing.md,
   },
-  infoCard: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.lg,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    overflow: 'hidden',
-    ...theme.shadows.md,
-  },
+
+  // Info rows
   infoRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    padding: theme.spacing.md,
-    gap: theme.spacing.md,
+    alignItems:    'center',
+    padding:       theme.spacing.md,
+    gap:           theme.spacing.md,
   },
   infoIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: theme.radius.sm,
+    width:           36,
+    height:          36,
+    borderRadius:    theme.radius.sm,
     backgroundColor: theme.colors.goldMuted,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems:      'center',
+    justifyContent:  'center',
   },
-  infoContent: {
-    flex: 1,
-  },
+  infoContent: { flex: 1 },
   infoLabel: {
-    fontFamily: theme.fonts.medium,
-    fontSize: theme.fontSizes.xs,
-    color: theme.colors.textMuted,
+    fontFamily:    theme.fonts.medium,
+    fontSize:      theme.fontSizes.xs,
+    color:         theme.colors.textMuted,
     letterSpacing: 1,
   },
   infoValue: {
     fontFamily: theme.fonts.medium,
-    fontSize: theme.fontSizes.md,
-    color: theme.colors.textPrimary,
-    marginTop: 1,
+    fontSize:   theme.fontSizes.md,
+    color:      theme.colors.textPrimary,
+    marginTop:  1,
   },
   divider: {
-    height: 1,
+    height:          1,
     backgroundColor: theme.colors.border,
-    marginLeft: theme.spacing.lg + 36 + theme.spacing.md,
+    marginLeft:      theme.spacing.lg + 36 + theme.spacing.md,
   },
-  signOutBtn: {
+
+  // Birthday edit
+  birthdayEditRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: theme.spacing.sm,
+    alignItems:    'center',
+    gap:           theme.spacing.sm,
+    marginTop:     theme.spacing.xs,
+  },
+  birthdaySaveBtn: {
+    backgroundColor: theme.colors.gold,
+    borderRadius:    theme.radius.sm,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical:   6,
+    alignItems:        'center',
+    justifyContent:    'center',
+    minWidth:          60,
+  },
+  birthdaySaveText: {
+    fontFamily:    theme.fonts.heading,
+    fontSize:      theme.fontSizes.sm,
+    color:         theme.colors.textInverse,
+    letterSpacing: 2,
+  },
+  birthdayCancelBtn: { padding: theme.spacing.xs },
+
+  // Sign out
+  signOutBtn: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    justifyContent:  'center',
+    gap:             theme.spacing.sm,
     backgroundColor: 'rgba(255,68,68,0.1)',
-    borderWidth: 1,
-    borderColor: theme.colors.error,
-    borderRadius: theme.radius.md,
-    padding: theme.spacing.md,
-    marginBottom: theme.spacing.lg,
+    borderWidth:     1,
+    borderColor:     theme.colors.error,
+    borderRadius:    theme.radius.md,
+    padding:         theme.spacing.md,
+    marginTop:       theme.spacing.xl,
+    marginBottom:    theme.spacing.lg,
   },
   signOutText: {
-    fontFamily: theme.fonts.heading,
-    fontSize: theme.fontSizes.md,
-    color: theme.colors.error,
+    fontFamily:    theme.fonts.heading,
+    fontSize:      theme.fontSizes.md,
+    color:         theme.colors.error,
     letterSpacing: 2,
   },
   version: {
     fontFamily: theme.fonts.body,
-    fontSize: theme.fontSizes.xs,
-    color: theme.colors.textMuted,
-    textAlign: 'center',
-  },
-  birthdayEditRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.sm,
-    marginTop: theme.spacing.xs,
-  },
-  birthdayInput: {
-    flex: 1,
-    fontFamily: theme.fonts.medium,
-    fontSize: theme.fontSizes.md,
-    color: theme.colors.textPrimary,
-    backgroundColor: theme.colors.background,
-    borderWidth: 1,
-    borderColor: theme.colors.gold,
-    borderRadius: theme.radius.sm,
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: 6,
-  },
-  birthdaySaveBtn: {
-    backgroundColor: theme.colors.gold,
-    borderRadius: theme.radius.sm,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: 60,
-  },
-  birthdaySaveText: {
-    fontFamily: theme.fonts.heading,
-    fontSize: theme.fontSizes.sm,
-    color: theme.colors.textInverse,
-    letterSpacing: 2,
-  },
-  birthdayCancelBtn: {
-    padding: theme.spacing.xs,
+    fontSize:   theme.fontSizes.xs,
+    color:      theme.colors.textMuted,
+    textAlign:  'center',
   },
 });

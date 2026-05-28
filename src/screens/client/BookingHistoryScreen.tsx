@@ -1,30 +1,41 @@
+/**
+ * BookingHistoryScreen — V3 visual layer
+ *
+ * Visual upgrades:
+ * - Booking cards now use GoldCard with staggered entrance
+ * - Status badges keep their colour map; PENDING badges pulse via Moti
+ * - GoldShimmer placeholders replace ActivityIndicator
+ *
+ * Logic preserved exactly: Firestore subscription, filter state,
+ * RatingModal trigger, StyleCardView navigation.
+ */
+
 import React, { useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, ActivityIndicator,
+  View, Text, StyleSheet, ScrollView, Pressable,
 } from 'react-native';
 import {
-  collection, query, where,
-  onSnapshot, orderBy,
+  collection, query, where, onSnapshot, orderBy,
 } from 'firebase/firestore';
-import { Ionicons }    from '@expo/vector-icons';
-import { db }          from '../../config/firebase';
-import { useAuth }     from '../../context/AuthContext';
+import Animated, { FadeIn } from 'react-native-reanimated';
+import { MotiView } from 'moti';
+import { Ionicons } from '@expo/vector-icons';
+
+import { db } from '../../config/firebase';
+import { useAuth } from '../../context/AuthContext';
 import { COLLECTIONS } from '../../constants/collections';
 import { Booking, BookingStatus } from '../../types';
-import { theme }       from '../../theme';
-import RatingModal     from '../../components/RatingModal';
+import { theme } from '../../theme';
+import RatingModal from '../../components/RatingModal';
+import { GoldCard, GoldShimmer } from '../../components/ui';
 
-interface Props {
-  navigation: any;
-}
+interface Props { navigation: any; }
 
 type FilterType = 'all' | BookingStatus;
 
-// ── Tiny star display ──────────────────────────────────────
 function StarRow({ rating }: { rating: number }) {
   return (
-    <View style={starStyles.row}>
+    <View style={{ flexDirection: 'row', gap: 2 }}>
       {[1, 2, 3, 4, 5].map(n => (
         <Ionicons
           key={n}
@@ -37,9 +48,30 @@ function StarRow({ rating }: { rating: number }) {
   );
 }
 
-const starStyles = StyleSheet.create({
-  row: { flexDirection: 'row', gap: 2 },
-});
+// ── Pulse badge — only used for PENDING ────────────────────────────
+function PulseBadge({
+  label, color,
+}: { label: string; color: string }) {
+  return (
+    <MotiView
+      from={{ opacity: 0.6 }}
+      animate={{ opacity: 1 }}
+      transition={{
+        loop:     true,
+        type:     'timing',
+        duration: 900,
+        repeatReverse: true,
+      }}
+      style={[
+        styles.statusBadge,
+        { backgroundColor: color + '20', borderColor: color },
+      ]}
+    >
+      <Ionicons name="time-outline" size={12} color={color} />
+      <Text style={[styles.statusText, { color }]}>{label}</Text>
+    </MotiView>
+  );
+}
 
 export default function BookingHistoryScreen({ navigation }: Props) {
   const { user } = useAuth();
@@ -70,8 +102,9 @@ export default function BookingHistoryScreen({ navigation }: Props) {
     : bookings.filter(b => b.status === filter);
 
   const formatDate = (date: Date) =>
-    date?.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) ?? '';
-
+    date?.toLocaleDateString([], {
+      weekday: 'short', month: 'short', day: 'numeric',
+    }) ?? '';
   const formatTime = (date: Date) =>
     date?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) ?? '';
 
@@ -82,12 +115,12 @@ export default function BookingHistoryScreen({ navigation }: Props) {
     cancelled: theme.colors.error,
   }[s] ?? theme.colors.textMuted);
 
-  const statusIcon = (s: string): keyof typeof Ionicons.glyphMap => ({
+  const statusIcon = (s: string): keyof typeof import('@expo/vector-icons').Ionicons.glyphMap => ({
     pending:   'time-outline',
     confirmed: 'checkmark-circle-outline',
     completed: 'trophy-outline',
     cancelled: 'close-circle-outline',
-  }[s] as keyof typeof Ionicons.glyphMap ?? 'help-outline');
+  }[s] as keyof typeof import('@expo/vector-icons').Ionicons.glyphMap ?? 'help-outline');
 
   const FILTERS: FilterType[] = ['all', 'pending', 'confirmed', 'completed', 'cancelled'];
 
@@ -101,39 +134,60 @@ export default function BookingHistoryScreen({ navigation }: Props) {
         </Text>
       </View>
 
-      {/* Filter Pills */}
+      {/* Filter pills */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.filtersRow}
       >
         {FILTERS.map(f => (
-          <TouchableOpacity
+          <Pressable
             key={f}
             style={[styles.filterPill, filter === f && styles.filterPillActive]}
             onPress={() => setFilter(f)}
           >
-            <Text style={[styles.filterText, filter === f && styles.filterTextActive]}>
+            <Text style={[
+              styles.filterText,
+              filter === f && styles.filterTextActive,
+            ]}>
               {f.toUpperCase()}
             </Text>
-          </TouchableOpacity>
+          </Pressable>
         ))}
       </ScrollView>
 
       {loading ? (
-        <ActivityIndicator color={theme.colors.gold} size="large" style={styles.loader} />
+        <View style={styles.shimmerStack}>
+          {Array.from({ length: 3 }).map((_, i) => (
+            <GoldShimmer
+              key={i}
+              width="100%"
+              height={130}
+              radius={theme.radius.lg}
+            />
+          ))}
+        </View>
       ) : filtered.length === 0 ? (
-        <View style={styles.emptyState}>
+        <Animated.View entering={FadeIn.duration(220)} style={styles.emptyState}>
           <Ionicons name="calendar-outline" size={56} color={theme.colors.textMuted} />
           <Text style={styles.emptyTitle}>No bookings yet</Text>
           <Text style={styles.emptySubtitle}>
-            {filter === 'all' ? 'Your appointments will appear here' : `No ${filter} bookings found`}
+            {filter === 'all'
+              ? 'Your appointments will appear here'
+              : `No ${filter} bookings found`}
           </Text>
-        </View>
+        </Animated.View>
       ) : (
-        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-          {filtered.map(booking => (
-            <View key={booking.id} style={styles.card}>
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          showsVerticalScrollIndicator={false}
+        >
+          {filtered.map((booking, i) => (
+            <GoldCard
+              key={booking.id}
+              entranceIndex={i}
+              contentStyle={styles.cardContent}
+            >
               {/* Top row */}
               <View style={styles.cardTop}>
                 <View style={styles.serviceInfo}>
@@ -153,34 +207,47 @@ export default function BookingHistoryScreen({ navigation }: Props) {
 
               {/* Status row */}
               <View style={styles.cardBottom}>
-                <View style={[
-                  styles.statusBadge,
-                  { backgroundColor: statusColor(booking.status) + '20', borderColor: statusColor(booking.status) },
-                ]}>
-                  <Ionicons name={statusIcon(booking.status)} size={12} color={statusColor(booking.status)} />
-                  <Text style={[styles.statusText, { color: statusColor(booking.status) }]}>
-                    {booking.status.toUpperCase()}
-                  </Text>
-                </View>
+                {booking.status === 'pending' ? (
+                  <PulseBadge label="PENDING" color={statusColor('pending')} />
+                ) : (
+                  <View style={[
+                    styles.statusBadge,
+                    {
+                      backgroundColor: statusColor(booking.status) + '20',
+                      borderColor:     statusColor(booking.status),
+                    },
+                  ]}>
+                    <Ionicons
+                      name={statusIcon(booking.status)}
+                      size={12}
+                      color={statusColor(booking.status)}
+                    />
+                    <Text style={[
+                      styles.statusText,
+                      { color: statusColor(booking.status) },
+                    ]}>
+                      {booking.status.toUpperCase()}
+                    </Text>
+                  </View>
+                )}
 
-                {/* Chat button — active bookings only */}
                 {(booking.status === 'pending' || booking.status === 'confirmed') && (
-                  <TouchableOpacity
+                  <Pressable
                     style={styles.actionBtn}
                     onPress={() => navigation.navigate('Chat', {
-                      bookingId: booking.id, recipientName: booking.barberName,
+                      bookingId: booking.id,
+                      recipientName: booking.barberName,
                     })}
                   >
                     <Ionicons name="chatbubble-outline" size={14} color={theme.colors.gold} />
                     <Text style={styles.actionBtnText}>CHAT</Text>
-                  </TouchableOpacity>
+                  </Pressable>
                 )}
               </View>
 
-              {/* ── Completed bookings — rating + style card ── */}
+              {/* Completed section */}
               {booking.status === 'completed' && (
                 <View style={styles.completedSection}>
-                  {/* Show existing rating */}
                   {booking.rating ? (
                     <View style={styles.ratingRow}>
                       <StarRow rating={booking.rating} />
@@ -191,19 +258,17 @@ export default function BookingHistoryScreen({ navigation }: Props) {
                       ) : null}
                     </View>
                   ) : (
-                    // Rate button — only if not yet rated
-                    <TouchableOpacity
+                    <Pressable
                       style={styles.rateBtn}
                       onPress={() => setRatingFor(booking)}
                     >
                       <Ionicons name="star-outline" size={14} color={theme.colors.gold} />
                       <Text style={styles.rateBtnText}>RATE THIS SESSION</Text>
-                    </TouchableOpacity>
+                    </Pressable>
                   )}
 
-                  {/* Style card link — if barber documented the style */}
                   {booking.styleCardId ? (
-                    <TouchableOpacity
+                    <Pressable
                       style={styles.styleCardBtn}
                       onPress={() => navigation.navigate('StyleCardView', {
                         styleCardId: booking.styleCardId,
@@ -212,16 +277,15 @@ export default function BookingHistoryScreen({ navigation }: Props) {
                     >
                       <Ionicons name="camera-outline" size={14} color={theme.colors.textPrimary} />
                       <Text style={styles.styleCardBtnText}>VIEW STYLE CARD</Text>
-                    </TouchableOpacity>
+                    </Pressable>
                   ) : null}
                 </View>
               )}
-            </View>
+            </GoldCard>
           ))}
         </ScrollView>
       )}
 
-      {/* Rating Modal */}
       {ratingFor && (
         <RatingModal
           visible={!!ratingFor}
@@ -237,12 +301,16 @@ export default function BookingHistoryScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container:  { flex: 1, backgroundColor: theme.colors.background },
-  header:     { padding: theme.spacing.lg, paddingTop: theme.spacing.xxl, marginBottom: theme.spacing.md },
+  container: { flex: 1, backgroundColor: theme.colors.background },
+  header: {
+    padding:        theme.spacing.lg,
+    paddingTop:     theme.spacing.xxl,
+    marginBottom:   theme.spacing.md,
+  },
   title: {
-    fontFamily: theme.fonts.heading,
-    fontSize:   theme.fontSizes.xxxl,
-    color:      theme.colors.textPrimary,
+    fontFamily:    theme.fonts.heading,
+    fontSize:      theme.fontSizes.xxxl,
+    color:         theme.colors.textPrimary,
     letterSpacing: 4,
   },
   subtitle: {
@@ -251,6 +319,7 @@ const styles = StyleSheet.create({
     color:      theme.colors.textSecondary,
     marginTop:  theme.spacing.xs,
   },
+
   filtersRow: {
     paddingHorizontal: theme.spacing.lg,
     paddingBottom:     theme.spacing.md,
@@ -260,75 +329,171 @@ const styles = StyleSheet.create({
     paddingVertical:   theme.spacing.xs,
     paddingHorizontal: theme.spacing.md,
     borderRadius:      theme.radius.full,
-    borderWidth: 1,
+    borderWidth:       1,
     borderColor:       theme.colors.border,
     backgroundColor:   theme.colors.surface,
-    height: 36,
-    justifyContent: 'center',
+    height:            36,
+    justifyContent:    'center',
   },
-  filterPillActive: { borderColor: theme.colors.gold, backgroundColor: theme.colors.goldMuted },
+  filterPillActive: {
+    borderColor:     theme.colors.gold,
+    backgroundColor: theme.colors.goldMuted,
+  },
   filterText: {
-    fontFamily: theme.fonts.medium,
-    fontSize:   theme.fontSizes.xs,
-    color:      theme.colors.textMuted,
+    fontFamily:    theme.fonts.medium,
+    fontSize:      theme.fontSizes.xs,
+    color:         theme.colors.textMuted,
     letterSpacing: 1,
   },
   filterTextActive: { color: theme.colors.gold },
-  loader:     { flex: 1 },
-  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: theme.spacing.md, paddingBottom: theme.spacing.xxl },
-  emptyTitle: { fontFamily: theme.fonts.heading, fontSize: theme.fontSizes.xl, color: theme.colors.textSecondary, letterSpacing: 2 },
-  emptySubtitle: { fontFamily: theme.fonts.body, fontSize: theme.fontSizes.sm, color: theme.colors.textMuted, textAlign: 'center' },
-  scroll:     { padding: theme.spacing.lg, paddingTop: theme.spacing.sm, gap: theme.spacing.md },
-  card: {
-    backgroundColor: theme.colors.surface,
-    borderRadius:    theme.radius.lg,
-    borderWidth: 1,
-    borderColor:     theme.colors.border,
-    padding:         theme.spacing.lg,
-    gap:             theme.spacing.sm,
-    ...theme.shadows.md,
+
+  shimmerStack: {
+    paddingHorizontal: theme.spacing.lg,
+    gap:               theme.spacing.md,
   },
-  cardTop:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  serviceInfo: { flex: 1 },
-  serviceName: { fontFamily: theme.fonts.bold, fontSize: theme.fontSizes.md, color: theme.colors.textPrimary },
-  barberName:  { fontFamily: theme.fonts.body, fontSize: theme.fontSizes.sm, color: theme.colors.textSecondary, marginTop: 2 },
-  price:       { fontFamily: theme.fonts.heading, fontSize: theme.fontSizes.xl, color: theme.colors.gold },
-  dateRow:     { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs },
-  dateText:    { fontFamily: theme.fonts.body, fontSize: theme.fontSizes.xs, color: theme.colors.textMuted },
-  cardBottom:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  statusBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs,
-    paddingVertical: 4, paddingHorizontal: theme.spacing.sm,
-    borderRadius: theme.radius.full, borderWidth: 1,
+  emptyState: {
+    flex:           1,
+    alignItems:     'center',
+    justifyContent: 'center',
+    gap:            theme.spacing.md,
+    paddingBottom:  theme.spacing.xxl,
   },
-  statusText:  { fontFamily: theme.fonts.medium, fontSize: theme.fontSizes.xs, letterSpacing: 1 },
-  actionBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs,
-    backgroundColor: theme.colors.goldMuted, borderWidth: 1, borderColor: theme.colors.gold,
-    borderRadius: theme.radius.full, paddingVertical: 4, paddingHorizontal: theme.spacing.sm,
+  emptyTitle: {
+    fontFamily:    theme.fonts.heading,
+    fontSize:      theme.fontSizes.xl,
+    color:         theme.colors.textSecondary,
+    letterSpacing: 2,
   },
-  actionBtnText: { fontFamily: theme.fonts.medium, fontSize: theme.fontSizes.xs, color: theme.colors.gold, letterSpacing: 1 },
-  // ── completed section ───────────────────────────────────
-  completedSection: {
-    gap: theme.spacing.sm,
+  emptySubtitle: {
+    fontFamily: theme.fonts.body,
+    fontSize:   theme.fontSizes.sm,
+    color:      theme.colors.textMuted,
+    textAlign:  'center',
+  },
+
+  scroll: {
+    padding:    theme.spacing.lg,
     paddingTop: theme.spacing.sm,
+    gap:        theme.spacing.md,
+  },
+  cardContent: {
+    padding: theme.spacing.lg,
+    gap:     theme.spacing.sm,
+  },
+  cardTop: {
+    flexDirection:  'row',
+    justifyContent: 'space-between',
+    alignItems:     'flex-start',
+  },
+  serviceInfo: { flex: 1 },
+  serviceName: {
+    fontFamily: theme.fonts.bold,
+    fontSize:   theme.fontSizes.md,
+    color:      theme.colors.textPrimary,
+  },
+  barberName: {
+    fontFamily: theme.fonts.body,
+    fontSize:   theme.fontSizes.sm,
+    color:      theme.colors.textSecondary,
+    marginTop:  2,
+  },
+  price: {
+    fontFamily: theme.fonts.heading,
+    fontSize:   theme.fontSizes.xl,
+    color:      theme.colors.gold,
+  },
+  dateRow: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           theme.spacing.xs,
+  },
+  dateText: {
+    fontFamily: theme.fonts.body,
+    fontSize:   theme.fontSizes.xs,
+    color:      theme.colors.textMuted,
+  },
+  cardBottom: {
+    flexDirection:  'row',
+    alignItems:     'center',
+    justifyContent: 'space-between',
+  },
+  statusBadge: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    gap:             theme.spacing.xs,
+    paddingVertical: 4,
+    paddingHorizontal: theme.spacing.sm,
+    borderRadius:    theme.radius.full,
+    borderWidth:     1,
+  },
+  statusText: {
+    fontFamily:    theme.fonts.medium,
+    fontSize:      theme.fontSizes.xs,
+    letterSpacing: 1,
+  },
+  actionBtn: {
+    flexDirection:   'row',
+    alignItems:      'center',
+    gap:             theme.spacing.xs,
+    backgroundColor: theme.colors.goldMuted,
+    borderWidth:     1,
+    borderColor:     theme.colors.gold,
+    borderRadius:    theme.radius.full,
+    paddingVertical: 4,
+    paddingHorizontal: theme.spacing.sm,
+  },
+  actionBtnText: {
+    fontFamily:    theme.fonts.medium,
+    fontSize:      theme.fontSizes.xs,
+    color:         theme.colors.gold,
+    letterSpacing: 1,
+  },
+
+  completedSection: {
+    gap:           theme.spacing.sm,
+    paddingTop:    theme.spacing.sm,
     borderTopWidth: 1,
     borderTopColor: theme.colors.border,
   },
   ratingRow:  { gap: 4 },
-  reviewText: { fontFamily: theme.fonts.body, fontSize: theme.fontSizes.xs, color: theme.colors.textSecondary, fontStyle: 'italic' },
+  reviewText: {
+    fontFamily: theme.fonts.body,
+    fontSize:   theme.fontSizes.xs,
+    color:      theme.colors.textSecondary,
+    fontStyle:  'italic',
+  },
   rateBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs,
-    backgroundColor: theme.colors.goldMuted, borderWidth: 1, borderColor: theme.colors.gold,
-    borderRadius: theme.radius.md, padding: theme.spacing.sm,
-    justifyContent: 'center',
+    flexDirection:   'row',
+    alignItems:      'center',
+    gap:             theme.spacing.xs,
+    backgroundColor: theme.colors.goldMuted,
+    borderWidth:     1,
+    borderColor:     theme.colors.gold,
+    borderRadius:    theme.radius.md,
+    padding:         theme.spacing.sm,
+    justifyContent:  'center',
   },
-  rateBtnText: { fontFamily: theme.fonts.heading, fontSize: theme.fontSizes.xs, color: theme.colors.gold, letterSpacing: 2 },
+  rateBtnText: {
+    fontFamily:    theme.fonts.heading,
+    fontSize:      theme.fontSizes.xs,
+    color:         theme.colors.gold,
+    letterSpacing: 2,
+  },
   styleCardBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs,
-    backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border,
-    borderRadius: theme.radius.md, padding: theme.spacing.sm,
-    justifyContent: 'center',
+    flexDirection:   'row',
+    alignItems:      'center',
+    gap:             theme.spacing.xs,
+    backgroundColor: theme.colors.surface,
+    borderWidth:     1,
+    borderColor:     theme.colors.border,
+    borderRadius:    theme.radius.md,
+    padding:         theme.spacing.sm,
+    justifyContent:  'center',
   },
-  styleCardBtnText: { fontFamily: theme.fonts.heading, fontSize: theme.fontSizes.xs, color: theme.colors.textPrimary, letterSpacing: 2 },
+  styleCardBtnText: {
+    fontFamily:    theme.fonts.heading,
+    fontSize:      theme.fontSizes.xs,
+    color:         theme.colors.textPrimary,
+    letterSpacing: 2,
+  },
 });

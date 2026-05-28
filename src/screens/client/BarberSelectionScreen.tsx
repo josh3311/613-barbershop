@@ -1,12 +1,26 @@
+/**
+ * BarberSelectionScreen — V3 visual layer
+ * Logic preserved exactly. Visual upgrades:
+ * - AnimatedHeader
+ * - GoldCard for each barber (with active selected state)
+ * - expo-image for profile photo (fade-in)
+ * - GoldShimmer for loading
+ * - PremiumButton for continue
+ */
+
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, ActivityIndicator, Image,
 } from 'react-native';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
+import { Image as ExpoImage } from 'expo-image';
+
 import { db } from '../../config/firebase';
 import { theme } from '../../theme';
+import {
+  AnimatedHeader, GoldCard, GoldShimmer, PremiumButton,
+} from '../../components/ui';
 
 interface Barber {
   id:          string;
@@ -20,10 +34,7 @@ interface Barber {
   reviewCount: number;
 }
 
-interface Props {
-  navigation: any;
-  route:      any;
-}
+interface Props { navigation: any; route: any; }
 
 export default function BarberSelectionScreen({ navigation, route }: Props) {
   const { service }             = route.params;
@@ -34,7 +45,7 @@ export default function BarberSelectionScreen({ navigation, route }: Props) {
   useEffect(() => {
     const fetchBarbers = async () => {
       try {
-        const q    = query(
+        const q = query(
           collection(db, 'barbers'),
           where('isAvailable', '==', true),
         );
@@ -43,7 +54,6 @@ export default function BarberSelectionScreen({ navigation, route }: Props) {
       } catch (e) {
         console.error('Failed to load barbers:', e);
       } finally {
-        // Always stop loading — even if query fails
         setLoading(false);
       }
     };
@@ -57,30 +67,16 @@ export default function BarberSelectionScreen({ navigation, route }: Props) {
 
   return (
     <View style={styles.container}>
+      <AnimatedHeader
+        title="PICK A BARBER"
+        eyebrow="STEP 2 OF 4"
+        onBack={() => navigation.goBack()}
+      />
 
-      {/* Header (3-column: back | title | spacer) */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="arrow-back" size={24} color={theme.colors.textPrimary} />
-        </TouchableOpacity>
-        <View style={styles.headerCenter}>
-          <Text style={styles.stepText}>STEP 2 OF 4</Text>
-          <Text style={styles.title} numberOfLines={1} adjustsFontSizeToFit>
-            PICK A BARBER
-          </Text>
-        </View>
-        <View style={styles.headerSpacer} />
-      </View>
-
-      {/* Progress Bar */}
       <View style={styles.progressBar}>
         <View style={[styles.progressFill, { width: '50%' }]} />
       </View>
 
-      {/* Selected service pill */}
       <View style={styles.servicePill}>
         <Ionicons name="cut-outline" size={14} color={theme.colors.gold} />
         <Text style={styles.servicePillText}>
@@ -89,11 +85,16 @@ export default function BarberSelectionScreen({ navigation, route }: Props) {
       </View>
 
       {loading ? (
-        <ActivityIndicator
-          color={theme.colors.gold}
-          size="large"
-          style={styles.loader}
-        />
+        <View style={styles.shimmerStack}>
+          {Array.from({ length: 3 }).map((_, i) => (
+            <GoldShimmer
+              key={i}
+              width="100%"
+              height={100}
+              radius={theme.radius.lg}
+            />
+          ))}
+        </View>
       ) : barbers.length === 0 ? (
         <View style={styles.emptyState}>
           <Ionicons name="person-outline" size={48} color={theme.colors.textMuted} />
@@ -105,21 +106,23 @@ export default function BarberSelectionScreen({ navigation, route }: Props) {
           contentContainerStyle={styles.scroll}
           showsVerticalScrollIndicator={false}
         >
-          {barbers.map(barber => {
+          {barbers.map((barber, i) => {
             const isSelected = selected?.id === barber.id;
             return (
-              <TouchableOpacity
+              <GoldCard
                 key={barber.id}
-                style={[styles.card, isSelected && styles.cardSelected]}
+                entranceIndex={i}
+                active={isSelected}
                 onPress={() => setSelected(barber)}
-                activeOpacity={0.8}
+                contentStyle={styles.cardContent}
               >
-                {/* Avatar */}
                 <View style={[styles.avatar, isSelected && styles.avatarSelected]}>
                   {barber.photoURL ? (
-                    <Image
+                    <ExpoImage
                       source={{ uri: barber.photoURL }}
                       style={styles.avatarImage}
+                      transition={300}
+                      contentFit="cover"
                     />
                   ) : (
                     <Ionicons
@@ -130,16 +133,14 @@ export default function BarberSelectionScreen({ navigation, route }: Props) {
                   )}
                 </View>
 
-                {/* Info */}
-                <View style={styles.cardInfo}>
+                <View style={styles.info}>
                   <Text style={[
-                    styles.barberName,
-                    isSelected && styles.barberNameSelected,
+                    styles.name,
+                    isSelected && styles.nameSelected,
                   ]}>
                     {barber.displayName.toUpperCase()}
                   </Text>
 
-                  {/* Rating */}
                   <View style={styles.ratingRow}>
                     {[1, 2, 3, 4, 5].map(star => (
                       <Ionicons
@@ -152,44 +153,37 @@ export default function BarberSelectionScreen({ navigation, route }: Props) {
                     <Text style={styles.reviewCount}>({barber.reviewCount})</Text>
                   </View>
 
-                  {/* Specialties */}
                   <View style={styles.specialties}>
-                    {barber.specialties?.slice(0, 3).map((s, i) => (
-                      <View key={i} style={styles.specialtyTag}>
+                    {barber.specialties?.slice(0, 3).map((s, j) => (
+                      <View key={j} style={styles.specialtyTag}>
                         <Text style={styles.specialtyText}>{s}</Text>
                       </View>
                     ))}
                   </View>
                 </View>
 
-                {/* Checkmark */}
                 {isSelected && (
                   <Ionicons name="checkmark-circle" size={24} color={theme.colors.gold} />
                 )}
-              </TouchableOpacity>
+              </GoldCard>
             );
           })}
         </ScrollView>
       )}
 
-      {/* Continue Button */}
       <View style={styles.footer}>
-        <TouchableOpacity
-          style={[styles.button, !selected && styles.buttonDisabled]}
-          onPress={handleContinue}
+        <PremiumButton
+          label={selected
+            ? `CONTINUE WITH ${selected.displayName.toUpperCase()}`
+            : 'SELECT A BARBER'}
+          fullWidth
           disabled={!selected}
-        >
-          <Text style={styles.buttonText}>
-            {selected
-              ? `CONTINUE WITH ${selected.displayName.toUpperCase()}`
-              : 'SELECT A BARBER'}
-          </Text>
-          {selected && (
+          onPress={handleContinue}
+          rightIcon={selected ? (
             <Ionicons name="arrow-forward" size={18} color={theme.colors.textInverse} />
-          )}
-        </TouchableOpacity>
+          ) : undefined}
+        />
       </View>
-
     </View>
   );
 }
@@ -201,72 +195,125 @@ export const getBarberBookingId = (barber: {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
-  header: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: theme.spacing.lg,
-    paddingTop: theme.spacing.xxl,
-    paddingBottom: theme.spacing.md,
-  },
-  backBtn: {
-    width: 40, height: 40, borderRadius: theme.radius.md,
-    backgroundColor: theme.colors.surface,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  headerCenter: { flex: 1, alignItems: 'center' },
-  headerSpacer: { width: 40 },
-  stepText: { fontFamily: theme.fonts.medium, fontSize: theme.fontSizes.xs, color: theme.colors.gold, letterSpacing: 2, marginBottom: 2 },
-  title:    { fontFamily: theme.fonts.heading, fontSize: theme.fontSizes.xxl, color: theme.colors.textPrimary, letterSpacing: 4, textAlign: 'center' },
+
   progressBar: {
-    height: 3, backgroundColor: theme.colors.border,
-    marginHorizontal: theme.spacing.lg, borderRadius: theme.radius.full, marginBottom: theme.spacing.md,
+    height:           3,
+    backgroundColor:  theme.colors.border,
+    marginHorizontal: theme.spacing.lg,
+    borderRadius:     theme.radius.full,
+    marginBottom:     theme.spacing.md,
   },
-  progressFill: { height: '100%', backgroundColor: theme.colors.gold, borderRadius: theme.radius.full },
+  progressFill: {
+    height:          '100%',
+    backgroundColor: theme.colors.gold,
+    borderRadius:    theme.radius.full,
+  },
+
   servicePill: {
-    flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs,
-    backgroundColor: theme.colors.goldMuted, borderWidth: 1, borderColor: theme.colors.gold,
-    borderRadius: theme.radius.full, paddingVertical: theme.spacing.xs, paddingHorizontal: theme.spacing.md,
-    alignSelf: 'flex-start', marginHorizontal: theme.spacing.lg, marginBottom: theme.spacing.lg,
+    flexDirection:    'row',
+    alignItems:       'center',
+    gap:              theme.spacing.xs,
+    backgroundColor:  theme.colors.goldMuted,
+    borderWidth:      1,
+    borderColor:      theme.colors.gold,
+    borderRadius:     theme.radius.full,
+    paddingVertical:  theme.spacing.xs,
+    paddingHorizontal: theme.spacing.md,
+    alignSelf:        'flex-start',
+    marginHorizontal: theme.spacing.lg,
+    marginBottom:     theme.spacing.lg,
   },
-  servicePillText: { fontFamily: theme.fonts.medium, fontSize: theme.fontSizes.xs, color: theme.colors.gold, letterSpacing: 1 },
-  loader:     { flex: 1 },
-  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: theme.spacing.md },
-  emptyTitle: { fontFamily: theme.fonts.heading, fontSize: theme.fontSizes.xl, color: theme.colors.textSecondary, letterSpacing: 2 },
-  emptySubtitle: { fontFamily: theme.fonts.body, fontSize: theme.fontSizes.sm, color: theme.colors.textMuted },
-  scroll: { padding: theme.spacing.lg, paddingTop: 0, gap: theme.spacing.md },
-  card: {
-    backgroundColor: theme.colors.surface, borderRadius: theme.radius.lg,
-    borderWidth: 1, borderColor: theme.colors.border,
-    padding: theme.spacing.lg, flexDirection: 'row', alignItems: 'center',
-    gap: theme.spacing.md, ...theme.shadows.md,
+  servicePillText: {
+    fontFamily:    theme.fonts.medium,
+    fontSize:      theme.fontSizes.xs,
+    color:         theme.colors.gold,
+    letterSpacing: 1,
   },
-  cardSelected: { borderColor: theme.colors.gold, backgroundColor: theme.colors.goldMuted },
+
+  shimmerStack: {
+    paddingHorizontal: theme.spacing.lg,
+    gap:               theme.spacing.md,
+  },
+  emptyState: {
+    flex:           1,
+    alignItems:     'center',
+    justifyContent: 'center',
+    gap:            theme.spacing.md,
+  },
+  emptyTitle: {
+    fontFamily:    theme.fonts.heading,
+    fontSize:      theme.fontSizes.xl,
+    color:         theme.colors.textSecondary,
+    letterSpacing: 2,
+  },
+  emptySubtitle: {
+    fontFamily: theme.fonts.body,
+    fontSize:   theme.fontSizes.sm,
+    color:      theme.colors.textMuted,
+  },
+
+  scroll: {
+    padding: theme.spacing.lg,
+    paddingTop: 0,
+    gap: theme.spacing.md,
+  },
+  cardContent: {
+    flexDirection: 'row',
+    alignItems:    'center',
+    gap:           theme.spacing.md,
+    padding:       theme.spacing.lg,
+  },
   avatar: {
-    width: 64, height: 64, borderRadius: 32,
+    width:           64,
+    height:          64,
+    borderRadius:    32,
     backgroundColor: theme.colors.goldMuted,
-    alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+    alignItems:      'center',
+    justifyContent:  'center',
+    overflow:        'hidden',
   },
   avatarSelected: { backgroundColor: theme.colors.gold },
   avatarImage:    { width: 64, height: 64, borderRadius: 32 },
-  cardInfo:       { flex: 1, gap: theme.spacing.xs },
-  barberName: {
-    fontFamily: theme.fonts.heading, fontSize: theme.fontSizes.lg,
-    color: theme.colors.textPrimary, letterSpacing: 2,
+
+  info: { flex: 1, gap: theme.spacing.xs },
+  name: {
+    fontFamily:    theme.fonts.heading,
+    fontSize:      theme.fontSizes.lg,
+    color:         theme.colors.textPrimary,
+    letterSpacing: 2,
   },
-  barberNameSelected: { color: theme.colors.gold },
-  ratingRow:  { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  reviewCount:{ fontFamily: theme.fonts.body, fontSize: theme.fontSizes.xs, color: theme.colors.textMuted, marginLeft: 4 },
-  specialties:{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.xs, marginTop: 2 },
+  nameSelected: { color: theme.colors.gold },
+  ratingRow:    { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  reviewCount: {
+    fontFamily: theme.fonts.body,
+    fontSize:   theme.fontSizes.xs,
+    color:      theme.colors.textMuted,
+    marginLeft: 4,
+  },
+  specialties: {
+    flexDirection: 'row',
+    flexWrap:      'wrap',
+    gap:           theme.spacing.xs,
+    marginTop:     2,
+  },
   specialtyTag: {
-    backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border,
-    borderRadius: theme.radius.full, paddingVertical: 2, paddingHorizontal: theme.spacing.sm,
+    backgroundColor: theme.colors.surface,
+    borderWidth:     1,
+    borderColor:     theme.colors.border,
+    borderRadius:    theme.radius.full,
+    paddingVertical: 2,
+    paddingHorizontal: theme.spacing.sm,
   },
-  specialtyText: { fontFamily: theme.fonts.body, fontSize: theme.fontSizes.xs, color: theme.colors.textMuted },
-  footer: { padding: theme.spacing.lg, paddingBottom: theme.spacing.xl, borderTopWidth: 1, borderTopColor: theme.colors.border },
-  button: {
-    backgroundColor: theme.colors.gold, borderRadius: theme.radius.md, padding: theme.spacing.md,
-    alignItems: 'center', flexDirection: 'row', justifyContent: 'center',
-    gap: theme.spacing.sm, ...theme.shadows.gold,
+  specialtyText: {
+    fontFamily: theme.fonts.body,
+    fontSize:   theme.fontSizes.xs,
+    color:      theme.colors.textMuted,
   },
-  buttonDisabled: { opacity: 0.4 },
-  buttonText: { fontFamily: theme.fonts.heading, fontSize: theme.fontSizes.md, color: theme.colors.textInverse, letterSpacing: 2 },
+
+  footer: {
+    padding:          theme.spacing.lg,
+    paddingBottom:    theme.spacing.xl,
+    borderTopWidth:   1,
+    borderTopColor:   theme.colors.border,
+  },
 });

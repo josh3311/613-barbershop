@@ -1,8 +1,6 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { Ionicons } from '@expo/vector-icons';
-import { theme }    from '../theme';
 
 import HomeScreen              from '../screens/client/HomeScreen';
 import ServiceSelectionScreen  from '../screens/client/ServiceSelectionScreen';
@@ -17,54 +15,18 @@ import AddToBookingScreen      from '../screens/client/AddToBookingScreen';
 import ChatScreen              from '../screens/chat/ChatScreen';
 import StyleCardViewScreen     from '../screens/client/StyleCardViewScreen';
 
-// AIStylistChatScreen + StyleChatScreen removed — merged into StylesScreen
+import { BlurTabBar } from '../components/ui';
 
 const Tab   = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
-const TAB_ICONS: Record<string, {
-  active:   keyof typeof Ionicons.glyphMap;
-  inactive: keyof typeof Ionicons.glyphMap;
-}> = {
-  Home:    { active: 'home',     inactive: 'home-outline'     },
-  Book:    { active: 'calendar', inactive: 'calendar-outline' },
-  StyleAI: { active: 'cut',      inactive: 'cut-outline'      },
-  History: { active: 'time',     inactive: 'time-outline'     },
-  Profile: { active: 'person',   inactive: 'person-outline'   },
-};
-
 function ClientTabs() {
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarStyle: {
-          backgroundColor: theme.colors.surface,
-          borderTopColor:  theme.colors.border,
-          borderTopWidth:  1,
-          paddingBottom:   8,
-          paddingTop:      8,
-          height:          70,
-        },
-        tabBarActiveTintColor:   theme.colors.gold,
-        tabBarInactiveTintColor: theme.colors.textMuted,
-        tabBarLabelStyle: {
-          fontFamily: theme.fonts.medium,
-          fontSize:   10,
-          marginTop:  2,
-        },
-        tabBarIcon: ({ focused, color, size }) => {
-          const icon = TAB_ICONS[route.name];
-          if (!icon) return null;
-          return (
-            <Ionicons
-              name={focused ? icon.active : icon.inactive}
-              size={size}
-              color={color}
-            />
-          );
-        },
-      })}
+      // BlurTabBar handles the icon, label, indicator, blur background,
+      // and active-tab spring. No screenOptions needed for styling.
+      tabBar={(props) => <BlurTabBar {...props} />}
+      screenOptions={{ headerShown: false }}
     >
       <Tab.Screen name="Home"    component={HomeScreen}             />
       <Tab.Screen name="Book"    component={ServiceSelectionScreen} />

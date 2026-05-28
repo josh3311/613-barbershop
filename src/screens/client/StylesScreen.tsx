@@ -1,10 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TextInput,
-  TouchableOpacity, Image, ActivityIndicator,
+  TouchableOpacity, ActivityIndicator,
   KeyboardAvoidingView, Platform, Alert, Dimensions,
   Modal, ScrollView,
 } from 'react-native';
+import Animated, {
+  useAnimatedStyle, useSharedValue, withTiming, interpolateColor,
+} from 'react-native-reanimated';
+import { Image as ExpoImage } from 'expo-image';
 import { Ionicons }     from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import {
@@ -259,6 +263,16 @@ export default function StylesScreen() {
 
   const flatRef = useRef<FlatList<ChatMessage>>(null);
 
+  // Animated gold-glow border on the chat input when focused
+  const inputFocus = useSharedValue(0);
+  const inputAnimatedStyle = useAnimatedStyle(() => ({
+    borderColor: interpolateColor(
+      inputFocus.value,
+      [0, 1],
+      [theme.colors.border, theme.colors.gold],
+    ),
+  }));
+
   // Load welcome message on mount
   useEffect(() => {
     const welcome: ChatMessage = {
@@ -509,10 +523,16 @@ export default function StylesScreen() {
           {(item.photoUris ?? []).length > 0 && (
             <View style={styles.photoGrid}>
               {(item.photoUris ?? []).map((uri, i) => (
-                <Image key={i} source={{ uri }} style={[
-                  styles.photoGridItem,
-                  (item.photoUris ?? []).length === 1 && styles.photoGridItemFull,
-                ]} resizeMode="cover" />
+                <ExpoImage
+                  key={i}
+                  source={{ uri }}
+                  style={[
+                    styles.photoGridItem,
+                    (item.photoUris ?? []).length === 1 && styles.photoGridItemFull,
+                  ]}
+                  contentFit="cover"
+                  transition={250}
+                />
               ))}
             </View>
           )}
@@ -538,10 +558,11 @@ export default function StylesScreen() {
           {/* Generated image */}
           {item.generatedImage && (
             <View style={styles.generatedWrap}>
-              <Image
+              <ExpoImage
                 source={{ uri: item.generatedImage }}
                 style={styles.generatedImage}
-                resizeMode="cover"
+                contentFit="cover"
+                transition={400}
               />
               <Text style={styles.generatedLabel}>AI STYLE PREVIEW</Text>
             </View>
@@ -618,7 +639,12 @@ export default function StylesScreen() {
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {pendingPhotos.map((p, i) => (
               <View key={i} style={styles.pendingThumbWrap}>
-                <Image source={{ uri: p.uri }} style={styles.pendingThumb} />
+                <ExpoImage
+                  source={{ uri: p.uri }}
+                  style={styles.pendingThumb}
+                  contentFit="cover"
+                  transition={200}
+                />
                 <TouchableOpacity
                   style={styles.removePendingBtn}
                   onPress={() => removePhoto(i)}
@@ -649,20 +675,24 @@ export default function StylesScreen() {
         <TouchableOpacity style={styles.inputIcon} onPress={pickPhotos} disabled={isSending}>
           <Ionicons name="images-outline" size={20} color={theme.colors.gold} />
         </TouchableOpacity>
-        <TextInput
-          style={styles.textInput}
-          placeholder={
-            pendingPhotos.length > 0
-              ? 'Describe the style...'
-              : 'Ask about styles or upload a selfie...'
-          }
-          placeholderTextColor={theme.colors.textMuted}
-          value={inputText}
-          onChangeText={setInputText}
-          multiline
-          maxLength={400}
-          editable={!isSending}
-        />
+        <Animated.View style={[styles.textInputWrap, inputAnimatedStyle]}>
+          <TextInput
+            style={styles.textInput}
+            placeholder={
+              pendingPhotos.length > 0
+                ? 'Describe the style...'
+                : 'Ask about styles or upload a selfie...'
+            }
+            placeholderTextColor={theme.colors.textMuted}
+            value={inputText}
+            onChangeText={setInputText}
+            multiline
+            maxLength={400}
+            editable={!isSending}
+            onFocus={() => { inputFocus.value = withTiming(1, { duration: 180 }); }}
+            onBlur={()  => { inputFocus.value = withTiming(0, { duration: 220 }); }}
+          />
+        </Animated.View>
         <TouchableOpacity
           style={[
             styles.sendBtn,
@@ -832,10 +862,15 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.md, backgroundColor: theme.colors.goldMuted,
     borderWidth: 1, borderColor: theme.colors.gold,
   },
+  textInputWrap: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
   textInput: {
-    flex: 1, minHeight: 38, maxHeight: 120,
-    backgroundColor: theme.colors.background, borderRadius: theme.radius.md,
-    borderWidth: 1, borderColor: theme.colors.border,
+    minHeight: 38, maxHeight: 120,
     paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm,
     color: '#FFFFFF', fontFamily: theme.fonts.body, fontSize: theme.fontSizes.sm,
   },

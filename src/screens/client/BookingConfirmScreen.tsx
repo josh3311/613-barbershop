@@ -1,24 +1,42 @@
+/**
+ * BookingConfirmScreen — V3 visual layer
+ *
+ * Visual upgrades:
+ * - AnimatedHeader
+ * - Summary + style cards now use GoldCard
+ * - PremiumButton for confirm CTA
+ * - Success haptic on confirm, error haptic on failure
+ *
+ * Business logic preserved exactly:
+ * - Firestore addDoc to bookings collection
+ * - Fire-and-forget syncBookingToSquare
+ * - Push notification to barber (+ extra one if a style is attached)
+ * - Birthday discount math
+ * - includeStyle toggle
+ * - navigation.replace to BookingSuccess on success
+ */
+
 import React, { useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, ActivityIndicator, Image,
+  View, Text, StyleSheet, ScrollView, Pressable, Image,
 } from 'react-native';
 import {
-  collection, addDoc, serverTimestamp,
-  doc, getDoc,
+  collection, addDoc, serverTimestamp, doc, getDoc,
 } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+
 import { db } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
 import { COLLECTIONS } from '../../constants/collections';
 import { sendPushNotification } from '../../services/notifications';
-import { syncBookingToSquare } from '../../services/squareSync';   // ← NEW
+import { syncBookingToSquare } from '../../services/squareSync';
 import { theme } from '../../theme';
+import {
+  AnimatedHeader, GoldCard, PremiumButton,
+} from '../../components/ui';
 
-interface Props {
-  navigation: any;
-  route:      any;
-}
+interface Props { navigation: any; route: any; }
 
 export default function BookingConfirmScreen({ navigation, route }: Props) {
   const { service, barber, scheduledAt } = route.params;
@@ -52,7 +70,6 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
   const formatDate = (date: Date) => date.toLocaleDateString([], {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
   });
-
   const formatTime = (date: Date) => date.toLocaleTimeString([], {
     hour: '2-digit', minute: '2-digit',
   });
@@ -76,28 +93,25 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
         : null;
 
     try {
-      // ── 1. Write to Firestore (source of truth) ──────────────
       const newBookingRef = await addDoc(collection(db, COLLECTIONS.BOOKINGS), {
-        clientId:       user.id,
-        clientName:     user.displayName,
-        clientPhotoURL: user.photoURL ?? null,
+        clientId:        user.id,
+        clientName:      user.displayName,
+        clientPhotoURL:  user.photoURL ?? null,
         barberId,
-        barberName:     barber.displayName,
-        serviceId:      service.id,
-        serviceName:    service.name,
-        servicePrice:   finalPrice,
+        barberName:      barber.displayName,
+        serviceId:       service.id,
+        serviceName:     service.name,
+        servicePrice:    finalPrice,
         birthdayDiscount,
-        status:         'pending',
-        scheduledAt:    scheduled,
-        createdAt:      serverTimestamp(),
-        notes:          null,
+        status:          'pending',
+        scheduledAt:     scheduled,
+        createdAt:       serverTimestamp(),
+        notes:           null,
         requestedStyle,
-        rating:         null,
-        review:         null,
+        rating:          null,
+        review:          null,
       });
 
-      // ── 2. Fire-and-forget Square sync ───────────────────────
-      // Never awaited — never blocks the user if Square is down
       syncBookingToSquare({
         bookingId:    newBookingRef.id,
         customerName: user.displayName ?? 'Client',
@@ -110,7 +124,6 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
                        ?? '',
       });
 
-      // ── 3. Push notifications ────────────────────────────────
       try {
         const barberDocSnap = await getDoc(doc(db, COLLECTIONS.USERS, barberId));
         const barberToken = barberDocSnap.data()?.expoPushToken;
@@ -130,18 +143,19 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
             );
           }
         }
-      } catch {
-        // Push failure must never block booking
-      }
+      } catch {/* push must never block */}
 
-      // ── 4. Navigate to success ───────────────────────────────
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
+        .catch(() => undefined);
+
       navigation.replace('BookingSuccess', {
         serviceName: service.name,
         barberName:  barber.displayName,
         scheduledAt: scheduled.toISOString(),
       });
-
     } catch {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)
+        .catch(() => undefined);
       setError('Something went wrong. Please try again.');
       setLoading(false);
     }
@@ -149,22 +163,11 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
 
   return (
     <View style={styles.container}>
-
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="arrow-back" size={24} color={theme.colors.textPrimary} />
-        </TouchableOpacity>
-        <View style={styles.headerCenter}>
-          <Text style={styles.stepText}>STEP 4 OF 4</Text>
-          <Text style={styles.title} numberOfLines={1} adjustsFontSizeToFit>
-            CONFIRM BOOKING
-          </Text>
-        </View>
-        <View style={styles.headerSpacer} />
-      </View>
+      <AnimatedHeader
+        title="CONFIRM BOOKING"
+        eyebrow="STEP 4 OF 4"
+        onBack={() => navigation.goBack()}
+      />
 
       <View style={styles.progressBar}>
         <View style={[styles.progressFill, { width: '100%' }]} />
@@ -174,8 +177,8 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
       >
-        {/* Summary Card */}
-        <View style={styles.summaryCard}>
+        {/* Summary */}
+        <GoldCard entranceIndex={0}>
           <View style={styles.shopHeader}>
             <Text style={styles.shopName}>613</Text>
             <Text style={styles.shopSub}>BARBERSHOP</Text>
@@ -257,21 +260,20 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
           <View style={styles.totalRow}>
             <Text style={styles.totalLabel}>TOTAL</Text>
             {birthdayDiscount && (
-              <Text style={styles.originalPrice}>
-                Was ${service.price} CAD
-              </Text>
+              <Text style={styles.originalPrice}>Was ${service.price} CAD</Text>
             )}
             <Text style={styles.totalPrice}>${finalPrice} CAD</Text>
           </View>
-        </View>
+        </GoldCard>
 
-        {/* ── STYLE REQUEST CARD ── */}
+        {/* Style request card */}
         {hasSavedStyle && (
-          <View style={[
-            styles.styleCard,
-            !includeStyle && styles.styleCardDisabled,
-          ]}>
-
+          <GoldCard
+            entranceIndex={1}
+            active={includeStyle}
+            style={!includeStyle ? styles.styleCardDisabled : undefined}
+            contentStyle={{ padding: theme.spacing.md }}
+          >
             <View style={styles.styleCardHeader}>
               <View style={styles.styleCardTitleRow}>
                 <Ionicons
@@ -281,12 +283,12 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
                 />
                 <Text style={styles.styleCardLabel}>STYLE REQUEST</Text>
               </View>
-              <TouchableOpacity
-                style={[
-                  styles.styleToggle,
-                  includeStyle && styles.styleToggleActive,
-                ]}
-                onPress={() => setIncludeStyle(prev => !prev)}
+              <Pressable
+                style={[styles.styleToggle, includeStyle && styles.styleToggleActive]}
+                onPress={() => {
+                  Haptics.selectionAsync().catch(() => undefined);
+                  setIncludeStyle(prev => !prev);
+                }}
               >
                 <Text style={[
                   styles.styleToggleText,
@@ -294,7 +296,7 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
                 ]}>
                   {includeStyle ? 'INCLUDED ✓' : '+ ADD'}
                 </Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
 
             {styleImageUrl ? (
@@ -333,7 +335,7 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
                 </Text>
               </View>
             )}
-          </View>
+          </GoldCard>
         )}
 
         <View style={styles.infoBox}>
@@ -353,341 +355,256 @@ export default function BookingConfirmScreen({ navigation, route }: Props) {
             <Text style={styles.errorText}>{error}</Text>
           </View>
         )}
-
       </ScrollView>
 
       <View style={styles.footer}>
-        <TouchableOpacity
-          style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={handleConfirm}
+        <PremiumButton
+          label="CONFIRM BOOKING"
+          fullWidth
+          loading={loading}
           disabled={loading}
-        >
-          {loading
-            ? <ActivityIndicator color={theme.colors.textInverse} />
-            : <>
-                <Ionicons
-                  name="checkmark-circle-outline"
-                  size={20}
-                  color={theme.colors.textInverse}
-                />
-                <Text style={styles.buttonText}>CONFIRM BOOKING</Text>
-              </>
+          onPress={handleConfirm}
+          leftIcon={
+            <Ionicons
+              name="checkmark-circle-outline"
+              size={20}
+              color={theme.colors.textInverse}
+            />
           }
-        </TouchableOpacity>
+        />
       </View>
-
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: theme.spacing.lg,
-    paddingTop: theme.spacing.xxl,
-    paddingBottom: theme.spacing.md,
-  },
-  backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: theme.radius.md,
-    backgroundColor: theme.colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerCenter: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  headerSpacer: {
-    width: 40,
-  },
-  stepText: {
-    fontFamily: theme.fonts.medium,
-    fontSize: theme.fontSizes.xs,
-    color: theme.colors.gold,
-    letterSpacing: 2,
-    marginBottom: 2,
-  },
-  title: {
-    fontFamily: theme.fonts.heading,
-    fontSize: theme.fontSizes.xxl,
-    color: theme.colors.textPrimary,
-    letterSpacing: 4,
-    textAlign: 'center',
-  },
+  container: { flex: 1, backgroundColor: theme.colors.background },
+
   progressBar: {
-    height: 3,
-    backgroundColor: theme.colors.border,
+    height:           3,
+    backgroundColor:  theme.colors.border,
     marginHorizontal: theme.spacing.lg,
-    borderRadius: theme.radius.full,
-    marginBottom: theme.spacing.lg,
+    borderRadius:     theme.radius.full,
+    marginBottom:     theme.spacing.lg,
   },
   progressFill: {
-    height: '100%',
+    height:          '100%',
     backgroundColor: theme.colors.gold,
-    borderRadius: theme.radius.full,
+    borderRadius:    theme.radius.full,
   },
-  scroll: {
-    padding: theme.spacing.lg,
-    paddingBottom: 120,
-  },
-  summaryCard: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.xl,
-    borderWidth: 1,
-    borderColor: theme.colors.gold,
-    padding: theme.spacing.lg,
-    ...theme.shadows.gold,
-  },
-  shopHeader: {
-    alignItems: 'center',
-    paddingBottom: theme.spacing.lg,
-  },
+  scroll: { padding: theme.spacing.lg, paddingBottom: 120 },
+
+  shopHeader: { alignItems: 'center', paddingBottom: theme.spacing.lg },
   shopName: {
     fontFamily: theme.fonts.heading,
-    fontSize: 64,
-    color: theme.colors.gold,
+    fontSize:   64,
+    color:      theme.colors.gold,
     lineHeight: 64,
   },
   shopSub: {
-    fontFamily: theme.fonts.heading,
-    fontSize: theme.fontSizes.lg,
-    color: theme.colors.textPrimary,
+    fontFamily:    theme.fonts.heading,
+    fontSize:      theme.fontSizes.lg,
+    color:         theme.colors.textPrimary,
     letterSpacing: 6,
   },
   shopAddress: {
-    fontFamily: theme.fonts.body,
-    fontSize: theme.fontSizes.xs,
-    color: theme.colors.textMuted,
-    marginTop: theme.spacing.xs,
+    fontFamily:    theme.fonts.body,
+    fontSize:      theme.fontSizes.xs,
+    color:         theme.colors.textMuted,
+    marginTop:     theme.spacing.xs,
     letterSpacing: 1,
   },
   divider: {
-    height: 1,
+    height:          1,
     backgroundColor: theme.colors.border,
-    marginVertical: theme.spacing.md,
+    marginVertical:  theme.spacing.md,
   },
   detailRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.md,
+    alignItems:    'center',
+    gap:           theme.spacing.md,
     paddingVertical: theme.spacing.sm,
   },
   detailIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: theme.radius.sm,
+    width:           36,
+    height:          36,
+    borderRadius:    theme.radius.sm,
     backgroundColor: theme.colors.goldMuted,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems:      'center',
+    justifyContent:  'center',
   },
   detailLabel: {
-    fontFamily: theme.fonts.medium,
-    fontSize: theme.fontSizes.xs,
-    color: theme.colors.textMuted,
+    fontFamily:    theme.fonts.medium,
+    fontSize:      theme.fontSizes.xs,
+    color:         theme.colors.textMuted,
     letterSpacing: 2,
   },
   detailValue: {
     fontFamily: theme.fonts.bold,
-    fontSize: theme.fontSizes.md,
-    color: theme.colors.textPrimary,
-    marginTop: 1,
+    fontSize:   theme.fontSizes.md,
+    color:      theme.colors.textPrimary,
+    marginTop:  1,
   },
   detailPrice: {
     fontFamily: theme.fonts.heading,
-    fontSize: theme.fontSizes.xl,
-    color: theme.colors.gold,
+    fontSize:   theme.fontSizes.xl,
+    color:      theme.colors.gold,
     marginLeft: 'auto',
   },
   totalRow: {
-    flexDirection: 'row',
+    flexDirection:  'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: theme.spacing.sm,
+    alignItems:     'center',
+    paddingTop:     theme.spacing.sm,
   },
   originalPrice: {
-    fontFamily: theme.fonts.body,
-    fontSize: theme.fontSizes.sm,
-    color: theme.colors.textMuted,
+    fontFamily:        theme.fonts.body,
+    fontSize:          theme.fontSizes.sm,
+    color:             theme.colors.textMuted,
     textDecorationLine: 'line-through',
   },
   totalLabel: {
-    fontFamily: theme.fonts.heading,
-    fontSize: theme.fontSizes.lg,
-    color: theme.colors.textPrimary,
+    fontFamily:    theme.fonts.heading,
+    fontSize:      theme.fontSizes.lg,
+    color:         theme.colors.textPrimary,
     letterSpacing: 3,
   },
   totalPrice: {
     fontFamily: theme.fonts.heading,
-    fontSize: theme.fontSizes.xxl,
-    color: theme.colors.gold,
+    fontSize:   theme.fontSizes.xxl,
+    color:      theme.colors.gold,
   },
-  styleCard: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.xl,
-    borderWidth: 1,
-    borderColor: theme.colors.gold,
-    padding: theme.spacing.md,
-    marginTop: theme.spacing.md,
-    overflow: 'hidden',
-    ...theme.shadows.gold,
-  },
-  styleCardDisabled: {
-    borderColor: theme.colors.border,
-    opacity: 0.45,
-  },
+
+  styleCardDisabled: { opacity: 0.5 },
   styleCardHeader: {
-    flexDirection: 'row',
+    flexDirection:  'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: theme.spacing.sm,
+    alignItems:     'center',
+    marginBottom:   theme.spacing.sm,
   },
   styleCardTitleRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+    alignItems:    'center',
+    gap:           6,
   },
   styleCardLabel: {
-    fontFamily: theme.fonts.heading,
-    fontSize: theme.fontSizes.xs,
-    color: theme.colors.gold,
+    fontFamily:    theme.fonts.heading,
+    fontSize:      theme.fontSizes.xs,
+    color:         theme.colors.gold,
     letterSpacing: 3,
   },
   styleToggle: {
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: theme.radius.full,
-    paddingVertical: 5,
+    borderWidth:       1,
+    borderColor:       theme.colors.border,
+    borderRadius:      theme.radius.full,
+    paddingVertical:   5,
     paddingHorizontal: 14,
   },
   styleToggleActive: {
-    borderColor: theme.colors.gold,
+    borderColor:     theme.colors.gold,
     backgroundColor: theme.colors.goldMuted,
   },
   styleToggleText: {
-    fontFamily: theme.fonts.heading,
-    fontSize: 11,
-    color: theme.colors.textMuted,
+    fontFamily:    theme.fonts.heading,
+    fontSize:      11,
+    color:         theme.colors.textMuted,
     letterSpacing: 1,
   },
-  styleToggleTextActive: {
-    color: theme.colors.gold,
-  },
+  styleToggleTextActive: { color: theme.colors.gold },
+
   styleImageFull: {
-    width: '100%',
-    height: 180,
+    width:        '100%',
+    height:       180,
     borderRadius: 10,
     marginBottom: theme.spacing.sm,
   },
   styleImagePlaceholder: {
-    width: '100%',
-    height: 90,
-    borderRadius: 10,
+    width:           '100%',
+    height:          90,
+    borderRadius:    10,
     backgroundColor: '#111',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: theme.spacing.sm,
-    gap: 6,
+    alignItems:      'center',
+    justifyContent:  'center',
+    marginBottom:    theme.spacing.sm,
+    gap:             6,
   },
   placeholderText: {
     fontFamily: theme.fonts.body,
-    fontSize: 11,
-    color: '#555',
-    textAlign: 'center',
+    fontSize:   11,
+    color:      '#555',
+    textAlign:  'center',
     paddingHorizontal: 16,
   },
   styleName: {
-    fontFamily: theme.fonts.heading,
-    fontSize: theme.fontSizes.md,
-    color: theme.colors.textPrimary,
+    fontFamily:    theme.fonts.heading,
+    fontSize:      theme.fontSizes.md,
+    color:         theme.colors.textPrimary,
     letterSpacing: 1,
-    marginBottom: 4,
+    marginBottom:  4,
   },
   styleDesc: {
     fontFamily: theme.fonts.body,
-    fontSize: theme.fontSizes.xs,
-    color: theme.colors.textMuted,
+    fontSize:   theme.fontSizes.xs,
+    color:      theme.colors.textMuted,
     lineHeight: 18,
     marginBottom: theme.spacing.sm,
   },
   styleNoteRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 4,
+    alignItems:    'center',
+    gap:           6,
+    marginTop:     4,
   },
   styleNote: {
     fontFamily: theme.fonts.body,
-    fontSize: theme.fontSizes.xs,
-    color: theme.colors.textSecondary,
-    flex: 1,
+    fontSize:   theme.fontSizes.xs,
+    color:      theme.colors.textSecondary,
+    flex:       1,
   },
+
   infoBox: {
-    flexDirection: 'row',
-    gap: theme.spacing.sm,
-    alignItems: 'flex-start',
+    flexDirection:   'row',
+    gap:             theme.spacing.sm,
+    alignItems:      'flex-start',
     backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.md,
-    padding: theme.spacing.md,
-    marginTop: theme.spacing.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderRadius:    theme.radius.md,
+    padding:         theme.spacing.md,
+    marginTop:       theme.spacing.md,
+    borderWidth:     1,
+    borderColor:     theme.colors.border,
   },
   infoText: {
     fontFamily: theme.fonts.body,
-    fontSize: theme.fontSizes.sm,
-    color: theme.colors.textMuted,
-    flex: 1,
+    fontSize:   theme.fontSizes.sm,
+    color:      theme.colors.textMuted,
+    flex:       1,
     lineHeight: 20,
   },
+
   errorBox: {
     backgroundColor: 'rgba(255,68,68,0.1)',
-    borderWidth: 1,
-    borderColor: theme.colors.error,
-    borderRadius: theme.radius.sm,
-    padding: theme.spacing.md,
-    marginTop: theme.spacing.md,
+    borderWidth:     1,
+    borderColor:     theme.colors.error,
+    borderRadius:    theme.radius.sm,
+    padding:         theme.spacing.md,
+    marginTop:       theme.spacing.md,
   },
   errorText: {
-    color: theme.colors.error,
+    color:      theme.colors.error,
     fontFamily: theme.fonts.body,
-    fontSize: theme.fontSizes.sm,
-    textAlign: 'center',
+    fontSize:   theme.fontSizes.sm,
+    textAlign:  'center',
   },
+
   footer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: theme.spacing.lg,
-    paddingBottom: theme.spacing.xl,
+    position:        'absolute',
+    bottom:          0,
+    left:            0,
+    right:           0,
+    padding:         theme.spacing.lg,
+    paddingBottom:   theme.spacing.xl,
     backgroundColor: theme.colors.background,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.border,
-  },
-  button: {
-    backgroundColor: theme.colors.gold,
-    borderRadius: theme.radius.md,
-    padding: theme.spacing.md,
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: theme.spacing.sm,
-    ...theme.shadows.gold,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    fontFamily: theme.fonts.heading,
-    fontSize: theme.fontSizes.lg,
-    color: theme.colors.textInverse,
-    letterSpacing: 3,
+    borderTopWidth:  1,
+    borderTopColor:  theme.colors.border,
   },
 });

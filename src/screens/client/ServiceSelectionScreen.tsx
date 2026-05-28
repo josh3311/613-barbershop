@@ -1,18 +1,25 @@
+/**
+ * ServiceSelectionScreen — V3 visual layer
+ * Logic unchanged: same Firestore query, same selection state,
+ * same navigation. Only the UI is upgraded.
+ */
+
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, ActivityIndicator,
 } from 'react-native';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
+
 import { db } from '../../config/firebase';
 import { COLLECTIONS } from '../../constants/collections';
 import { Service } from '../../types';
 import { theme } from '../../theme';
+import {
+  AnimatedHeader, GoldCard, GoldShimmer, PremiumButton,
+} from '../../components/ui';
 
-interface Props {
-  navigation: any;
-}
+interface Props { navigation: any; }
 
 export default function ServiceSelectionScreen({ navigation }: Props) {
   const [services, setServices] = useState<Service[]>([]);
@@ -23,9 +30,9 @@ export default function ServiceSelectionScreen({ navigation }: Props) {
   useEffect(() => {
     const fetchServices = async () => {
       try {
-        const q    = query(
+        const q = query(
           collection(db, COLLECTIONS.SERVICES),
-          where('isActive', '==', true)
+          where('isActive', '==', true),
         );
         const snap = await getDocs(q);
         setServices(snap.docs.map(d => ({ id: d.id, ...d.data() } as Service)));
@@ -46,46 +53,30 @@ export default function ServiceSelectionScreen({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
+      <AnimatedHeader
+        title="PICK A SERVICE"
+        eyebrow="STEP 1 OF 4"
+        onBack={() => navigation.goBack()}
+      />
 
-      {/* ── Header (3-column: back | title | spacer) ── */}
-      <View style={styles.header}>
-
-        {/* Left — back button */}
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons
-            name="arrow-back"
-            size={24}
-            color={theme.colors.textPrimary}
-          />
-        </TouchableOpacity>
-
-        {/* Center — step + title */}
-        <View style={styles.headerCenter}>
-          <Text style={styles.stepText}>STEP 1 OF 4</Text>
-          <Text style={styles.title} numberOfLines={1} adjustsFontSizeToFit>
-            PICK A SERVICE
-          </Text>
-        </View>
-
-        {/* Right — mirror spacer keeps title truly centered */}
-        <View style={styles.headerSpacer} />
-
-      </View>
-
-      {/* Progress Bar */}
+      {/* Progress bar */}
       <View style={styles.progressBar}>
         <View style={[styles.progressFill, { width: '25%' }]} />
       </View>
 
+      {/* Body */}
       {loading ? (
-        <ActivityIndicator
-          color={theme.colors.gold}
-          size="large"
-          style={styles.loader}
-        />
+        <View style={styles.shimmerStack}>
+          {Array.from({ length: 4 }).map((_, i) => (
+            <GoldShimmer
+              key={i}
+              width="100%"
+              height={92}
+              radius={theme.radius.lg}
+              style={styles.shimmerRow}
+            />
+          ))}
+        </View>
       ) : error ? (
         <View style={styles.emptyState}>
           <Ionicons name="alert-circle-outline" size={48} color={theme.colors.error} />
@@ -102,19 +93,20 @@ export default function ServiceSelectionScreen({ navigation }: Props) {
           contentContainerStyle={styles.scroll}
           showsVerticalScrollIndicator={false}
         >
-          {services.map(service => {
+          {services.map((service, i) => {
             const isSelected = selected?.id === service.id;
             return (
-              <TouchableOpacity
+              <GoldCard
                 key={service.id}
-                style={[styles.card, isSelected && styles.cardSelected]}
+                entranceIndex={i}
+                active={isSelected}
                 onPress={() => setSelected(service)}
-                activeOpacity={0.8}
+                style={styles.cardWrap}
+                contentStyle={styles.cardContent}
               >
-                {/* Icon */}
                 <View style={[
                   styles.iconBox,
-                  isSelected && styles.iconBoxSelected
+                  isSelected && styles.iconBoxSelected,
                 ]}>
                   <Ionicons
                     name="cut-outline"
@@ -125,15 +117,14 @@ export default function ServiceSelectionScreen({ navigation }: Props) {
                   />
                 </View>
 
-                {/* Info */}
-                <View style={styles.cardInfo}>
+                <View style={styles.info}>
                   <Text style={[
-                    styles.serviceName,
-                    isSelected && styles.serviceNameSelected
+                    styles.name,
+                    isSelected && styles.nameSelected,
                   ]}>
                     {service.name}
                   </Text>
-                  <Text style={styles.serviceDesc}>
+                  <Text style={styles.desc}>
                     {service.description}
                   </Text>
                   <View style={styles.meta}>
@@ -148,11 +139,10 @@ export default function ServiceSelectionScreen({ navigation }: Props) {
                   </View>
                 </View>
 
-                {/* Price + Check */}
-                <View style={styles.cardRight}>
+                <View style={styles.right}>
                   <Text style={[
                     styles.price,
-                    isSelected && styles.priceSelected
+                    isSelected && styles.priceSelected,
                   ]}>
                     ${service.price}
                   </Text>
@@ -164,209 +154,126 @@ export default function ServiceSelectionScreen({ navigation }: Props) {
                     />
                   )}
                 </View>
-              </TouchableOpacity>
+              </GoldCard>
             );
           })}
         </ScrollView>
       )}
 
-      {/* Continue Button */}
+      {/* Continue */}
       <View style={styles.footer}>
-        <TouchableOpacity
-          style={[styles.button, !selected && styles.buttonDisabled]}
-          onPress={handleContinue}
+        <PremiumButton
+          label={selected ? `CONTINUE — $${selected.price}` : 'SELECT A SERVICE'}
+          fullWidth
           disabled={!selected}
-        >
-          <Text style={styles.buttonText}>
-            {selected ? `CONTINUE — $${selected.price}` : 'SELECT A SERVICE'}
-          </Text>
-          {selected && (
-            <Ionicons
-              name="arrow-forward"
-              size={18}
-              color={theme.colors.textInverse}
-            />
-          )}
-        </TouchableOpacity>
+          onPress={handleContinue}
+          rightIcon={selected ? (
+            <Ionicons name="arrow-forward" size={18} color={theme.colors.textInverse} />
+          ) : undefined}
+        />
       </View>
-
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
+  container: { flex: 1, backgroundColor: theme.colors.background },
 
-  // ── Header ──────────────────────────────────────────────
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: theme.spacing.lg,
-    paddingTop: theme.spacing.xxl,
-    paddingBottom: theme.spacing.md,
-  },
-  backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: theme.radius.md,
-    backgroundColor: theme.colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerCenter: {
-    flex: 1,                   // takes all remaining space
-    alignItems: 'center',      // centers step label + title
-  },
-  headerSpacer: {
-    width: 40,                 // mirrors backBtn width → title stays centred
-  },
-  stepText: {
-    fontFamily: theme.fonts.medium,
-    fontSize: theme.fontSizes.xs,
-    color: theme.colors.gold,
-    letterSpacing: 2,
-    marginBottom: 2,
-  },
-  title: {
-    fontFamily: theme.fonts.heading,
-    fontSize: theme.fontSizes.xxl,
-    color: theme.colors.textPrimary,
-    letterSpacing: 4,
-    textAlign: 'center',
-  },
-
-  // ── Rest unchanged ───────────────────────────────────────
   progressBar: {
-    height: 3,
-    backgroundColor: theme.colors.border,
+    height:           3,
+    backgroundColor:  theme.colors.border,
     marginHorizontal: theme.spacing.lg,
-    borderRadius: theme.radius.full,
-    marginBottom: theme.spacing.lg,
+    borderRadius:     theme.radius.full,
+    marginBottom:     theme.spacing.lg,
   },
   progressFill: {
-    height: '100%',
+    height:          '100%',
     backgroundColor: theme.colors.gold,
-    borderRadius: theme.radius.full,
+    borderRadius:    theme.radius.full,
   },
-  loader: {
-    flex: 1,
-  },
-  emptyState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: theme.spacing.md,
+
+  shimmerStack: {
     paddingHorizontal: theme.spacing.lg,
+    gap:               theme.spacing.md,
   },
-  emptyTitle: {
-    fontFamily: theme.fonts.heading,
-    fontSize: theme.fontSizes.lg,
-    color: theme.colors.textSecondary,
-    letterSpacing: 2,
-    textAlign: 'center',
-  },
-  emptySubtitle: {
-    fontFamily: theme.fonts.body,
-    fontSize: theme.fontSizes.sm,
-    color: theme.colors.textMuted,
-  },
+  shimmerRow: { marginBottom: 0 },
+
   scroll: {
-    padding: theme.spacing.lg,
+    padding:    theme.spacing.lg,
     paddingTop: 0,
-    gap: theme.spacing.md,
+    gap:        theme.spacing.md,
   },
-  card: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.lg,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    padding: theme.spacing.lg,
+  cardWrap:    {},
+  cardContent: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.md,
-    ...theme.shadows.md,
-  },
-  cardSelected: {
-    borderColor: theme.colors.gold,
-    backgroundColor: theme.colors.goldMuted,
+    alignItems:    'center',
+    gap:           theme.spacing.md,
+    padding:       theme.spacing.lg,
   },
   iconBox: {
-    width: 56,
-    height: 56,
-    borderRadius: theme.radius.md,
+    width:           56,
+    height:          56,
+    borderRadius:    theme.radius.md,
     backgroundColor: theme.colors.goldMuted,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems:      'center',
+    justifyContent:  'center',
   },
-  iconBoxSelected: {
-    backgroundColor: theme.colors.gold,
-  },
-  cardInfo: {
-    flex: 1,
-    gap: 4,
-  },
-  serviceName: {
+  iconBoxSelected: { backgroundColor: theme.colors.gold },
+  info:            { flex: 1, gap: 4 },
+  name: {
     fontFamily: theme.fonts.bold,
-    fontSize: theme.fontSizes.lg,
-    color: theme.colors.textPrimary,
+    fontSize:   theme.fontSizes.lg,
+    color:      theme.colors.textPrimary,
   },
-  serviceNameSelected: {
-    color: theme.colors.gold,
-  },
-  serviceDesc: {
+  nameSelected: { color: theme.colors.gold },
+  desc: {
     fontFamily: theme.fonts.body,
-    fontSize: theme.fontSizes.sm,
-    color: theme.colors.textSecondary,
+    fontSize:   theme.fontSizes.sm,
+    color:      theme.colors.textSecondary,
   },
   meta: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 2,
+    alignItems:    'center',
+    gap:           4,
+    marginTop:     2,
   },
   metaText: {
     fontFamily: theme.fonts.body,
-    fontSize: theme.fontSizes.xs,
-    color: theme.colors.textMuted,
+    fontSize:   theme.fontSizes.xs,
+    color:      theme.colors.textMuted,
   },
-  cardRight: {
-    alignItems: 'center',
-    gap: theme.spacing.xs,
-  },
+  right: { alignItems: 'center', gap: theme.spacing.xs },
   price: {
     fontFamily: theme.fonts.heading,
-    fontSize: theme.fontSizes.xl,
-    color: theme.colors.textPrimary,
+    fontSize:   theme.fontSizes.xl,
+    color:      theme.colors.textPrimary,
   },
-  priceSelected: {
-    color: theme.colors.gold,
-  },
-  footer: {
-    padding: theme.spacing.lg,
-    paddingBottom: theme.spacing.xl,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.border,
-  },
-  button: {
-    backgroundColor: theme.colors.gold,
-    borderRadius: theme.radius.md,
-    padding: theme.spacing.md,
-    alignItems: 'center',
-    flexDirection: 'row',
+  priceSelected: { color: theme.colors.gold },
+
+  emptyState: {
+    flex:           1,
+    alignItems:     'center',
     justifyContent: 'center',
-    gap: theme.spacing.sm,
-    ...theme.shadows.gold,
+    gap:            theme.spacing.md,
+    paddingHorizontal: theme.spacing.lg,
   },
-  buttonDisabled: {
-    opacity: 0.4,
-  },
-  buttonText: {
-    fontFamily: theme.fonts.heading,
-    fontSize: theme.fontSizes.lg,
-    color: theme.colors.textInverse,
+  emptyTitle: {
+    fontFamily:    theme.fonts.heading,
+    fontSize:      theme.fontSizes.lg,
+    color:         theme.colors.textSecondary,
     letterSpacing: 2,
+    textAlign:     'center',
+  },
+  emptySubtitle: {
+    fontFamily: theme.fonts.body,
+    fontSize:   theme.fontSizes.sm,
+    color:      theme.colors.textMuted,
+  },
+
+  footer: {
+    padding:          theme.spacing.lg,
+    paddingBottom:    theme.spacing.xl,
+    borderTopWidth:   1,
+    borderTopColor:   theme.colors.border,
   },
 });
