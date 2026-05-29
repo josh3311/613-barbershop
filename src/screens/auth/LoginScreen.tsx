@@ -49,8 +49,11 @@ export default function LoginScreen({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      {/* Subtle BlurView texture — sits behind everything */}
-      <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+      {/* Subtle BlurView texture — iOS only; Android relies on the
+          solid dark theme background to avoid expo-blur native edge cases */}
+      {Platform.OS === 'ios' && (
+        <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+      )}
 
       <KeyboardAvoidingView
         style={styles.flex}

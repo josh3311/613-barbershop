@@ -19,3 +19,5 @@ export { default as PremiumInput } from './PremiumInput';
 export type { PremiumInputProps } from './PremiumInput';
 
 export { default as BlurTabBar } from './BlurTabBar';
+
+export { default as ErrorBoundary } from './ErrorBoundary';

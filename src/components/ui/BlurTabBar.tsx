@@ -188,16 +188,23 @@ export default function BlurTabBar(props: BottomTabBarProps) {
     );
   }), [state, descriptors, navigation]);
 
+  // expo-blur is reliable on iOS. On Android the native blur path is
+  // device/driver-dependent (and was a suspect in the white-screen crash),
+  // so fall back to a solid dark surface there.
+  const useBlur = Platform.OS === 'ios';
+
   return (
     <View style={styles.outer} pointerEvents="box-none">
-      {/* Frosted background */}
-      <BlurView
-        intensity={Platform.OS === 'ios' ? 60 : 90}
-        tint="dark"
-        style={StyleSheet.absoluteFill}
-      />
-      {/* Subtle tint over the blur so the dark theme reads correctly */}
-      <View style={styles.tint} />
+      {useBlur ? (
+        <>
+          <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
+          {/* Subtle tint over the blur so the dark theme reads correctly */}
+          <View style={styles.tint} />
+        </>
+      ) : (
+        <View style={styles.androidBg} />
+      )}
+
       <View style={styles.topBorder} />
 
       {/* Sliding gold indicator */}
@@ -222,6 +229,10 @@ const styles = StyleSheet.create({
   tint: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(10, 10, 10, 0.55)',
+  },
+  androidBg: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: theme.colors.surface,
   },
   topBorder: {
     position: 'absolute',

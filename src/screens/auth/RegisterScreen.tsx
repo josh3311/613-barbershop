@@ -76,7 +76,10 @@ export default function RegisterScreen({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+      {/* iOS-only blur — Android falls back to the solid dark background */}
+      {Platform.OS === 'ios' && (
+        <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+      )}
 
       <KeyboardAvoidingView
         style={styles.flex}
