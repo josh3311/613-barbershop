@@ -2,7 +2,7 @@
  * ProfileScreen — V3 visual layer
  *
  * Visual upgrades:
- * - Avatar wrapped in a Skia gold ring that slowly rotates
+ * - Avatar wrapped in a gold ring (plain View, Skia disabled during audit)
  * - Account info sections become GoldCards
  * - Loyalty stamps spring-bounce in with stagger (same pattern as Home)
  *
@@ -10,18 +10,11 @@
  * loyalty math, all info rows.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable,
   Alert, ActivityIndicator,
 } from 'react-native';
-import {
-  Canvas, Group, Circle, DashPathEffect,
-} from '@shopify/react-native-skia';
-import Animated, {
-  Easing, useSharedValue, useAnimatedStyle,
-  withRepeat, withTiming,
-} from 'react-native-reanimated';
 import { MotiView } from 'moti';
 import { Ionicons } from '@expo/vector-icons';
 import { signOut } from 'firebase/auth';
@@ -34,48 +27,8 @@ import { theme } from '../../theme';
 import { GoldCard, PremiumInput } from '../../components/ui';
 
 const BIRTHDAY_REGEX = /^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+const RING_SIZE = 110;
 
-// ── Skia rotating gold ring around the avatar ─────────────────────
-const RING_SIZE   = 110;
-const RING_STROKE = 2;
-
-const AvatarRingImpl = () => {
-  const rotation = useSharedValue(0);
-
-  useEffect(() => {
-    rotation.value = withRepeat(
-      withTiming(360, { duration: 16000, easing: Easing.linear }),
-      -1,
-      false,
-    );
-  }, [rotation]);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${rotation.value}deg` }],
-  }));
-
-  return (
-    <Animated.View style={[styles.ringWrap, animatedStyle]}>
-      <Canvas style={{ width: RING_SIZE, height: RING_SIZE }}>
-        <Group>
-          <Circle
-            cx={RING_SIZE / 2}
-            cy={RING_SIZE / 2}
-            r={(RING_SIZE - RING_STROKE) / 2}
-            color={theme.colors.gold}
-            style="stroke"
-            strokeWidth={RING_STROKE}
-          >
-            <DashPathEffect intervals={[6, 8]} />
-          </Circle>
-        </Group>
-      </Canvas>
-    </Animated.View>
-  );
-};
-const AvatarRing = React.memo(AvatarRingImpl);
-
-// ── Screen ─────────────────────────────────────────────────────────
 export default function ProfileScreen() {
   const { user } = useAuth();
   const [signingOut,      setSigningOut]      = useState(false);
@@ -135,10 +88,11 @@ export default function ProfileScreen() {
           <Text style={styles.title}>PROFILE</Text>
         </View>
 
-        {/* Avatar + Name with rotating ring */}
+        {/* Avatar + Name */}
         <View style={styles.avatarSection}>
           <View style={styles.avatarBlock}>
-            <AvatarRing />
+            {/* Plain gold ring — Skia rotating ring disabled during audit */}
+            <View style={styles.avatarRing} />
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>
                 {user?.displayName?.charAt(0).toUpperCase() ?? '?'}
@@ -174,7 +128,7 @@ export default function ProfileScreen() {
                   from={{ scale: 0, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
                   transition={{
-                    type: 'spring',
+                    type:    'spring',
                     damping: filled ? 9 : 14,
                     mass:    filled ? 0.6 : 1,
                     delay:   180 + i * 35,
@@ -193,32 +147,16 @@ export default function ProfileScreen() {
         {/* Account info */}
         <Text style={styles.sectionTitle}>ACCOUNT INFO</Text>
         <GoldCard entranceIndex={1} contentStyle={{ padding: 0 }} flat>
-          <InfoRow
-            icon="person-outline"
-            label="FIRST NAME"
-            value={firstName}
-          />
+          <InfoRow icon="person-outline"  label="FIRST NAME" value={firstName} />
           <Divider />
-          <InfoRow
-            icon="person-outline"
-            label="LAST NAME"
-            value={lastName || '—'}
-          />
+          <InfoRow icon="person-outline"  label="LAST NAME"  value={lastName || '—'} />
           <Divider />
-          <InfoRow
-            icon="mail-outline"
-            label="EMAIL"
-            value={user?.email ?? '—'}
-          />
+          <InfoRow icon="mail-outline"    label="EMAIL"      value={user?.email ?? '—'} />
           <Divider />
-          <InfoRow
-            icon="call-outline"
-            label="PHONE"
-            value={user?.phone ?? 'Not added'}
-          />
+          <InfoRow icon="call-outline"    label="PHONE"      value={user?.phone ?? 'Not added'} />
           <Divider />
 
-          {/* Birthday row (tappable) */}
+          {/* Birthday row */}
           <Pressable
             style={styles.infoRow}
             onPress={() => {
@@ -328,12 +266,13 @@ export default function ProfileScreen() {
   );
 }
 
-// ── Small helpers (kept local to file) ────────────────────────────
 function InfoRow({
   icon, label, value,
-}: { icon: keyof typeof import('@expo/vector-icons').Ionicons.glyphMap;
-     label: string;
-     value: string; }) {
+}: {
+  icon:  keyof typeof import('@expo/vector-icons').Ionicons.glyphMap;
+  label: string;
+  value: string;
+}) {
   return (
     <View style={styles.infoRow}>
       <View style={styles.infoIcon}>
@@ -358,7 +297,7 @@ const styles = StyleSheet.create({
     paddingTop:    theme.spacing.xxl,
     paddingBottom: theme.spacing.xxl,
   },
-  header: { marginBottom: theme.spacing.xl },
+  header:        { marginBottom: theme.spacing.xl },
   title: {
     fontFamily:    theme.fonts.heading,
     fontSize:      theme.fontSizes.xxxl,
@@ -368,13 +307,21 @@ const styles = StyleSheet.create({
 
   avatarSection: { alignItems: 'center', marginBottom: theme.spacing.xl },
   avatarBlock: {
-    width:           RING_SIZE,
-    height:          RING_SIZE,
-    alignItems:      'center',
-    justifyContent:  'center',
-    marginBottom:    theme.spacing.md,
+    width:          RING_SIZE,
+    height:         RING_SIZE,
+    alignItems:     'center',
+    justifyContent: 'center',
+    marginBottom:   theme.spacing.md,
   },
-  ringWrap: { position: 'absolute', top: 0, left: 0 },
+  avatarRing: {
+    position:     'absolute',
+    width:        RING_SIZE,
+    height:       RING_SIZE,
+    borderRadius: RING_SIZE / 2,
+    borderWidth:  2,
+    borderColor:  theme.colors.gold,
+    opacity:      0.6,
+  },
   avatar: {
     width:           90,
     height:          90,
@@ -402,13 +349,13 @@ const styles = StyleSheet.create({
     marginTop:  theme.spacing.xs,
   },
   roleBadge: {
-    backgroundColor:  theme.colors.goldMuted,
-    borderWidth:      1,
-    borderColor:      theme.colors.gold,
-    borderRadius:     theme.radius.full,
-    paddingVertical:  4,
+    backgroundColor:   theme.colors.goldMuted,
+    borderWidth:       1,
+    borderColor:       theme.colors.gold,
+    borderRadius:      theme.radius.full,
+    paddingVertical:   4,
     paddingHorizontal: theme.spacing.md,
-    marginTop:        theme.spacing.sm,
+    marginTop:         theme.spacing.sm,
   },
   roleText: {
     fontFamily:    theme.fonts.medium,
@@ -417,7 +364,6 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
   },
 
-  // Loyalty
   loyaltyHeader: {
     flexDirection:  'row',
     justifyContent: 'space-between',
@@ -443,17 +389,16 @@ const styles = StyleSheet.create({
   },
   stampsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm },
   stamp: {
-    width:           36,
-    height:          36,
-    borderRadius:    theme.radius.full,
-    borderWidth:     1.5,
-    borderColor:     theme.colors.border,
-    alignItems:      'center',
-    justifyContent:  'center',
+    width:          36,
+    height:         36,
+    borderRadius:   theme.radius.full,
+    borderWidth:    1.5,
+    borderColor:    theme.colors.border,
+    alignItems:     'center',
+    justifyContent: 'center',
   },
   stampFilled: { backgroundColor: theme.colors.gold, borderColor: theme.colors.gold },
 
-  // Section
   sectionTitle: {
     fontFamily:    theme.fonts.heading,
     fontSize:      theme.fontSizes.sm,
@@ -463,7 +408,6 @@ const styles = StyleSheet.create({
     marginBottom:  theme.spacing.md,
   },
 
-  // Info rows
   infoRow: {
     flexDirection: 'row',
     alignItems:    'center',
@@ -497,7 +441,6 @@ const styles = StyleSheet.create({
     marginLeft:      theme.spacing.lg + 36 + theme.spacing.md,
   },
 
-  // Birthday edit
   birthdayEditRow: {
     flexDirection: 'row',
     alignItems:    'center',
@@ -505,8 +448,8 @@ const styles = StyleSheet.create({
     marginTop:     theme.spacing.xs,
   },
   birthdaySaveBtn: {
-    backgroundColor: theme.colors.gold,
-    borderRadius:    theme.radius.sm,
+    backgroundColor:   theme.colors.gold,
+    borderRadius:      theme.radius.sm,
     paddingHorizontal: theme.spacing.md,
     paddingVertical:   6,
     alignItems:        'center',
@@ -521,7 +464,6 @@ const styles = StyleSheet.create({
   },
   birthdayCancelBtn: { padding: theme.spacing.xs },
 
-  // Sign out
   signOutBtn: {
     flexDirection:   'row',
     alignItems:      'center',

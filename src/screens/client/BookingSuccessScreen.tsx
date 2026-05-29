@@ -14,11 +14,11 @@ import React, { useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, Dimensions } from 'react-native';
 import Animated, {
   FadeInUp, FadeIn, useSharedValue, useAnimatedStyle,
-  withDelay, withTiming, withSequence, Easing,
+  withDelay, withTiming, withSequence, withSpring, Easing,
 } from 'react-native-reanimated';
-import {
-  Canvas, Path, Skia,
-} from '@shopify/react-native-skia';
+// Skia checkmark disabled during Android Skia audit — replaced with
+// a Reanimated-scale Ionicons checkmark below.
+// import { Canvas, Path, Skia } from '@shopify/react-native-skia';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -30,44 +30,41 @@ interface Props {
   route:      any;
 }
 
-// ── Checkmark Skia layer ───────────────────────────────────────────
+// ── Checkmark (Skia disabled — Reanimated scale + Ionicons fallback) ─
 const CHECK_SIZE = 120;
 
 const CheckmarkImpl = () => {
-  const path = useMemo(() => {
-    const p = Skia.Path.Make();
-    // Drawn inside a 120x120 box. Tuned to look balanced.
-    p.moveTo(32, 62);
-    p.lineTo(54, 84);
-    p.lineTo(92, 40);
-    return p;
-  }, []);
-
-  const progress = useSharedValue(0);
+  // Spring the checkmark in from scale 0 → 1 after a short delay so it
+  // still feels intentional (not just a static glyph).
+  const scale = useSharedValue(0);
 
   useEffect(() => {
-    progress.value = withDelay(
+    scale.value = withDelay(
       280,
-      withTiming(1, { duration: 650, easing: Easing.out(Easing.cubic) }),
+      withSpring(1, { damping: 9, stiffness: 180, mass: 0.7 }),
     );
-  }, [progress]);
+  }, [scale]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
 
   return (
-    <Canvas style={{ width: CHECK_SIZE, height: CHECK_SIZE }}>
-      <Path
-        path={path}
-        color={theme.colors.textInverse}
-        style="stroke"
-        strokeWidth={9}
-        strokeJoin="round"
-        strokeCap="round"
-        start={0}
-        end={progress}
-      />
-    </Canvas>
+    <Animated.View style={[checkStyles.wrap, animatedStyle]}>
+      <Ionicons name="checkmark" size={84} color={theme.colors.textInverse} />
+    </Animated.View>
   );
 };
 const Checkmark = React.memo(CheckmarkImpl);
+
+const checkStyles = StyleSheet.create({
+  wrap: {
+    width:          CHECK_SIZE,
+    height:         CHECK_SIZE,
+    alignItems:     'center',
+    justifyContent: 'center',
+  },
+});
 
 // ── Confetti particle ──────────────────────────────────────────────
 interface ParticleProps {

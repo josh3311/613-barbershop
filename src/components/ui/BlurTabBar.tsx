@@ -2,12 +2,12 @@
  * BlurTabBar
  *
  * Custom bottom tab bar used by ClientNavigator.
- * - expo-blur frosted glass background
+ * - expo-blur frosted glass background (iOS only, Android uses solid surface)
  * - Active tab icon springs up to 1.2× scale
- * - Skia gold underline slides between active tabs via withSpring
+ * - Gold underline slides between active tabs via withSpring
  *
- * Designed to be drop-in compatible with React Navigation's
- * BottomTabBar — it receives the standard BottomTabBarProps.
+ * NOTE: Skia Canvas indicator disabled during Android audit.
+ * Replaced with a plain View. Restore once Skia is re-enabled.
  */
 
 import React, { useEffect, useMemo } from 'react';
@@ -19,56 +19,46 @@ import Animated, {
 } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
-import { Canvas, RoundedRect } from '@shopify/react-native-skia';
 import * as Haptics from 'expo-haptics';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 
 import { theme } from '../../theme';
 
-const TAB_BAR_HEIGHT      = 78;
-const INDICATOR_WIDTH     = 28;
-const INDICATOR_HEIGHT    = 3;
-const INDICATOR_RADIUS    = 2;
+const TAB_BAR_HEIGHT   = 78;
+const INDICATOR_WIDTH  = 28;
+const INDICATOR_HEIGHT = 3;
+const INDICATOR_RADIUS = 2;
 
-// Map route name → ionicon glyph for both states. Tabs not listed
-// here render their label only.
 const TAB_ICONS: Record<string, {
   active:   keyof typeof Ionicons.glyphMap;
   inactive: keyof typeof Ionicons.glyphMap;
   label?:   string;
 }> = {
-  Home:    { active: 'home',     inactive: 'home-outline'     },
-  Book:    { active: 'calendar', inactive: 'calendar-outline' },
-  StyleAI: { active: 'cut',      inactive: 'cut-outline',      label: 'Style AI' },
-  History: { active: 'time',     inactive: 'time-outline'     },
-  Profile: { active: 'person',   inactive: 'person-outline'   },
+  Home:    { active: 'home',     inactive: 'home-outline'                      },
+  Book:    { active: 'calendar', inactive: 'calendar-outline'                  },
+  StyleAI: { active: 'cut',      inactive: 'cut-outline',    label: 'Style AI' },
+  History: { active: 'time',     inactive: 'time-outline'                      },
+  Profile: { active: 'person',   inactive: 'person-outline'                    },
 };
 
-// ── Skia indicator ────────────────────────────────────────────────
+// ── Gold indicator — plain View (Skia disabled during audit) ──────
 const IndicatorImpl = () => (
-  <Canvas
+  <View
     style={{
-      width:  INDICATOR_WIDTH,
-      height: INDICATOR_HEIGHT,
+      width:           INDICATOR_WIDTH,
+      height:          INDICATOR_HEIGHT,
+      borderRadius:    INDICATOR_RADIUS,
+      backgroundColor: theme.colors.gold,
     }}
-  >
-    <RoundedRect
-      x={0}
-      y={0}
-      width={INDICATOR_WIDTH}
-      height={INDICATOR_HEIGHT}
-      r={INDICATOR_RADIUS}
-      color={theme.colors.gold}
-    />
-  </Canvas>
+  />
 );
 const Indicator = React.memo(IndicatorImpl);
 
 // ── Single tab button ─────────────────────────────────────────────
 interface TabButtonProps {
-  routeName: string;
-  focused:   boolean;
-  onPress:   () => void;
+  routeName:   string;
+  focused:     boolean;
+  onPress:     () => void;
   onLongPress: () => void;
 }
 
@@ -114,10 +104,10 @@ const TabButtonImpl = ({
           color={focused ? theme.colors.gold : theme.colors.textMuted}
         />
       </Animated.View>
-      <Text style={[
-        styles.tabLabel,
-        focused && styles.tabLabelActive,
-      ]} numberOfLines={1}>
+      <Text
+        style={[styles.tabLabel, focused && styles.tabLabelActive]}
+        numberOfLines={1}
+      >
         {label.toUpperCase()}
       </Text>
     </Pressable>
@@ -125,7 +115,7 @@ const TabButtonImpl = ({
 };
 const TabButton = React.memo(TabButtonImpl);
 
-// ── Tab bar itself ────────────────────────────────────────────────
+// ── Tab bar ───────────────────────────────────────────────────────
 export default function BlurTabBar(props: BottomTabBarProps) {
   const { state, descriptors, navigation } = props;
 
@@ -148,15 +138,14 @@ export default function BlurTabBar(props: BottomTabBarProps) {
     transform: [{ translateX: indicatorX.value }],
   }));
 
-  // Memoise tabs so they don't recreate on every state change
   const tabs = useMemo(() => state.routes.map((route, idx) => {
     const { options } = descriptors[route.key];
     const focused = state.index === idx;
 
     const onPress = () => {
       const event = navigation.emit({
-        type:    'tabPress',
-        target:  route.key,
+        type:              'tabPress',
+        target:            route.key,
         canPreventDefault: true,
       });
       if (!focused && !event.defaultPrevented) {
@@ -165,14 +154,9 @@ export default function BlurTabBar(props: BottomTabBarProps) {
     };
 
     const onLongPress = () => {
-      navigation.emit({
-        type:   'tabLongPress',
-        target: route.key,
-      });
+      navigation.emit({ type: 'tabLongPress', target: route.key });
     };
 
-    // Allow individual screens to hide the tab bar via tabBarStyle.display:'none'
-    // (matches the default BottomTabBar behaviour)
     if ((options.tabBarStyle as { display?: string } | undefined)?.display === 'none') {
       return null;
     }
@@ -188,9 +172,6 @@ export default function BlurTabBar(props: BottomTabBarProps) {
     );
   }), [state, descriptors, navigation]);
 
-  // expo-blur is reliable on iOS. On Android the native blur path is
-  // device/driver-dependent (and was a suspect in the white-screen crash),
-  // so fall back to a solid dark surface there.
   const useBlur = Platform.OS === 'ios';
 
   return (
@@ -198,7 +179,6 @@ export default function BlurTabBar(props: BottomTabBarProps) {
       {useBlur ? (
         <>
           <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
-          {/* Subtle tint over the blur so the dark theme reads correctly */}
           <View style={styles.tint} />
         </>
       ) : (
@@ -212,7 +192,6 @@ export default function BlurTabBar(props: BottomTabBarProps) {
         <Indicator />
       </Animated.View>
 
-      {/* Tab buttons */}
       <View style={styles.row}>
         {tabs}
       </View>
@@ -222,9 +201,9 @@ export default function BlurTabBar(props: BottomTabBarProps) {
 
 const styles = StyleSheet.create({
   outer: {
-    height:        TAB_BAR_HEIGHT,
+    height:          TAB_BAR_HEIGHT,
     backgroundColor: 'transparent',
-    overflow:      'hidden',
+    overflow:        'hidden',
   },
   tint: {
     ...StyleSheet.absoluteFillObject,
@@ -235,20 +214,20 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surface,
   },
   topBorder: {
-    position: 'absolute',
-    top:      0,
-    left:     0,
-    right:    0,
-    height:   1,
+    position:        'absolute',
+    top:             0,
+    left:            0,
+    right:           0,
+    height:          1,
     backgroundColor: 'rgba(212, 175, 55, 0.18)',
   },
   row: {
-    flex:            1,
-    flexDirection:   'row',
-    alignItems:      'center',
-    justifyContent:  'space-around',
-    paddingTop:      6,
-    paddingBottom:   Platform.OS === 'ios' ? 18 : 8,
+    flex:           1,
+    flexDirection:  'row',
+    alignItems:     'center',
+    justifyContent: 'space-around',
+    paddingTop:     6,
+    paddingBottom:  Platform.OS === 'ios' ? 18 : 8,
   },
   tabBtn: {
     flex:           1,

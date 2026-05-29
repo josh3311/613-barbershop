@@ -2,28 +2,29 @@
  * GoldCard
  *
  * Premium surface card used across the app.
- * - Skia Canvas behind the content draws a radial gold glow from
- *   the centre and a thin gold rounded-rect border
- * - Reanimated entering animation (FadeInDown spring) by default
- * - Optional `onPress` turns it into a Pressable with a soft
- *   scale spring + light haptic
  *
- * Skia transparent caveat (see CLAUDE.md Architecture Notes):
- * never use the string "transparent" as a Skia colour — we use
- * fully-alpha-zero rgba() strings instead.
+ * SKIA TEMPORARILY DISABLED — see the comments in the audit branch.
+ * The original implementation drew a radial gold glow and a thin gold
+ * stroked border with @shopify/react-native-skia. The Skia layer is
+ * commented out and replaced with a plain View that uses real
+ * borderWidth + theme.shadows.gold so the card still reads as
+ * "premium" without any Skia.
+ *
+ * All Reanimated behaviour is preserved exactly (entrance animation,
+ * press scale spring, active border-color flip).
  */
 
-import React, { useState } from 'react';
+import React from 'react';
 import {
   StyleSheet, View, Pressable, ViewStyle, StyleProp,
-  LayoutChangeEvent, GestureResponderEvent,
+  GestureResponderEvent,
 } from 'react-native';
 import Animated, {
   FadeInDown, useAnimatedStyle, useSharedValue, withSpring,
 } from 'react-native-reanimated';
-import {
-  Canvas, RoundedRect, Paint, RadialGradient, vec,
-} from '@shopify/react-native-skia';
+// import {
+//   Canvas, RoundedRect, Paint, RadialGradient, vec,
+// } from '@shopify/react-native-skia';   // disabled during Android Skia audit
 import * as Haptics from 'expo-haptics';
 
 import { theme } from '../../theme';
@@ -42,82 +43,18 @@ export interface GoldCardProps {
   entranceIndex?:   number;
   /** Tint the glow stronger when the card is "active". */
   active?:          boolean;
-  /** Disable the Skia layer (cheaper, used when there are many
-   *  rows on screen at once). */
+  /** Was used to opt out of the Skia layer. Kept as a no-op prop so
+   *  callers don't need to be edited. */
   flat?:            boolean;
 }
 
-const GLOW_GOLD_HEX     = '#D4AF37';
-const GLOW_GOLD_RGBA    = 'rgba(212, 175, 55, 0.16)';   // visible
-const GLOW_GOLD_RGBA_ZERO = 'rgba(212, 175, 55, 0)';    // explicit alpha-0
-const BORDER_GOLD_RGBA  = 'rgba(212, 175, 55, 0.35)';
-const BORDER_GOLD_ACTIVE = 'rgba(212, 175, 55, 0.7)';
-
-// ── Skia layer (memoised — the parent re-renders on press but
-//    the canvas only needs to redraw when size or `active` flip)
-interface CanvasLayerProps { width: number; height: number; active: boolean; }
-
-const SkiaLayerImpl = ({ width, height, active }: CanvasLayerProps) => {
-  if (width === 0 || height === 0) return null;
-
-  const radius = theme.radius.lg;
-  const cx     = width / 2;
-  const cy     = height / 2;
-  // Glow reach — slightly larger than half the card so the falloff
-  // doesn't hit the edge as a hard ring.
-  const glowR  = Math.max(width, height) * 0.7;
-
-  return (
-    <Canvas style={StyleSheet.absoluteFill} pointerEvents="none">
-      {/* Radial gold glow centred on the card */}
-      <RoundedRect x={0} y={0} width={width} height={height} r={radius}>
-        <RadialGradient
-          c={vec(cx, cy)}
-          r={glowR}
-          colors={[
-            active ? 'rgba(212, 175, 55, 0.28)' : GLOW_GOLD_RGBA,
-            GLOW_GOLD_RGBA_ZERO,
-          ]}
-        />
-      </RoundedRect>
-
-      {/* Thin gold stroked border */}
-      <RoundedRect
-        x={0.5}
-        y={0.5}
-        width={width - 1}
-        height={height - 1}
-        r={radius}
-      >
-        <Paint
-          color={active ? BORDER_GOLD_ACTIVE : BORDER_GOLD_RGBA}
-          style="stroke"
-          strokeWidth={1}
-        />
-      </RoundedRect>
-    </Canvas>
-  );
-};
-
-const SkiaLayer = React.memo(SkiaLayerImpl);
-SkiaLayer.displayName = 'GoldCard.SkiaLayer';
-
-// ── Pressable wrapper (only mounted when onPress is provided)
 function GoldCardImpl(props: GoldCardProps) {
   const {
     children, style, contentStyle, onPress, disableEntrance,
-    entranceIndex = 0, active = false, flat = false,
+    entranceIndex = 0, active = false,
   } = props;
 
-  const [size, setSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
   const scale = useSharedValue(1);
-
-  const onLayout = (e: LayoutChangeEvent) => {
-    const { width, height } = e.nativeEvent.layout;
-    if (width !== size.w || height !== size.h) {
-      setSize({ w: width, h: height });
-    }
-  };
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -129,13 +66,14 @@ function GoldCardImpl(props: GoldCardProps) {
 
   const inner = (
     <Animated.View
-      onLayout={onLayout}
       entering={entering}
-      style={[styles.card, animatedStyle, style]}
+      style={[
+        styles.card,
+        active && styles.cardActive,
+        animatedStyle,
+        style,
+      ]}
     >
-      {!flat && (
-        <SkiaLayer width={size.w} height={size.h} active={active} />
-      )}
       <View style={[styles.content, contentStyle]}>{children}</View>
     </Animated.View>
   );
@@ -172,10 +110,15 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor:  theme.colors.surface,
     borderRadius:     theme.radius.lg,
+    borderWidth:      1,
+    borderColor:      'rgba(212, 175, 55, 0.35)',   // mimics Skia border tint
     overflow:         'hidden',
-    // Subtle non-skia shadow so the card still has depth even
-    // before its Skia layer is laid out.
     ...theme.shadows.md,
+  },
+  cardActive: {
+    borderColor:      'rgba(212, 175, 55, 0.7)',
+    backgroundColor:  'rgba(212, 175, 55, 0.06)',   // mimics the Skia glow
+    ...theme.shadows.gold,
   },
   content: {
     padding: theme.spacing.lg,
