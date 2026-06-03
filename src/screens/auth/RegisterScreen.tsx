@@ -8,8 +8,6 @@ import {
   View, Text, StyleSheet, KeyboardAvoidingView,
   Platform, ScrollView, Pressable,
 } from 'react-native';
-import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
-import { MotiView } from 'moti';
 import { BlurView } from 'expo-blur';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
@@ -89,24 +87,16 @@ export default function RegisterScreen({ navigation }: Props) {
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
         >
-          <MotiView
-            from={{ opacity: 0, translateY: -24 }}
-            animate={{ opacity: 1, translateY: 0 }}
-            transition={{ type: 'spring', damping: 14, mass: 0.9, delay: 80 }}
-            style={styles.header}
-          >
+          <View style={styles.header}>
             <Text style={styles.logo}>613</Text>
             <Text style={styles.subtitle}>CREATE ACCOUNT</Text>
-          </MotiView>
+          </View>
 
-          <Animated.View
-            entering={FadeInUp.delay(220).springify().damping(16)}
-            style={styles.form}
-          >
+          <View style={styles.form}>
             {error && (
-              <Animated.View entering={FadeIn.duration(180)} style={styles.errorBox}>
+              <View style={styles.errorBox}>
                 <Text style={styles.errorText}>{error}</Text>
-              </Animated.View>
+              </View>
             )}
 
             <PremiumInput
@@ -158,7 +148,7 @@ export default function RegisterScreen({ navigation }: Props) {
                 <Text style={styles.loginTextBold}>Sign in</Text>
               </Text>
             </Pressable>
-          </Animated.View>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </View>

@@ -16,7 +16,6 @@ import React from 'react';
 import {
   StyleSheet, Text, View, Pressable, ViewStyle, StyleProp,
 } from 'react-native';
-import Animated, { FadeInDown } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
@@ -44,10 +43,7 @@ function AnimatedHeaderImpl({
   };
 
   return (
-    <Animated.View
-      entering={FadeInDown.springify().damping(16)}
-      style={[styles.header, style]}
-    >
+    <View style={[styles.header, style]}>
       {/* Left column */}
       {onBack ? (
         <Pressable
@@ -89,7 +85,7 @@ function AnimatedHeaderImpl({
       ) : (
         <View style={styles.spacer} />
       )}
-    </Animated.View>
+    </View>
   );
 }
 

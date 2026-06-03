@@ -10,13 +10,10 @@
  * Replaced with a plain View. Restore once Skia is re-enabled.
  */
 
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import {
-  StyleSheet, View, Pressable, Text, Dimensions, Platform,
+  Animated, StyleSheet, View, Pressable, Text, Dimensions, Platform,
 } from 'react-native';
-import Animated, {
-  useAnimatedStyle, useSharedValue, withSpring,
-} from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -65,18 +62,20 @@ interface TabButtonProps {
 const TabButtonImpl = ({
   routeName, focused, onPress, onLongPress,
 }: TabButtonProps) => {
-  const scale = useSharedValue(focused ? 1.2 : 1);
+  const scale = useRef(new Animated.Value(focused ? 1.2 : 1)).current;
 
   useEffect(() => {
-    scale.value = withSpring(focused ? 1.2 : 1, {
-      damping:   12,
-      stiffness: 220,
-    });
+    Animated.spring(scale, {
+      toValue:        focused ? 1.2 : 1,
+      friction:       7,
+      tension:        220,
+      useNativeDriver: true,
+    }).start();
   }, [focused, scale]);
 
-  const iconStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
+  const iconStyle = {
+    transform: [{ scale }],
+  };
 
   const cfg = TAB_ICONS[routeName];
   if (!cfg) return null;
@@ -123,20 +122,22 @@ export default function BlurTabBar(props: BottomTabBarProps) {
   const tabCount    = state.routes.length;
   const tabWidth    = screenWidth / tabCount;
 
-  const indicatorX = useSharedValue(
+  const indicatorX = useRef(new Animated.Value(
     state.index * tabWidth + (tabWidth - INDICATOR_WIDTH) / 2,
-  );
+  )).current;
 
   useEffect(() => {
-    indicatorX.value = withSpring(
-      state.index * tabWidth + (tabWidth - INDICATOR_WIDTH) / 2,
-      { damping: 18, stiffness: 240 },
-    );
+    Animated.spring(indicatorX, {
+      toValue:        state.index * tabWidth + (tabWidth - INDICATOR_WIDTH) / 2,
+      friction:       12,
+      tension:        240,
+      useNativeDriver: true,
+    }).start();
   }, [state.index, tabWidth, indicatorX]);
 
-  const indicatorStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: indicatorX.value }],
-  }));
+  const indicatorStyle = {
+    transform: [{ translateX: indicatorX }],
+  };
 
   const tabs = useMemo(() => state.routes.map((route, idx) => {
     const { options } = descriptors[route.key];

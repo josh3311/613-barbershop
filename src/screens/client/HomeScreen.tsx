@@ -5,15 +5,17 @@
  * "613 / BARBERSHOP" hero at the top, and gold-framed RPG panels
  * (Quick Actions + Loyalty) floating over the left side.
  *
+ * Expo Go safe — entrance animations use ONLY React Native's built-in
+ * Animated API (no Reanimated, no moti).
+ *
  * BUSINESS LOGIC IS UNCHANGED: same auth, same birthday detection,
  * same loyalty count, same quick-action navigation, same sign-out.
- * Only the presentation is redesigned.
  */
 
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Dimensions } from 'react-native';
-import Animated, { FadeInDown, FadeInLeft } from 'react-native-reanimated';
-import { MotiView } from 'moti';
+import React, { useEffect, useRef } from 'react';
+import {
+  View, Text, StyleSheet, ScrollView, Pressable, Dimensions, Animated,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { signOut } from 'firebase/auth';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -47,6 +49,42 @@ type QuickActionLabel = (typeof QUICK_ACTIONS)[number]['label'];
 export default function HomeScreen({ navigation }: { navigation: any }) {
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
+
+  // ── Entrance animations (React Native Animated, native driver) ────
+  const heroNum      = useRef(new Animated.Value(0)).current;
+  const heroTitleV   = useRef(new Animated.Value(0)).current;
+  const heroDivV     = useRef(new Animated.Value(0)).current;
+  const qaPanelV     = useRef(new Animated.Value(0)).current;
+  const loyaltyPanelV = useRef(new Animated.Value(0)).current;
+  const stampAnims   = useRef(Array.from({ length: 10 }, () => new Animated.Value(0))).current;
+
+  useEffect(() => {
+    const fade = (v: Animated.Value, delay: number) =>
+      Animated.timing(v, { toValue: 1, duration: 420, delay, useNativeDriver: true });
+    Animated.parallel([
+      fade(heroNum, 100),
+      fade(heroTitleV, 200),
+      fade(heroDivV, 300),
+      fade(qaPanelV, 300),
+      fade(loyaltyPanelV, 500),
+      ...stampAnims.map((v, i) =>
+        Animated.spring(v, {
+          toValue: 1, delay: 480 + i * 35, friction: 6, tension: 120, useNativeDriver: true,
+        }),
+      ),
+    ]).start();
+    // Animated.Values are stable refs; run once on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const fadeUp = (v: Animated.Value) => ({
+    opacity:   v,
+    transform: [{ translateY: v.interpolate({ inputRange: [0, 1], outputRange: [14, 0] }) }],
+  });
+  const fadeLeft = (v: Animated.Value) => ({
+    opacity:   v,
+    transform: [{ translateX: v.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) }],
+  });
 
   // ── Derived view-state ────────────────────────────────────────────
   const isBirthday = (): boolean => {
@@ -94,10 +132,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
         showsVerticalScrollIndicator={false}
       >
         {/* Quick actions */}
-        <Animated.View
-          entering={FadeInLeft.springify().delay(300)}
-          style={styles.panelWrap}
-        >
+        <Animated.View style={[styles.panelWrap, fadeLeft(qaPanelV)]}>
           <RPGPanel>
             <Text style={styles.panelTitle}>QUICK ACTIONS</Text>
             <ScissorDivider />
@@ -117,10 +152,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
         </Animated.View>
 
         {/* Loyalty */}
-        <Animated.View
-          entering={FadeInLeft.springify().delay(500)}
-          style={styles.panelWrap}
-        >
+        <Animated.View style={[styles.panelWrap, fadeLeft(loyaltyPanelV)]}>
           <RPGPanel>
             <Text style={styles.panelTitle}>LOYALTY</Text>
             <ScissorDivider />
@@ -130,22 +162,18 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
               <Text style={styles.loyaltyCount}>{stampsEarned}/10</Text>
             </View>
 
-            {/* Existing MotiView stamp row — kept exactly as-is */}
+            {/* Stamp row — RN Animated scale/opacity pop-in stagger */}
             <View style={styles.stampsRow}>
               {Array.from({ length: 10 }).map((_, i) => {
                 const filled = i < stampsEarned;
                 return (
-                  <MotiView
+                  <Animated.View
                     key={i}
-                    from={{ scale: 0, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    transition={{
-                      type: 'spring',
-                      damping:  filled ? 9 : 14,
-                      mass:     filled ? 0.6 : 1,
-                      delay:    480 + i * 35,
-                    }}
-                    style={[styles.stamp, filled && styles.stampFilled]}
+                    style={[
+                      styles.stamp,
+                      filled && styles.stampFilled,
+                      { opacity: stampAnims[i], transform: [{ scale: stampAnims[i] }] },
+                    ]}
                   >
                     {filled && (
                       <Ionicons
@@ -154,7 +182,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
                         color={theme.colors.textInverse}
                       />
                     )}
-                  </MotiView>
+                  </Animated.View>
                 );
               })}
             </View>
@@ -171,22 +199,13 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
         pointerEvents="none"
         style={[styles.heroWrap, { top: HERO_TOP }]}
       >
-        <Animated.Text
-          entering={FadeInDown.springify().delay(100)}
-          style={styles.heroNumber}
-        >
+        <Animated.Text style={[styles.heroNumber, fadeUp(heroNum)]}>
           613
         </Animated.Text>
-        <Animated.Text
-          entering={FadeInDown.springify().delay(200)}
-          style={styles.heroTitle}
-        >
+        <Animated.Text style={[styles.heroTitle, fadeUp(heroTitleV)]}>
           BARBERSHOP
         </Animated.Text>
-        <Animated.View
-          entering={FadeInDown.springify().delay(300)}
-          style={styles.heroDivider}
-        >
+        <Animated.View style={[styles.heroDivider, fadeUp(heroDivV)]}>
           <ScissorDivider />
         </Animated.View>
       </View>
@@ -204,10 +223,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
 
       {/* 7 — Birthday banner overlay at the top of the screen */}
       {isBirthday() && (
-        <Animated.View
-          entering={FadeInDown.delay(80).springify()}
-          style={[styles.birthdayBanner, { top: insets.top + theme.spacing.sm }]}
-        >
+        <View style={[styles.birthdayBanner, { top: insets.top + theme.spacing.sm }]}>
           <Text style={styles.birthdayEmoji}>🎂</Text>
           <View style={{ flex: 1 }}>
             <Text style={styles.birthdayTitle}>HAPPY BIRTHDAY!</Text>
@@ -215,7 +231,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
               Your next haircut is FREE today only!
             </Text>
           </View>
-        </Animated.View>
+        </View>
       )}
     </View>
   );

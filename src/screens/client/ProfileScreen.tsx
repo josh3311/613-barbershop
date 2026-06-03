@@ -15,7 +15,6 @@ import {
   View, Text, StyleSheet, ScrollView, Pressable,
   Alert, ActivityIndicator,
 } from 'react-native';
-import { MotiView } from 'moti';
 import { Ionicons } from '@expo/vector-icons';
 import { signOut } from 'firebase/auth';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -123,22 +122,14 @@ export default function ProfileScreen() {
             {Array.from({ length: 10 }).map((_, i) => {
               const filled = i < stamps;
               return (
-                <MotiView
+                <View
                   key={i}
-                  from={{ scale: 0, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  transition={{
-                    type:    'spring',
-                    damping: filled ? 9 : 14,
-                    mass:    filled ? 0.6 : 1,
-                    delay:   180 + i * 35,
-                  }}
                   style={[styles.stamp, filled && styles.stampFilled]}
                 >
                   {filled && (
                     <Ionicons name="checkmark" size={14} color={theme.colors.textInverse} />
                   )}
-                </MotiView>
+                </View>
               );
             })}
           </View>

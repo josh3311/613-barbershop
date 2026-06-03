@@ -13,8 +13,6 @@ import {
   View, Text, StyleSheet, KeyboardAvoidingView,
   Platform, ScrollView, Pressable,
 } from 'react-native';
-import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
-import { MotiView } from 'moti';
 import { BlurView } from 'expo-blur';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 
@@ -63,27 +61,19 @@ export default function LoginScreen({ navigation }: Props) {
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Logo block — Moti fade + slide */}
-          <MotiView
-            from={{ opacity: 0, translateY: -24 }}
-            animate={{ opacity: 1, translateY: 0 }}
-            transition={{ type: 'spring', damping: 14, mass: 0.9, delay: 80 }}
-            style={styles.header}
-          >
+          {/* Logo block */}
+          <View style={styles.header}>
             <Text style={styles.logo}>613</Text>
             <Text style={styles.subtitle}>BARBERSHOP</Text>
             <Text style={styles.tagline}>Premium cuts. Real style.</Text>
-          </MotiView>
+          </View>
 
           {/* Form */}
-          <Animated.View
-            entering={FadeInUp.delay(220).springify().damping(16)}
-            style={styles.form}
-          >
+          <View style={styles.form}>
             {error && (
-              <Animated.View entering={FadeIn.duration(180)} style={styles.errorBox}>
+              <View style={styles.errorBox}>
                 <Text style={styles.errorText}>{error}</Text>
-              </Animated.View>
+              </View>
             )}
 
             <PremiumInput
@@ -122,7 +112,7 @@ export default function LoginScreen({ navigation }: Props) {
                 <Text style={styles.registerTextBold}>Create one</Text>
               </Text>
             </Pressable>
-          </Animated.View>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </View>

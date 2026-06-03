@@ -1,24 +1,11 @@
 /**
  * BookingSuccessScreen
  *
- * V3 visual layer:
- * - Skia checkmark that draws itself in (path stroke progress
- *   animated from 0 → 1)
- * - 10-particle gold confetti burst expanding from the centre
- * - Title + summary animate in with Reanimated springs
- * - Summary card is a GoldCard, CTA is a PremiumButton (success
- *   notification haptic on press)
+ * Booking summary + navigation back to ClientTabs.
  */
 
-import React, { useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, Dimensions } from 'react-native';
-import Animated, {
-  FadeInUp, FadeIn, useSharedValue, useAnimatedStyle,
-  withDelay, withTiming, withSequence, withSpring, Easing,
-} from 'react-native-reanimated';
-// Skia checkmark disabled during Android Skia audit — replaced with
-// a Reanimated-scale Ionicons checkmark below.
-// import { Canvas, Path, Skia } from '@shopify/react-native-skia';
+import React, { useEffect } from 'react';
+import { View, Text, StyleSheet } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -30,32 +17,15 @@ interface Props {
   route:      any;
 }
 
-// ── Checkmark (Skia disabled — Reanimated scale + Ionicons fallback) ─
 const CHECK_SIZE = 120;
 
-const CheckmarkImpl = () => {
-  // Spring the checkmark in from scale 0 → 1 after a short delay so it
-  // still feels intentional (not just a static glyph).
-  const scale = useSharedValue(0);
-
-  useEffect(() => {
-    scale.value = withDelay(
-      280,
-      withSpring(1, { damping: 9, stiffness: 180, mass: 0.7 }),
-    );
-  }, [scale]);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
+const Checkmark = React.memo(function Checkmark() {
   return (
-    <Animated.View style={[checkStyles.wrap, animatedStyle]}>
+    <View style={checkStyles.wrap}>
       <Ionicons name="checkmark" size={84} color={theme.colors.textInverse} />
-    </Animated.View>
+    </View>
   );
-};
-const Checkmark = React.memo(CheckmarkImpl);
+});
 
 const checkStyles = StyleSheet.create({
   wrap: {
@@ -66,73 +36,10 @@ const checkStyles = StyleSheet.create({
   },
 });
 
-// ── Confetti particle ──────────────────────────────────────────────
-interface ParticleProps {
-  angle:    number;
-  distance: number;
-  delay:    number;
-  color:    string;
-  rotation: number;
-}
-
-const PARTICLE_COLORS = [
-  theme.colors.gold,
-  theme.colors.goldLight,
-  theme.colors.textPrimary,
-  theme.colors.goldDark,
-];
-
-const Particle = ({
-  angle, distance, delay, color, rotation,
-}: ParticleProps) => {
-  const progress = useSharedValue(0);
-  const opacity  = useSharedValue(0);
-
-  useEffect(() => {
-    progress.value = withDelay(
-      delay,
-      withTiming(1, { duration: 900, easing: Easing.out(Easing.cubic) }),
-    );
-    opacity.value = withDelay(
-      delay,
-      withSequence(
-        withTiming(1, { duration: 200 }),
-        withTiming(0, { duration: 600, easing: Easing.out(Easing.cubic) }),
-      ),
-    );
-  }, [progress, opacity, delay]);
-
-  const animatedStyle = useAnimatedStyle(() => {
-    const dx = Math.cos(angle) * distance * progress.value;
-    const dy = Math.sin(angle) * distance * progress.value;
-    return {
-      opacity: opacity.value,
-      transform: [
-        { translateX: dx },
-        { translateY: dy },
-        { rotate: `${rotation * progress.value}deg` },
-        { scale: 1 - progress.value * 0.4 },
-      ],
-    };
-  });
-
-  return (
-    <Animated.View
-      style={[
-        styles.particle,
-        { backgroundColor: color },
-        animatedStyle,
-      ]}
-    />
-  );
-};
-
-// ── Screen ─────────────────────────────────────────────────────────
 export default function BookingSuccessScreen({ navigation, route }: Props) {
   const { serviceName, barberName, scheduledAt } = route.params;
   const scheduled = new Date(scheduledAt);
 
-  // Fire success haptic once on mount.
   useEffect(() => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
       .catch(() => undefined);
@@ -145,60 +52,20 @@ export default function BookingSuccessScreen({ navigation, route }: Props) {
     hour: '2-digit', minute: '2-digit'
   });
 
-  // 10 evenly-distributed particles + small per-particle jitter
-  const particles = useMemo(() => {
-    const count = 10;
-    return Array.from({ length: count }).map((_, i) => {
-      const base = (i / count) * Math.PI * 2;
-      const angle = base + (Math.random() - 0.5) * 0.6;
-      const distance = 110 + Math.random() * 60;
-      const delay = 380 + i * 28;
-      const color = PARTICLE_COLORS[i % PARTICLE_COLORS.length];
-      const rotation = (Math.random() < 0.5 ? -1 : 1) * (180 + Math.random() * 180);
-      return { angle, distance, delay, color, rotation };
-    });
-  }, []);
-
   return (
     <View style={styles.container}>
-      {/* Confetti origin layer — sits behind the checkmark circle */}
-      <View pointerEvents="none" style={styles.confettiOrigin}>
-        {particles.map((p, i) => (
-          <Particle
-            key={i}
-            angle={p.angle}
-            distance={p.distance}
-            delay={p.delay}
-            color={p.color}
-            rotation={p.rotation}
-          />
-        ))}
-      </View>
-
-      {/* Checkmark circle */}
-      <Animated.View
-        entering={FadeIn.duration(220)}
-        style={styles.checkWrap}
-      >
+      <View style={styles.checkWrap}>
         <View style={styles.checkCircle}>
           <Checkmark />
         </View>
-      </Animated.View>
+      </View>
 
-      {/* Title + subtitle */}
-      <Animated.View
-        entering={FadeInUp.delay(180).springify().damping(15)}
-        style={styles.titleWrap}
-      >
+      <View style={styles.titleWrap}>
         <Text style={styles.title}>BOOKING SENT!</Text>
         <Text style={styles.subtitle}>Waiting for barber confirmation</Text>
-      </Animated.View>
+      </View>
 
-      {/* Summary card */}
-      <Animated.View
-        entering={FadeInUp.delay(360).springify().damping(16)}
-        style={styles.summaryWrap}
-      >
+      <View style={styles.summaryWrap}>
         <GoldCard disableEntrance>
           <View style={styles.summaryRow}>
             <Ionicons name="cut-outline"      size={16} color={theme.colors.gold} />
@@ -218,15 +85,11 @@ export default function BookingSuccessScreen({ navigation, route }: Props) {
           </View>
         </GoldCard>
 
-        <Animated.Text
-          entering={FadeIn.delay(620).duration(500)}
-          style={styles.hint}
-        >
+        <Text style={styles.hint}>
           You'll be notified once your barber confirms the appointment.
-        </Animated.Text>
-      </Animated.View>
+        </Text>
+      </View>
 
-      {/* Back to Home */}
       <View style={styles.footer}>
         <PremiumButton
           label="BACK TO HOME"
@@ -241,8 +104,6 @@ export default function BookingSuccessScreen({ navigation, route }: Props) {
   );
 }
 
-const { width: SCREEN_W } = Dimensions.get('window');
-
 const styles = StyleSheet.create({
   container: {
     flex:            1,
@@ -252,24 +113,6 @@ const styles = StyleSheet.create({
     padding:         theme.spacing.lg,
   },
 
-  // Confetti origin point — centred over the checkmark
-  confettiOrigin: {
-    position: 'absolute',
-    top:      '38%',
-    left:     SCREEN_W / 2,
-    width:    0,
-    height:   0,
-    alignItems:     'center',
-    justifyContent: 'center',
-  },
-  particle: {
-    position:     'absolute',
-    width:        9,
-    height:       9,
-    borderRadius: 2,
-  },
-
-  // Checkmark
   checkWrap:   { marginBottom: theme.spacing.xl },
   checkCircle: {
     width:           140,
@@ -281,7 +124,6 @@ const styles = StyleSheet.create({
     ...theme.shadows.gold,
   },
 
-  // Title
   titleWrap: { alignItems: 'center', marginBottom: theme.spacing.xl },
   title: {
     fontFamily:    theme.fonts.heading,
@@ -297,7 +139,6 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
 
-  // Summary card
   summaryWrap: { width: '100%', alignItems: 'center' },
   summaryRow: {
     flexDirection: 'row',
@@ -319,7 +160,6 @@ const styles = StyleSheet.create({
     marginTop:  theme.spacing.lg,
   },
 
-  // Footer CTA
   footer: {
     position: 'absolute',
     bottom:   theme.spacing.xxl,

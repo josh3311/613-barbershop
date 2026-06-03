@@ -1,13 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TextInput,
+  Animated, View, Text, StyleSheet, FlatList, TextInput,
   TouchableOpacity, ActivityIndicator,
   KeyboardAvoidingView, Platform, Alert, Dimensions,
   Modal, ScrollView,
 } from 'react-native';
-import Animated, {
-  useAnimatedStyle, useSharedValue, withTiming, interpolateColor,
-} from 'react-native-reanimated';
 import { Image as ExpoImage } from 'expo-image';
 import { Ionicons }     from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -264,14 +261,13 @@ export default function StylesScreen() {
   const flatRef = useRef<FlatList<ChatMessage>>(null);
 
   // Animated gold-glow border on the chat input when focused
-  const inputFocus = useSharedValue(0);
-  const inputAnimatedStyle = useAnimatedStyle(() => ({
-    borderColor: interpolateColor(
-      inputFocus.value,
-      [0, 1],
-      [theme.colors.border, theme.colors.gold],
-    ),
-  }));
+  const inputFocus = useRef(new Animated.Value(0)).current;
+  const inputAnimatedStyle = {
+    borderColor: inputFocus.interpolate({
+      inputRange:  [0, 1],
+      outputRange: [theme.colors.border, theme.colors.gold],
+    }),
+  };
 
   // Load welcome message on mount
   useEffect(() => {
@@ -689,8 +685,8 @@ export default function StylesScreen() {
             multiline
             maxLength={400}
             editable={!isSending}
-            onFocus={() => { inputFocus.value = withTiming(1, { duration: 180 }); }}
-            onBlur={()  => { inputFocus.value = withTiming(0, { duration: 220 }); }}
+            onFocus={() => { Animated.timing(inputFocus, { toValue: 1, duration: 180, useNativeDriver: false }).start(); }}
+            onBlur={()  => { Animated.timing(inputFocus, { toValue: 0, duration: 220, useNativeDriver: false }).start(); }}
           />
         </Animated.View>
         <TouchableOpacity

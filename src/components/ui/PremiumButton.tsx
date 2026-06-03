@@ -12,14 +12,11 @@
  * TouchableOpacity by changing the tag and forwarding `onPress`.
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
 import {
-  ActivityIndicator, Pressable, StyleSheet, Text,
+  ActivityIndicator, Animated, Pressable, StyleSheet, Text,
   View, ViewStyle, TextStyle, StyleProp, GestureResponderEvent,
 } from 'react-native';
-import Animated, {
-  useAnimatedStyle, useSharedValue, withSpring, withTiming,
-} from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 
@@ -41,8 +38,8 @@ export interface PremiumButtonProps {
   fullWidth?:   boolean;
 }
 
-const SPRING_PRESS_IN  = { damping: 14, stiffness: 220 } as const;
-const SPRING_PRESS_OUT = { damping: 12, stiffness: 180 } as const;
+const SPRING_PRESS_IN  = { friction: 7, tension: 220 } as const;
+const SPRING_PRESS_OUT = { friction: 6, tension: 180 } as const;
 
 function PremiumButtonImpl({
   label,
@@ -57,25 +54,29 @@ function PremiumButtonImpl({
   hapticStyle = Haptics.ImpactFeedbackStyle.Light,
   fullWidth = false,
 }: PremiumButtonProps) {
-  const scale   = useSharedValue(1);
-  const opacity = useSharedValue(disabled ? 0.4 : 1);
+  const scale   = useRef(new Animated.Value(1)).current;
+  const opacity = useRef(new Animated.Value(disabled ? 0.4 : 1)).current;
 
   // Track disabled opacity changes
   React.useEffect(() => {
-    opacity.value = withTiming(disabled ? 0.4 : 1, { duration: 180 });
+    Animated.timing(opacity, {
+      toValue:        disabled ? 0.4 : 1,
+      duration:       180,
+      useNativeDriver: true,
+    }).start();
   }, [disabled, opacity]);
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-    opacity:   opacity.value,
-  }));
+  const animatedStyle = {
+    transform: [{ scale }],
+    opacity,
+  };
 
   const handlePressIn = () => {
-    scale.value = withSpring(0.96, SPRING_PRESS_IN);
+    Animated.spring(scale, { toValue: 0.96, useNativeDriver: true, ...SPRING_PRESS_IN }).start();
   };
 
   const handlePressOut = () => {
-    scale.value = withSpring(1, SPRING_PRESS_OUT);
+    Animated.spring(scale, { toValue: 1, useNativeDriver: true, ...SPRING_PRESS_OUT }).start();
   };
 
   const handlePress = (e: GestureResponderEvent) => {

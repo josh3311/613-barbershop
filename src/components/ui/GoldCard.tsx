@@ -14,17 +14,11 @@
  * press scale spring, active border-color flip).
  */
 
-import React from 'react';
+import React, { useRef } from 'react';
 import {
-  StyleSheet, View, Pressable, ViewStyle, StyleProp,
+  Animated, StyleSheet, View, Pressable, ViewStyle, StyleProp,
   GestureResponderEvent,
 } from 'react-native';
-import Animated, {
-  FadeInDown, useAnimatedStyle, useSharedValue, withSpring,
-} from 'react-native-reanimated';
-// import {
-//   Canvas, RoundedRect, Paint, RadialGradient, vec,
-// } from '@shopify/react-native-skia';   // disabled during Android Skia audit
 import * as Haptics from 'expo-haptics';
 
 import { theme } from '../../theme';
@@ -54,19 +48,19 @@ function GoldCardImpl(props: GoldCardProps) {
     entranceIndex = 0, active = false,
   } = props;
 
-  const scale = useSharedValue(1);
+  // `disableEntrance` / `entranceIndex` are retained in the props API for
+  // compatibility; entrance animations were removed with Reanimated.
+  void disableEntrance;
+  void entranceIndex;
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
+  const scale = useRef(new Animated.Value(1)).current;
 
-  const entering = disableEntrance
-    ? undefined
-    : FadeInDown.springify().damping(15).delay(entranceIndex * 60);
+  const animatedStyle = {
+    transform: [{ scale }],
+  };
 
   const inner = (
     <Animated.View
-      entering={entering}
       style={[
         styles.card,
         active && styles.cardActive,
@@ -81,10 +75,10 @@ function GoldCardImpl(props: GoldCardProps) {
   if (!onPress) return inner;
 
   const handlePressIn = () => {
-    scale.value = withSpring(0.985, { damping: 16, stiffness: 220 });
+    Animated.spring(scale, { toValue: 0.985, friction: 7, tension: 220, useNativeDriver: true }).start();
   };
   const handlePressOut = () => {
-    scale.value = withSpring(1, { damping: 12, stiffness: 180 });
+    Animated.spring(scale, { toValue: 1, friction: 6, tension: 180, useNativeDriver: true }).start();
   };
   const handlePress = (e: GestureResponderEvent) => {
     Haptics.selectionAsync().catch(() => undefined);

@@ -4,28 +4,21 @@
  * A single row in a Red Dead-style selection list.
  *
  *   ┌────┐
- *   │ ⚔  │   STYLE NAME                          ▶▶
+ *   │ ⚔  │   STYLE NAME                          >>
  *   └────┘
  *
- * Selected state animates on the UI thread:
- *   - row scale springs to 1.02
- *   - border + background interpolate to gold tints
- *   - ">>" fades in and slides from translateX 10 → 0
- *
- * Entrance animates from below with a per-row stagger so a list of
- * rows cascades in.
- *
- * Expo Go safe — no Skia, no native modules beyond expo-haptics.
+ * Expo Go safe — uses ONLY React Native's built-in Animated API
+ * (no Reanimated / worklets):
+ *   - entrance: Animated.timing on opacity + translateY (native driver)
+ *   - selected scale: Animated.spring to 1.02 (native driver)
+ *   - selected border/background: direct color switch (no interpolation)
+ *   - ">>" indicator: simple conditional render when selected
  */
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
-  StyleSheet, Text, View, Pressable, ViewStyle, StyleProp,
+  StyleSheet, Text, View, Pressable, ViewStyle, StyleProp, Animated,
 } from 'react-native';
-import Animated, {
-  FadeInDown, useAnimatedStyle, useSharedValue,
-  withSpring, withTiming, interpolate, interpolateColor,
-} from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { Image as ExpoImage } from 'expo-image';
 import * as Haptics from 'expo-haptics';
@@ -47,7 +40,7 @@ export interface RPGSelectionRowProps {
   style?: StyleProp<ViewStyle>;
 }
 
-// Colour stops for the animated row (idle → selected).
+// Colours for the row (idle vs selected) — switched directly, no interpolation.
 const ROW_BORDER_IDLE     = 'rgba(212, 175, 55, 0.25)';
 const ROW_BORDER_SELECTED = 'rgba(212, 175, 55, 0.9)';
 const ROW_BG_IDLE         = 'rgba(8, 6, 4, 0.5)';
@@ -61,67 +54,70 @@ function RPGSelectionRowImpl(props: RPGSelectionRowProps) {
     entranceIndex = 0, disableEntrance = false, style,
   } = props;
 
-  // Drives every selected-state animation. Lives on the UI thread.
-  const progress = useSharedValue(selected ? 1 : 0);
+  // Entrance (opacity + slide up) and selected-scale, both on the native driver.
+  const entrance   = useRef(new Animated.Value(disableEntrance ? 1 : 0)).current;
+  const selectAnim = useRef(new Animated.Value(selected ? 1 : 0)).current;
 
   useEffect(() => {
-    progress.value = withSpring(selected ? 1 : 0, {
-      damping:   16,
-      stiffness: 220,
-      mass:      0.7,
-    });
-  }, [selected, progress]);
+    if (disableEntrance) {
+      entrance.setValue(1);
+      return;
+    }
+    Animated.timing(entrance, {
+      toValue:        1,
+      duration:       320,
+      delay:          entranceIndex * 60,
+      useNativeDriver: true,
+    }).start();
+  }, [disableEntrance, entrance, entranceIndex]);
 
-  // Row container — scale + border + bg interpolated.
-  const rowStyle = useAnimatedStyle(() => ({
-    transform: [
-      { scale: interpolate(progress.value, [0, 1], [1, 1.02]) },
-    ],
-    borderColor: interpolateColor(
-      progress.value,
-      [0, 1],
-      [ROW_BORDER_IDLE, ROW_BORDER_SELECTED],
-    ),
-    backgroundColor: interpolateColor(
-      progress.value,
-      [0, 1],
-      [ROW_BG_IDLE, ROW_BG_SELECTED],
-    ),
-  }));
-
-  // Icon box border tints with the row.
-  const iconBoxStyle = useAnimatedStyle(() => ({
-    borderColor: interpolateColor(
-      progress.value,
-      [0, 1],
-      [ICON_BORDER_IDLE, ICON_BORDER_SEL],
-    ),
-  }));
-
-  // ">>" appears and slides in from the right when selected.
-  const arrowStyle = useAnimatedStyle(() => ({
-    opacity:   progress.value,
-    transform: [
-      { translateX: interpolate(progress.value, [0, 1], [10, 0]) },
-    ],
-  }));
+  useEffect(() => {
+    Animated.spring(selectAnim, {
+      toValue:        selected ? 1 : 0,
+      friction:       7,
+      tension:        220,
+      useNativeDriver: true,
+    }).start();
+  }, [selected, selectAnim]);
 
   const handlePress = () => {
     Haptics.selectionAsync().catch(() => undefined);
     onPress();
   };
 
-  const entering = disableEntrance
-    ? undefined
-    : FadeInDown.springify().damping(15).delay(entranceIndex * 60);
+  const entranceStyle = {
+    opacity:   entrance,
+    transform: [
+      { translateY: entrance.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) },
+    ],
+  };
+
+  const scaleStyle = {
+    transform: [
+      { scale: selectAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.02] }) },
+    ],
+  };
 
   return (
-    <Animated.View entering={entering} style={style}>
-      <Pressable onPress={handlePress} accessibilityRole="button">
-        <Animated.View style={[styles.row, rowStyle]}>
+    <Animated.View style={[entranceStyle, style]}>
+      <Pressable onPress={handlePress} accessibilityRole="button" accessibilityState={{ selected }}>
+        <Animated.View
+          style={[
+            styles.row,
+            {
+              borderColor:     selected ? ROW_BORDER_SELECTED : ROW_BORDER_IDLE,
+              backgroundColor: selected ? ROW_BG_SELECTED : ROW_BG_IDLE,
+            },
+            scaleStyle,
+          ]}
+        >
           {/* Left — icon box (circular photo when `imageUri` is set) */}
-          <Animated.View
-            style={[styles.iconBox, imageUri ? styles.iconBoxRound : null, iconBoxStyle]}
+          <View
+            style={[
+              styles.iconBox,
+              imageUri ? styles.iconBoxRound : null,
+              { borderColor: selected ? ICON_BORDER_SEL : ICON_BORDER_IDLE },
+            ]}
           >
             {imageUri ? (
               <ExpoImage
@@ -133,7 +129,7 @@ function RPGSelectionRowImpl(props: RPGSelectionRowProps) {
             ) : (
               <Ionicons name={icon} size={20} color={theme.colors.gold} />
             )}
-          </Animated.View>
+          </View>
 
           {/* Centre — label */}
           <View style={styles.labelWrap}>
@@ -142,10 +138,8 @@ function RPGSelectionRowImpl(props: RPGSelectionRowProps) {
             </Text>
           </View>
 
-          {/* Right — animated ">>" (always mounted; opacity does the show/hide) */}
-          <Animated.Text style={[styles.arrow, arrowStyle]}>
-            ▶▶
-          </Animated.Text>
+          {/* Right — ">>" appears when selected */}
+          {selected ? <Text style={styles.arrow}>{'>>'}</Text> : null}
         </Animated.View>
       </Pressable>
     </Animated.View>

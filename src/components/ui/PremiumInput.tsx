@@ -5,14 +5,10 @@
  * Drop-in replacement for the auth-screen inputs.
  */
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
-  StyleSheet, Text, TextInput, TextInputProps, View, ViewStyle, StyleProp,
+  Animated, StyleSheet, Text, TextInput, TextInputProps, View, ViewStyle, StyleProp,
 } from 'react-native';
-import Animated, {
-  useAnimatedStyle, useSharedValue, withTiming,
-  interpolateColor,
-} from 'react-native-reanimated';
 
 import { theme } from '../../theme';
 
@@ -26,15 +22,14 @@ function PremiumInputImpl({
   label, containerStyle, onFocus, onBlur, style, ...rest
 }: PremiumInputProps) {
   const [focused, setFocused] = useState(false);
-  const progress = useSharedValue(0);
+  const progress = useRef(new Animated.Value(0)).current;
 
-  const animatedBorder = useAnimatedStyle(() => ({
-    borderColor: interpolateColor(
-      progress.value,
-      [0, 1],
-      [theme.colors.border, theme.colors.gold],
-    ),
-  }));
+  const animatedBorder = {
+    borderColor: progress.interpolate({
+      inputRange:  [0, 1],
+      outputRange: [theme.colors.border, theme.colors.gold],
+    }),
+  };
 
   return (
     <View style={containerStyle}>
@@ -46,12 +41,12 @@ function PremiumInputImpl({
           placeholderTextColor={theme.colors.textMuted}
           onFocus={(e) => {
             setFocused(true);
-            progress.value = withTiming(1, { duration: 180 });
+            Animated.timing(progress, { toValue: 1, duration: 180, useNativeDriver: false }).start();
             onFocus?.(e);
           }}
           onBlur={(e) => {
             setFocused(false);
-            progress.value = withTiming(0, { duration: 220 });
+            Animated.timing(progress, { toValue: 0, duration: 220, useNativeDriver: false }).start();
             onBlur?.(e);
           }}
         />

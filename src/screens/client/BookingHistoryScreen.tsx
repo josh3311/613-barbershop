@@ -10,15 +10,13 @@
  * RatingModal trigger, StyleCardView navigation.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, Pressable,
+  Animated, View, Text, StyleSheet, ScrollView, Pressable,
 } from 'react-native';
 import {
   collection, query, where, onSnapshot, orderBy,
 } from 'firebase/firestore';
-import Animated, { FadeIn } from 'react-native-reanimated';
-import { MotiView } from 'moti';
 import { Ionicons } from '@expo/vector-icons';
 
 import { db } from '../../config/firebase';
@@ -52,24 +50,29 @@ function StarRow({ rating }: { rating: number }) {
 function PulseBadge({
   label, color,
 }: { label: string; color: string }) {
+  const opacity = useRef(new Animated.Value(0.6)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 1, duration: 900, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.6, duration: 900, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [opacity]);
+
   return (
-    <MotiView
-      from={{ opacity: 0.6 }}
-      animate={{ opacity: 1 }}
-      transition={{
-        loop:     true,
-        type:     'timing',
-        duration: 900,
-        repeatReverse: true,
-      }}
+    <Animated.View
       style={[
         styles.statusBadge,
-        { backgroundColor: color + '20', borderColor: color },
+        { backgroundColor: color + '20', borderColor: color, opacity },
       ]}
     >
       <Ionicons name="time-outline" size={12} color={color} />
       <Text style={[styles.statusText, { color }]}>{label}</Text>
-    </MotiView>
+    </Animated.View>
   );
 }
 
@@ -168,7 +171,7 @@ export default function BookingHistoryScreen({ navigation }: Props) {
           ))}
         </View>
       ) : filtered.length === 0 ? (
-        <Animated.View entering={FadeIn.duration(220)} style={styles.emptyState}>
+        <View style={styles.emptyState}>
           <Ionicons name="calendar-outline" size={56} color={theme.colors.textMuted} />
           <Text style={styles.emptyTitle}>No bookings yet</Text>
           <Text style={styles.emptySubtitle}>
@@ -176,7 +179,7 @@ export default function BookingHistoryScreen({ navigation }: Props) {
               ? 'Your appointments will appear here'
               : `No ${filter} bookings found`}
           </Text>
-        </Animated.View>
+        </View>
       ) : (
         <ScrollView
           contentContainerStyle={styles.scroll}

@@ -1,21 +1,13 @@
 /**
- * DateTimeSelectionScreen — V3 visual layer
+ * DateTimeSelectionScreen — V3
  *
- * Logic preserved exactly. Visual upgrades:
- * - AnimatedHeader
- * - Time slot buttons spring-scale on press with animated gold fill
- * - Date cards stagger in
- * - PremiumButton for continue
+ * Date/time selection, navigation to BookingConfirm unchanged.
  */
 
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, Pressable,
 } from 'react-native';
-import Animated, {
-  FadeInRight, useAnimatedStyle, useSharedValue,
-  withSpring, withTiming, interpolateColor,
-} from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
@@ -33,48 +25,15 @@ const HOURS = [
   '20:00', '20:30',
 ];
 
-// ── Animated time slot ─────────────────────────────────────────────
 interface TimeSlotProps {
   time:       string;
   selected:   boolean;
   disabled:   boolean;
   onPress:    () => void;
-  index:      number;
 }
 
 const TimeSlot = React.memo(function TimeSlot(props: TimeSlotProps) {
-  const { time, selected, disabled, onPress, index } = props;
-  const scale     = useSharedValue(1);
-  const selectAnim = useSharedValue(selected ? 1 : 0);
-
-  React.useEffect(() => {
-    selectAnim.value = withTiming(selected ? 1 : 0, { duration: 220 });
-  }, [selected, selectAnim]);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-    backgroundColor: interpolateColor(
-      selectAnim.value,
-      [0, 1],
-      [theme.colors.surface, theme.colors.gold],
-    ),
-    borderColor: interpolateColor(
-      selectAnim.value,
-      [0, 1],
-      [theme.colors.border, theme.colors.gold],
-    ),
-  }));
-
-  const animatedText = useAnimatedStyle(() => ({
-    color: interpolateColor(
-      selectAnim.value,
-      [0, 1],
-      [theme.colors.textPrimary, theme.colors.textInverse],
-    ),
-  }));
-
-  const handlePressIn  = () => { scale.value = withSpring(0.93, { damping: 14, stiffness: 240 }); };
-  const handlePressOut = () => { scale.value = withSpring(1,    { damping: 12, stiffness: 200 }); };
+  const { time, selected, disabled, onPress } = props;
 
   const handlePress = () => {
     Haptics.selectionAsync().catch(() => undefined);
@@ -82,38 +41,28 @@ const TimeSlot = React.memo(function TimeSlot(props: TimeSlotProps) {
   };
 
   return (
-    <Animated.View
-      entering={FadeInRight.delay(60 + index * 18).springify().damping(16)}
-    >
-      <Pressable
-        onPress={handlePress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        disabled={disabled}
+    <Pressable onPress={handlePress} disabled={disabled}>
+      <View
+        style={[
+          styles.timeSlot,
+          selected && styles.timeSlotSelected,
+          disabled && styles.timeSlotDisabled,
+        ]}
       >
-        <Animated.View
+        <Text
           style={[
-            styles.timeSlot,
-            animatedStyle,
-            disabled && styles.timeSlotDisabled,
+            styles.timeText,
+            selected && styles.timeTextSelected,
+            disabled && styles.timeTextDisabled,
           ]}
         >
-          <Animated.Text
-            style={[
-              styles.timeText,
-              animatedText,
-              disabled && styles.timeTextDisabled,
-            ]}
-          >
-            {time}
-          </Animated.Text>
-        </Animated.View>
-      </Pressable>
-    </Animated.View>
+          {time}
+        </Text>
+      </View>
+    </Pressable>
   );
 });
 
-// ── Screen ─────────────────────────────────────────────────────────
 export default function DateTimeSelectionScreen({ navigation, route }: Props) {
   const { service, barber } = route.params;
 
@@ -198,29 +147,25 @@ export default function DateTimeSelectionScreen({ navigation, route }: Props) {
           {dates.map((date, i) => {
             const isSelected = selectedDate?.toDateString() === date.toDateString();
             return (
-              <Animated.View
+              <Pressable
                 key={i}
-                entering={FadeInRight.delay(80 + i * 30).springify().damping(16)}
+                style={[styles.dateCard, isSelected && styles.dateCardSelected]}
+                onPress={() => {
+                  Haptics.selectionAsync().catch(() => undefined);
+                  setSelectedDate(date);
+                  setSelectedTime(null);
+                }}
               >
-                <Pressable
-                  style={[styles.dateCard, isSelected && styles.dateCardSelected]}
-                  onPress={() => {
-                    Haptics.selectionAsync().catch(() => undefined);
-                    setSelectedDate(date);
-                    setSelectedTime(null);
-                  }}
-                >
-                  <Text style={[styles.dateDay, isSelected && styles.dateDaySelected]}>
-                    {isToday(date) ? 'TODAY' : formatDay(date)}
-                  </Text>
-                  <Text style={[styles.dateNum, isSelected && styles.dateNumSelected]}>
-                    {date.getDate()}
-                  </Text>
-                  <Text style={[styles.dateMon, isSelected && styles.dateMonSelected]}>
-                    {formatMonth(date)}
-                  </Text>
-                </Pressable>
-              </Animated.View>
+                <Text style={[styles.dateDay, isSelected && styles.dateDaySelected]}>
+                  {isToday(date) ? 'TODAY' : formatDay(date)}
+                </Text>
+                <Text style={[styles.dateNum, isSelected && styles.dateNumSelected]}>
+                  {date.getDate()}
+                </Text>
+                <Text style={[styles.dateMon, isSelected && styles.dateMonSelected]}>
+                  {formatMonth(date)}
+                </Text>
+              </Pressable>
             );
           })}
         </ScrollView>
@@ -231,14 +176,13 @@ export default function DateTimeSelectionScreen({ navigation, route }: Props) {
               SELECT TIME
             </Text>
             <View style={styles.timesGrid}>
-              {HOURS.map((time, i) => (
+              {HOURS.map((time) => (
                 <TimeSlot
                   key={time}
                   time={time}
                   selected={selectedTime === time}
                   disabled={isTimeDisabled(time)}
                   onPress={() => setSelectedTime(time)}
-                  index={i}
                 />
               ))}
             </View>
@@ -359,6 +303,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.lg,
   },
   timeSlot: {
+    backgroundColor:   theme.colors.surface,
+    borderColor:       theme.colors.border,
     borderRadius:      theme.radius.md,
     borderWidth:       1,
     paddingVertical:   theme.spacing.sm,
@@ -366,11 +312,17 @@ const styles = StyleSheet.create({
     minWidth:          80,
     alignItems:        'center',
   },
+  timeSlotSelected: {
+    backgroundColor: theme.colors.gold,
+    borderColor:     theme.colors.gold,
+  },
   timeSlotDisabled: { opacity: 0.3, borderColor: theme.colors.border },
   timeText: {
     fontFamily: theme.fonts.medium,
     fontSize:   theme.fontSizes.sm,
+    color:      theme.colors.textPrimary,
   },
+  timeTextSelected: { color: theme.colors.textInverse },
   timeTextDisabled: { color: theme.colors.textMuted },
 
   footer: {
