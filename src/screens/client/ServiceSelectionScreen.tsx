@@ -1,27 +1,43 @@
 /**
- * ServiceSelectionScreen — V3 visual layer
- * Logic unchanged: same Firestore query, same selection state,
- * same navigation. Only the UI is upgraded.
+ * ServiceSelectionScreen — "Haircut Select" RPG visual layer
+ *
+ * Red Dead-style selection screen: a cinematic dark backdrop with a
+ * gold-framed RPG panel floating over the left/centre of the screen,
+ * leaving the right side showing the background. The service list is
+ * rendered as animated gold selection rows.
+ *
+ * BUSINESS LOGIC IS UNCHANGED: same Firestore query, same selection
+ * state, same `handleContinue` navigation, same loading/error/empty
+ * handling. Only the presentation is redesigned.
  */
 
 import React, { useEffect, useState } from 'react';
-import {
-  View, Text, StyleSheet, ScrollView,
-} from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { db } from '../../config/firebase';
 import { COLLECTIONS } from '../../constants/collections';
 import { Service } from '../../types';
 import { theme } from '../../theme';
 import {
-  AnimatedHeader, GoldCard, GoldShimmer, PremiumButton,
+  GoldShimmer,
+  PremiumButton,
+  OrnamentalCorners,
+  RPGPanel,
+  RPGSelectionRow,
+  ScissorDivider,
+  // CinematicBackground — enable once a shop photo asset exists, e.g.:
+  // <CinematicBackground source={require('../../../assets/shop-bg.jpg')} />
 } from '../../components/ui';
 
 interface Props { navigation: any; }
 
 export default function ServiceSelectionScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
+
   const [services, setServices] = useState<Service[]>([]);
   const [selected, setSelected] = useState<Service | null>(null);
   const [loading,  setLoading]  = useState(true);
@@ -51,117 +67,109 @@ export default function ServiceSelectionScreen({ navigation }: Props) {
     navigation.navigate('BarberSelection', { service: selected });
   };
 
-  return (
-    <View style={styles.container}>
-      <AnimatedHeader
-        title="PICK A SERVICE"
-        eyebrow="STEP 1 OF 4"
-        onBack={() => navigation.goBack()}
-      />
-
-      {/* Progress bar */}
-      <View style={styles.progressBar}>
-        <View style={[styles.progressFill, { width: '25%' }]} />
-      </View>
-
-      {/* Body */}
-      {loading ? (
+  // ── Panel body: loading → error → empty → list ──────────────────
+  const renderBody = () => {
+    if (loading) {
+      return (
         <View style={styles.shimmerStack}>
           {Array.from({ length: 4 }).map((_, i) => (
             <GoldShimmer
               key={i}
               width="100%"
-              height={92}
-              radius={theme.radius.lg}
+              height={52}
+              radius={theme.radius.sm}
               style={styles.shimmerRow}
             />
           ))}
         </View>
-      ) : error ? (
+      );
+    }
+    if (error) {
+      return (
         <View style={styles.emptyState}>
-          <Ionicons name="alert-circle-outline" size={48} color={theme.colors.error} />
+          <Ionicons name="alert-circle-outline" size={40} color={theme.colors.error} />
           <Text style={styles.emptyTitle}>{error}</Text>
         </View>
-      ) : services.length === 0 ? (
+      );
+    }
+    if (services.length === 0) {
+      return (
         <View style={styles.emptyState}>
-          <Ionicons name="cut-outline" size={48} color={theme.colors.textMuted} />
+          <Ionicons name="cut-outline" size={40} color={theme.colors.textMuted} />
           <Text style={styles.emptyTitle}>No services available</Text>
           <Text style={styles.emptySubtitle}>Check back soon</Text>
         </View>
-      ) : (
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          showsVerticalScrollIndicator={false}
-        >
-          {services.map((service, i) => {
-            const isSelected = selected?.id === service.id;
-            return (
-              <GoldCard
-                key={service.id}
-                entranceIndex={i}
-                active={isSelected}
-                onPress={() => setSelected(service)}
-                style={styles.cardWrap}
-                contentStyle={styles.cardContent}
-              >
-                <View style={[
-                  styles.iconBox,
-                  isSelected && styles.iconBoxSelected,
-                ]}>
-                  <Ionicons
-                    name="cut-outline"
-                    size={28}
-                    color={isSelected
-                      ? theme.colors.textInverse
-                      : theme.colors.gold}
-                  />
-                </View>
+      );
+    }
+    return (
+      <ScrollView
+        style={styles.rowList}
+        contentContainerStyle={styles.rowListContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {services.map((service, i) => (
+          <RPGSelectionRow
+            key={service.id}
+            label={service.name}
+            icon="cut-outline"
+            selected={selected?.id === service.id}
+            onPress={() => setSelected(service)}
+            entranceIndex={i}
+          />
+        ))}
+      </ScrollView>
+    );
+  };
 
-                <View style={styles.info}>
-                  <Text style={[
-                    styles.name,
-                    isSelected && styles.nameSelected,
-                  ]}>
-                    {service.name}
-                  </Text>
-                  <Text style={styles.desc}>
-                    {service.description}
-                  </Text>
-                  <View style={styles.meta}>
-                    <Ionicons
-                      name="time-outline"
-                      size={12}
-                      color={theme.colors.textMuted}
-                    />
-                    <Text style={styles.metaText}>
-                      {service.durationMin} min
-                    </Text>
-                  </View>
-                </View>
+  return (
+    <View style={styles.container}>
+      {/* 1 — Cinematic backdrop (dark gradient placeholder; swap for a
+          <CinematicBackground source={...} /> photo when one is added). */}
+      <LinearGradient
+        colors={['#1A140B', '#0A0A0A', '#050302']}
+        start={{ x: 0.2, y: 0 }}
+        end={{ x: 0.8, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
 
-                <View style={styles.right}>
-                  <Text style={[
-                    styles.price,
-                    isSelected && styles.priceSelected,
-                  ]}>
-                    ${service.price}
-                  </Text>
-                  {isSelected && (
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={20}
-                      color={theme.colors.gold}
-                    />
-                  )}
-                </View>
-              </GoldCard>
-            );
-          })}
-        </ScrollView>
-      )}
+      {/* 2 — Ornamental crosshairs framing the whole screen */}
+      <OrnamentalCorners size={24} opacity={0.5} />
 
-      {/* Continue */}
-      <View style={styles.footer}>
+      {/* 3 — Full-width progress line (step 1 of 4 = 25%) at the very top */}
+      <View style={[styles.progressTrack, { top: insets.top }]}>
+        <View style={styles.progressFill} />
+      </View>
+
+      {/* 4 — Minimal cinematic back affordance (preserves goBack) */}
+      <Pressable
+        onPress={() => navigation.goBack()}
+        accessibilityRole="button"
+        accessibilityLabel="Go back"
+        style={[styles.backButton, { top: insets.top + theme.spacing.md }]}
+        hitSlop={8}
+      >
+        <Ionicons name="chevron-back" size={22} color={theme.colors.gold} />
+      </Pressable>
+
+      {/* 5 — Floating RPG panel, left/centre, ~62% width */}
+      <View
+        style={[
+          styles.panelContainer,
+          {
+            paddingTop:    insets.top + theme.spacing.xl * 2,
+            paddingBottom: insets.bottom + 100,
+          },
+        ]}
+      >
+        <RPGPanel style={styles.panel}>
+          <Text style={styles.screenTitle}>HAIRCUT SELECT</Text>
+          <ScissorDivider />
+          {renderBody()}
+        </RPGPanel>
+      </View>
+
+      {/* 6 — Continue button: full width, outside the panel, at bottom */}
+      <View style={[styles.footer, { paddingBottom: insets.bottom + theme.spacing.lg }]}>
         <PremiumButton
           label={selected ? `CONTINUE — $${selected.price}` : 'SELECT A SERVICE'}
           fullWidth
@@ -179,83 +187,68 @@ export default function ServiceSelectionScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
 
-  progressBar: {
-    height:           3,
-    backgroundColor:  theme.colors.border,
-    marginHorizontal: theme.spacing.lg,
-    borderRadius:     theme.radius.full,
-    marginBottom:     theme.spacing.lg,
+  // Thin gold progress line spanning the full screen width.
+  progressTrack: {
+    position:        'absolute',
+    left:            0,
+    right:           0,
+    height:          2,
+    backgroundColor: 'rgba(212, 175, 55, 0.15)',
   },
   progressFill: {
+    width:           '25%',
     height:          '100%',
     backgroundColor: theme.colors.gold,
-    borderRadius:    theme.radius.full,
   },
 
-  shimmerStack: {
-    paddingHorizontal: theme.spacing.lg,
-    gap:               theme.spacing.md,
-  },
-  shimmerRow: { marginBottom: 0 },
-
-  scroll: {
-    padding:    theme.spacing.lg,
-    paddingTop: 0,
-    gap:        theme.spacing.md,
-  },
-  cardWrap:    {},
-  cardContent: {
-    flexDirection: 'row',
-    alignItems:    'center',
-    gap:           theme.spacing.md,
-    padding:       theme.spacing.lg,
-  },
-  iconBox: {
-    width:           56,
-    height:          56,
-    borderRadius:    theme.radius.md,
-    backgroundColor: theme.colors.goldMuted,
+  backButton: {
+    position:        'absolute',
+    left:            theme.spacing.lg,
+    width:           36,
+    height:          36,
+    borderRadius:    theme.radius.sm,
+    borderWidth:     1,
+    borderColor:     'rgba(212, 175, 55, 0.4)',
+    backgroundColor: 'rgba(8, 6, 4, 0.6)',
     alignItems:      'center',
     justifyContent:  'center',
+    zIndex:          10,
   },
-  iconBoxSelected: { backgroundColor: theme.colors.gold },
-  info:            { flex: 1, gap: 4 },
-  name: {
-    fontFamily: theme.fonts.bold,
-    fontSize:   theme.fontSizes.lg,
-    color:      theme.colors.textPrimary,
+
+  // Floating panel column — left/centre, leaves the right ~38% open.
+  panelContainer: {
+    position:       'absolute',
+    left:           0,
+    top:            0,
+    bottom:         0,
+    width:          '62%',
+    justifyContent: 'center',
+    paddingLeft:    theme.spacing.lg,
   },
-  nameSelected: { color: theme.colors.gold },
-  desc: {
-    fontFamily: theme.fonts.body,
-    fontSize:   theme.fontSizes.sm,
-    color:      theme.colors.textSecondary,
+  panel: {
+    maxHeight: '100%',
   },
-  meta: {
-    flexDirection: 'row',
-    alignItems:    'center',
-    gap:           4,
-    marginTop:     2,
+
+  screenTitle: {
+    fontFamily:    theme.fonts.heading, // BebasNeue
+    fontSize:      28,
+    color:         theme.colors.gold,
+    letterSpacing: 4,
+    textAlign:     'center',
   },
-  metaText: {
-    fontFamily: theme.fonts.body,
-    fontSize:   theme.fontSizes.xs,
-    color:      theme.colors.textMuted,
-  },
-  right: { alignItems: 'center', gap: theme.spacing.xs },
-  price: {
-    fontFamily: theme.fonts.heading,
-    fontSize:   theme.fontSizes.xl,
-    color:      theme.colors.textPrimary,
-  },
-  priceSelected: { color: theme.colors.gold },
+
+  // Service rows scroll inside the panel when the list is long.
+  rowList: { flexGrow: 0 },
+  rowListContent: { gap: theme.spacing.sm, paddingBottom: 2 },
+
+  shimmerStack: { gap: theme.spacing.sm },
+  shimmerRow:   { marginBottom: 0 },
 
   emptyState: {
-    flex:           1,
-    alignItems:     'center',
-    justifyContent: 'center',
-    gap:            theme.spacing.md,
-    paddingHorizontal: theme.spacing.lg,
+    alignItems:      'center',
+    justifyContent:  'center',
+    gap:             theme.spacing.sm,
+    paddingVertical: theme.spacing.xl,
   },
   emptyTitle: {
     fontFamily:    theme.fonts.heading,
@@ -270,10 +263,14 @@ const styles = StyleSheet.create({
     color:      theme.colors.textMuted,
   },
 
+  // Full-width footer, layered above the panel column.
   footer: {
-    padding:          theme.spacing.lg,
-    paddingBottom:    theme.spacing.xl,
-    borderTopWidth:   1,
-    borderTopColor:   theme.colors.border,
+    position:          'absolute',
+    left:              0,
+    right:             0,
+    bottom:            0,
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop:        theme.spacing.md,
+    zIndex:            10,
   },
 });

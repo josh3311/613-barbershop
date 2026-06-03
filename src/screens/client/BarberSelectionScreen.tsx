@@ -1,25 +1,33 @@
 /**
- * BarberSelectionScreen — V3 visual layer
- * Logic preserved exactly. Visual upgrades:
- * - AnimatedHeader
- * - GoldCard for each barber (with active selected state)
- * - expo-image for profile photo (fade-in)
- * - GoldShimmer for loading
- * - PremiumButton for continue
+ * BarberSelectionScreen — "Barber Select" RPG visual layer
+ *
+ * Red Dead-style selection screen: a cinematic dark backdrop with the
+ * selected barber's photo bleeding across the right side, a gold-framed
+ * RPG panel floating over the left ~60%, and animated gold selection
+ * rows (each showing the barber's circular photo, or a fallback icon).
+ *
+ * BUSINESS LOGIC IS UNCHANGED: same Firestore query, same selection
+ * state, same `handleContinue` navigation, same `service` pass-through,
+ * same loading/empty handling. Only the presentation is redesigned.
  */
 
 import React, { useEffect, useState } from 'react';
-import {
-  View, Text, StyleSheet, ScrollView,
-} from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import { Image as ExpoImage } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { db } from '../../config/firebase';
 import { theme } from '../../theme';
 import {
-  AnimatedHeader, GoldCard, GoldShimmer, PremiumButton,
+  GoldShimmer,
+  PremiumButton,
+  OrnamentalCorners,
+  RPGPanel,
+  RPGSelectionRow,
+  ScissorDivider,
 } from '../../components/ui';
 
 interface Barber {
@@ -41,6 +49,8 @@ export default function BarberSelectionScreen({ navigation, route }: Props) {
   const [barbers,  setBarbers]  = useState<Barber[]>([]);
   const [selected, setSelected] = useState<Barber | null>(null);
   const [loading,  setLoading]  = useState(true);
+
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     const fetchBarbers = async () => {
@@ -65,113 +75,112 @@ export default function BarberSelectionScreen({ navigation, route }: Props) {
     navigation.navigate('DateTimeSelection', { service, barber: selected });
   };
 
-  return (
-    <View style={styles.container}>
-      <AnimatedHeader
-        title="PICK A BARBER"
-        eyebrow="STEP 2 OF 4"
-        onBack={() => navigation.goBack()}
-      />
-
-      <View style={styles.progressBar}>
-        <View style={[styles.progressFill, { width: '50%' }]} />
-      </View>
-
-      <View style={styles.servicePill}>
-        <Ionicons name="cut-outline" size={14} color={theme.colors.gold} />
-        <Text style={styles.servicePillText}>
-          {service.name} — ${service.price}
-        </Text>
-      </View>
-
-      {loading ? (
+  // ── Panel body: loading → empty → list ──────────────────────────
+  const renderBody = () => {
+    if (loading) {
+      return (
         <View style={styles.shimmerStack}>
           {Array.from({ length: 3 }).map((_, i) => (
             <GoldShimmer
               key={i}
               width="100%"
-              height={100}
-              radius={theme.radius.lg}
+              height={52}
+              radius={theme.radius.sm}
             />
           ))}
         </View>
-      ) : barbers.length === 0 ? (
+      );
+    }
+    if (barbers.length === 0) {
+      return (
         <View style={styles.emptyState}>
-          <Ionicons name="person-outline" size={48} color={theme.colors.textMuted} />
+          <Ionicons name="person-outline" size={40} color={theme.colors.textMuted} />
           <Text style={styles.emptyTitle}>No barbers available</Text>
           <Text style={styles.emptySubtitle}>Check back soon</Text>
         </View>
-      ) : (
-        <ScrollView
-          contentContainerStyle={styles.scroll}
-          showsVerticalScrollIndicator={false}
-        >
-          {barbers.map((barber, i) => {
-            const isSelected = selected?.id === barber.id;
-            return (
-              <GoldCard
-                key={barber.id}
-                entranceIndex={i}
-                active={isSelected}
-                onPress={() => setSelected(barber)}
-                contentStyle={styles.cardContent}
-              >
-                <View style={[styles.avatar, isSelected && styles.avatarSelected]}>
-                  {barber.photoURL ? (
-                    <ExpoImage
-                      source={{ uri: barber.photoURL }}
-                      style={styles.avatarImage}
-                      transition={300}
-                      contentFit="cover"
-                    />
-                  ) : (
-                    <Ionicons
-                      name="person"
-                      size={32}
-                      color={isSelected ? theme.colors.textInverse : theme.colors.gold}
-                    />
-                  )}
-                </View>
+      );
+    }
+    return (
+      <ScrollView
+        style={styles.rowList}
+        contentContainerStyle={styles.rowListContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {barbers.map((barber, i) => (
+          <RPGSelectionRow
+            key={barber.id}
+            label={barber.displayName}
+            icon="person-outline"
+            imageUri={barber.photoURL}
+            selected={selected?.id === barber.id}
+            onPress={() => setSelected(barber)}
+            entranceIndex={i}
+          />
+        ))}
+      </ScrollView>
+    );
+  };
 
-                <View style={styles.info}>
-                  <Text style={[
-                    styles.name,
-                    isSelected && styles.nameSelected,
-                  ]}>
-                    {barber.displayName.toUpperCase()}
-                  </Text>
+  return (
+    <View style={styles.container}>
+      {/* 1 — Cinematic backdrop (dark gradient placeholder) */}
+      <LinearGradient
+        colors={['#1A140B', '#0A0A0A', '#050302']}
+        start={{ x: 0.2, y: 0 }}
+        end={{ x: 0.8, y: 1 }}
+        style={StyleSheet.absoluteFill}
+      />
 
-                  <View style={styles.ratingRow}>
-                    {[1, 2, 3, 4, 5].map(star => (
-                      <Ionicons
-                        key={star}
-                        name={star <= barber.rating ? 'star' : 'star-outline'}
-                        size={12}
-                        color={theme.colors.gold}
-                      />
-                    ))}
-                    <Text style={styles.reviewCount}>({barber.reviewCount})</Text>
-                  </View>
+      {/* 2 — Selected barber's photo bleeding across the screen (the
+          panel covers the left, leaving it visible on the right).
+          expo-image's `transition` crossfades when the source changes. */}
+      {selected?.photoURL ? (
+        <ExpoImage
+          source={{ uri: selected.photoURL }}
+          style={[StyleSheet.absoluteFill, styles.heroPhoto]}
+          contentFit="cover"
+          transition={400}
+        />
+      ) : null}
 
-                  <View style={styles.specialties}>
-                    {barber.specialties?.slice(0, 3).map((s, j) => (
-                      <View key={j} style={styles.specialtyTag}>
-                        <Text style={styles.specialtyText}>{s}</Text>
-                      </View>
-                    ))}
-                  </View>
-                </View>
+      {/* 3 — Ornamental crosshairs framing the whole screen */}
+      <OrnamentalCorners size={24} opacity={0.5} />
 
-                {isSelected && (
-                  <Ionicons name="checkmark-circle" size={24} color={theme.colors.gold} />
-                )}
-              </GoldCard>
-            );
-          })}
-        </ScrollView>
-      )}
+      {/* 4 — Full-width progress line (step 2 of 4 = 50%) at the top */}
+      <View style={[styles.progressTrack, { top: insets.top }]}>
+        <View style={styles.progressFill} />
+      </View>
 
-      <View style={styles.footer}>
+      {/* 5 — Minimal cinematic back affordance (preserves goBack) */}
+      <Pressable
+        onPress={() => navigation.goBack()}
+        accessibilityRole="button"
+        accessibilityLabel="Go back"
+        style={[styles.backButton, { top: insets.top + theme.spacing.md }]}
+        hitSlop={8}
+      >
+        <Ionicons name="chevron-back" size={22} color={theme.colors.gold} />
+      </Pressable>
+
+      {/* 6 — Floating RPG panel, left, ~60% width */}
+      <View
+        style={[
+          styles.panelContainer,
+          {
+            paddingTop:    insets.top + theme.spacing.xl * 2,
+            paddingBottom: insets.bottom + 100,
+          },
+        ]}
+      >
+        <RPGPanel style={styles.panel}>
+          <Text style={styles.screenTitle}>BARBER SELECT</Text>
+          <ScissorDivider />
+          {renderBody()}
+        </RPGPanel>
+      </View>
+
+      {/* 7 — Continue button: full width, outside the panel, at bottom */}
+      <View style={[styles.footer, { paddingBottom: insets.bottom + theme.spacing.lg }]}>
         <PremiumButton
           label={selected
             ? `CONTINUE WITH ${selected.displayName.toUpperCase()}`
@@ -196,55 +205,76 @@ export const getBarberBookingId = (barber: {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
 
-  progressBar: {
-    height:           3,
-    backgroundColor:  theme.colors.border,
-    marginHorizontal: theme.spacing.lg,
-    borderRadius:     theme.radius.full,
-    marginBottom:     theme.spacing.md,
+  heroPhoto: { opacity: 0.35 },
+
+  // Thin gold progress line spanning the full screen width.
+  progressTrack: {
+    position:        'absolute',
+    left:            0,
+    right:           0,
+    height:          2,
+    backgroundColor: 'rgba(212, 175, 55, 0.15)',
   },
   progressFill: {
+    width:           '50%',
     height:          '100%',
     backgroundColor: theme.colors.gold,
-    borderRadius:    theme.radius.full,
   },
 
-  servicePill: {
-    flexDirection:    'row',
-    alignItems:       'center',
-    gap:              theme.spacing.xs,
-    backgroundColor:  theme.colors.goldMuted,
-    borderWidth:      1,
-    borderColor:      theme.colors.gold,
-    borderRadius:     theme.radius.full,
-    paddingVertical:  theme.spacing.xs,
-    paddingHorizontal: theme.spacing.md,
-    alignSelf:        'flex-start',
-    marginHorizontal: theme.spacing.lg,
-    marginBottom:     theme.spacing.lg,
-  },
-  servicePillText: {
-    fontFamily:    theme.fonts.medium,
-    fontSize:      theme.fontSizes.xs,
-    color:         theme.colors.gold,
-    letterSpacing: 1,
+  backButton: {
+    position:        'absolute',
+    left:            theme.spacing.lg,
+    width:           36,
+    height:          36,
+    borderRadius:    theme.radius.sm,
+    borderWidth:     1,
+    borderColor:     'rgba(212, 175, 55, 0.4)',
+    backgroundColor: 'rgba(8, 6, 4, 0.6)',
+    alignItems:      'center',
+    justifyContent:  'center',
+    zIndex:          10,
   },
 
-  shimmerStack: {
-    paddingHorizontal: theme.spacing.lg,
-    gap:               theme.spacing.md,
-  },
-  emptyState: {
-    flex:           1,
-    alignItems:     'center',
+  // Floating panel column — left, leaves the right ~40% open.
+  panelContainer: {
+    position:       'absolute',
+    left:           0,
+    top:            0,
+    bottom:         0,
+    width:          '60%',
     justifyContent: 'center',
-    gap:            theme.spacing.md,
+    paddingLeft:    theme.spacing.lg,
+  },
+  panel: {
+    maxHeight: '100%',
+  },
+
+  screenTitle: {
+    fontFamily:    theme.fonts.heading, // BebasNeue
+    fontSize:      28,
+    color:         theme.colors.gold,
+    letterSpacing: 4,
+    textAlign:     'center',
+  },
+
+  // Barber rows scroll inside the panel when the list is long.
+  rowList: { flexGrow: 0 },
+  rowListContent: { gap: theme.spacing.sm, paddingBottom: 2 },
+
+  shimmerStack: { gap: theme.spacing.sm },
+
+  emptyState: {
+    alignItems:      'center',
+    justifyContent:  'center',
+    gap:             theme.spacing.sm,
+    paddingVertical: theme.spacing.xl,
   },
   emptyTitle: {
     fontFamily:    theme.fonts.heading,
-    fontSize:      theme.fontSizes.xl,
+    fontSize:      theme.fontSizes.lg,
     color:         theme.colors.textSecondary,
     letterSpacing: 2,
+    textAlign:     'center',
   },
   emptySubtitle: {
     fontFamily: theme.fonts.body,
@@ -252,68 +282,14 @@ const styles = StyleSheet.create({
     color:      theme.colors.textMuted,
   },
 
-  scroll: {
-    padding: theme.spacing.lg,
-    paddingTop: 0,
-    gap: theme.spacing.md,
-  },
-  cardContent: {
-    flexDirection: 'row',
-    alignItems:    'center',
-    gap:           theme.spacing.md,
-    padding:       theme.spacing.lg,
-  },
-  avatar: {
-    width:           64,
-    height:          64,
-    borderRadius:    32,
-    backgroundColor: theme.colors.goldMuted,
-    alignItems:      'center',
-    justifyContent:  'center',
-    overflow:        'hidden',
-  },
-  avatarSelected: { backgroundColor: theme.colors.gold },
-  avatarImage:    { width: 64, height: 64, borderRadius: 32 },
-
-  info: { flex: 1, gap: theme.spacing.xs },
-  name: {
-    fontFamily:    theme.fonts.heading,
-    fontSize:      theme.fontSizes.lg,
-    color:         theme.colors.textPrimary,
-    letterSpacing: 2,
-  },
-  nameSelected: { color: theme.colors.gold },
-  ratingRow:    { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  reviewCount: {
-    fontFamily: theme.fonts.body,
-    fontSize:   theme.fontSizes.xs,
-    color:      theme.colors.textMuted,
-    marginLeft: 4,
-  },
-  specialties: {
-    flexDirection: 'row',
-    flexWrap:      'wrap',
-    gap:           theme.spacing.xs,
-    marginTop:     2,
-  },
-  specialtyTag: {
-    backgroundColor: theme.colors.surface,
-    borderWidth:     1,
-    borderColor:     theme.colors.border,
-    borderRadius:    theme.radius.full,
-    paddingVertical: 2,
-    paddingHorizontal: theme.spacing.sm,
-  },
-  specialtyText: {
-    fontFamily: theme.fonts.body,
-    fontSize:   theme.fontSizes.xs,
-    color:      theme.colors.textMuted,
-  },
-
+  // Full-width footer, layered above the panel column.
   footer: {
-    padding:          theme.spacing.lg,
-    paddingBottom:    theme.spacing.xl,
-    borderTopWidth:   1,
-    borderTopColor:   theme.colors.border,
+    position:          'absolute',
+    left:              0,
+    right:             0,
+    bottom:            0,
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop:        theme.spacing.md,
+    zIndex:            10,
   },
 });
